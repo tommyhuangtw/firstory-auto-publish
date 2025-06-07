@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  firstory-uploader:
+    build: .
+    container_name: firstory-podcast-automation
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HEADLESS=true
+    volumes:
+      - ./config:/app/config:ro
+      - ./temp:/app/temp
+      - ./.env:/app/.env:ro
+    networks:
+      - podcast-network
+
+networks:
+  podcast-network:
+    driver: bridge

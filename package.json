@@ -1,0 +1,52 @@
+{
+  "name": "firstory-podcast-automation",
+  "version": "1.0.0",
+  "description": "Automated podcast upload system for Firstory using Playwright",
+  "main": "index.js",
+  "scripts": {
+    "start": "node run-automation.js once",
+    "upload": "node run-automation.js once",
+    "test": "node run-automation.js test",
+    "scheduled": "node run-automation.js scheduled",
+    "cleanup": "node run-automation.js cleanup",
+    "status": "node run-automation.js status",
+    "download": "node download-latest-files.js",
+    "download-advanced": "node advanced-drive-downloader.js",
+    "download-api": "node download-with-api.js",
+    "setup-google-api": "node setup-google-api.js",
+    "setup-guide": "node setup-drive-links.js",
+    "test-google-api": "node test-google-api.js",
+    "simple-oauth": "node simple-oauth.js",
+    "oauth-fix": "node oauth-fix.js",
+    "oauth-simple": "node oauth-simple.js",
+    "webhook": "node webhook-server.js",
+    "webhook-dev": "NODE_ENV=development node webhook-server.js",
+    "test-llm": "node src/test-llm.js",
+    "install-playwright": "npx playwright install",
+    "dev": "NODE_ENV=development node run-automation.js once"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "airtable": "^0.12.2",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^5.1.0",
+    "fs-extra": "^11.1.1",
+    "googleapis": "^129.0.0",
+    "node-cron": "^3.0.3",
+    "open": "^10.1.2",
+    "path": "^0.12.7",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0"
+  },
+  "keywords": [
+    "podcast",
+    "automation",
+    "firstory",
+    "playwright"
+  ],
+  "author": "Tommy Huang",
+  "license": "MIT"
+}
