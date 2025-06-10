@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  firstory-uploader:
+  soundon-uploader:
     build: .
-    container_name: firstory-podcast-automation
+    container_name: soundon-podcast-automation
     restart: unless-stopped
     environment:
       - NODE_ENV=production

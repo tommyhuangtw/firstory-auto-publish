@@ -1,153 +1,242 @@
-const axios = require('axios');
+require('dotenv').config();
+const { google } = require('googleapis');
 const fs = require('fs-extra');
 const path = require('path');
 
 class GoogleDriveService {
   constructor() {
-    this.tempDir = path.join(__dirname, '../../temp');
-    this.pathsJsonFile = path.join(__dirname, '../../file-paths.json');
-    this.ensureTempDir();
+    this.drive = null;
+    this.oauth2Client = null;
+    // 指定的文件夾 ID
+    this.COVER_FOLDER_ID = '1BCSiZXS8aGnMdOnfJfAbwgitFfliVbQ-'; // IG 圖片封面文件夾
+    this.AUDIO_FOLDER_ID = '1pB2PaU9BAKi0IGbIgudUEm29bgPhX1jq'; // 音檔文件夾
+    this.tokenPath = path.join(__dirname, '../../temp/google-tokens.json');
   }
 
-  async ensureTempDir() {
-    await fs.ensureDir(this.tempDir);
-  }
-
-  // 從 Google Drive 分享連結中提取檔案或文件夾 ID
-  extractFileIdFromUrl(shareUrl) {
-    const patterns = [
-      /\/file\/d\/([a-zA-Z0-9-_]+)/,
-      /\/folders\/([a-zA-Z0-9-_]+)/,
-      /id=([a-zA-Z0-9-_]+)/,
-      /\/d\/([a-zA-Z0-9-_]+)/
-    ];
-    
-    for (const pattern of patterns) {
-      const match = shareUrl.match(pattern);
-      if (match) {
-        return match[1];
-      }
-    }
-    
-    throw new Error(`無法從連結中提取檔案 ID: ${shareUrl}`);
-  }
-
-  // 獲取文件夾內容（使用 Google Drive API v3）
-  async getFolderContents(folderId) {
+  async initializeAuth() {
     try {
-      // 使用公開的 Google Drive API 端點（不需要認證的部分）
-      const apiUrl = `https://drive.google.com/drive/folders/${folderId}`;
+      // 使用 OAuth 2.0 認證
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
       
-      console.log(`🔍 獲取文件夾內容: ${folderId}`);
-      
-      // 基於你提供的文件夾內容，我們硬編碼最新檔案
-      if (folderId === '1pB2PaU9BAKi0IGbIgudUEm29bgPhX1jq') {
-        // 音檔文件夾
-        return {
-          latestAudio: {
-            name: 'daily_podcast_chinese_2025-06-06.mp3',
-            id: null, // 需要實際的檔案 ID
-            type: 'audio/mpeg',
-            size: '16.1 MB',
-            modifiedTime: '2025-06-06T05:24:00Z'
-          }
-        };
-      } else if (folderId === '1BCSiZXS8aGnMdOnfJfAbwgitFfliVbQ-') {
-        // 圖片文件夾
-        return {
-          latestImage: {
-            name: '8A2B8735-976E-48FC-AE86-A07FAAEE0ED7.png',
-            id: null,
-            type: 'image/png',
-            size: '2.9 MB',
-            modifiedTime: '2025-05-29T00:00:00Z'
-          }
-        };
+      if (!clientId || !clientSecret) {
+        throw new Error('請在 .env 檔案中設定 GOOGLE_CLIENT_ID 和 GOOGLE_CLIENT_SECRET');
       }
+
+      // 創建 OAuth2 客戶端
+      this.oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        'http://localhost:8080' // 使用 localhost:8080 作為重定向 URI
+      );
+
+      // 嘗試載入已保存的 token
+      const hasValidToken = await this.loadSavedTokens();
       
-      throw new Error('未知的文件夾 ID');
+      if (!hasValidToken) {
+        console.log('🔑 需要進行 Google Drive 授權...');
+        await this.getNewTokens();
+      }
+
+      // 設定 Google Drive API
+      this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+      console.log('✅ Google Drive 認證成功');
+      
     } catch (error) {
-      console.error('獲取文件夾內容失敗:', error);
+      console.error('❌ Google Drive 認證失敗:', error);
       throw error;
     }
   }
 
-  // 使用 Google Drive 的公開下載方式
-  async downloadFromPublicFolder(folderUrl, fileType = 'audio') {
+  async loadSavedTokens() {
     try {
-      console.log(`⬇️ 從文件夾下載 ${fileType} 檔案: ${folderUrl}`);
-      
-      const folderId = this.extractFileIdFromUrl(folderUrl);
-      console.log(`📁 文件夾 ID: ${folderId}`);
-      
-      let fileName, downloadUrl;
-      
-      // 根據文件夾 ID 和類型確定要下載的檔案
-      if (folderId === '1pB2PaU9BAKi0IGbIgudUEm29bgPhX1jq' && fileType === 'audio') {
-        // 音檔文件夾
-        fileName = 'daily_podcast_chinese_2025-06-06.mp3';
-        // 嘗試構建可能的下載連結
-        // 注意：這需要實際的檔案 ID，這裡是示例
-        console.log('🎵 目標音檔:', fileName);
-      } else if (folderId === '1BCSiZXS8aGnMdOnfJfAbwgitFfliVbQ-' && fileType === 'image') {
-        // 圖片文件夾
-        fileName = '8A2B8735-976E-48FC-AE86-A07FAAEE0ED7.png';
-        console.log('🖼️ 目標圖片:', fileName);
-      } else {
-        throw new Error(`不支援的文件夾或檔案類型: ${folderId}, ${fileType}`);
+      if (fs.existsSync(this.tokenPath)) {
+        const tokens = await fs.readJSON(this.tokenPath);
+        this.oauth2Client.setCredentials(tokens);
+        
+        // 檢查 token 是否仍然有效
+        try {
+          // 創建臨時的 drive 實例來測試 token
+          const testDrive = google.drive({ version: 'v3', auth: this.oauth2Client });
+          await testDrive.files.list({ pageSize: 1 });
+          console.log('✅ 使用已保存的 Google Drive tokens');
+          return true;
+        } catch (error) {
+          console.log('⚠️ 已保存的 tokens 已過期，需要重新授權');
+          return false;
+        }
       }
-      
-      const localPath = path.join(this.tempDir, fileName);
-      
-      // 由於無法直接從文件夾下載，我們需要提示用戶提供直接檔案連結
-      console.log('⚠️ 無法直接從文件夾下載，需要個別檔案連結');
-      
-      // 創建一個佔位符檔案，實際使用時需要真實下載
-      await fs.writeFile(localPath, `Placeholder for ${fileName}`);
-      
-      return {
-        path: localPath,
-        fileName: fileName,
-        type: fileType,
-        needsRealDownload: true
-      };
-      
+      return false;
     } catch (error) {
-      console.error('從文件夾下載失敗:', error);
-      throw error;
+      console.log('⚠️ 載入 tokens 失敗，需要重新授權');
+      return false;
     }
   }
 
-  // 生成直接下載連結
-  generateDirectDownloadUrl(fileId) {
-    return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  async getNewTokens() {
+    // 產生授權 URL
+    const authUrl = this.oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file'
+      ],
+      prompt: 'consent'
+    });
+
+    console.log('\n🔗 請在瀏覽器中開啟以下 URL 進行授權:');
+    console.log(authUrl);
+    console.log('\n⚡ 授權完成後，瀏覽器將會自動重定向到 localhost，請稍候...');
+
+    // 創建臨時 HTTP 服務器接收授權碼
+    const authCode = await this.startAuthServer();
+    
+    try {
+      // 使用授權碼獲取 tokens
+      const { tokens } = await this.oauth2Client.getToken(authCode);
+      this.oauth2Client.setCredentials(tokens);
+      
+      // 保存 tokens
+      await this.saveTokens(tokens);
+      console.log('✅ Google Drive 授權完成並已保存');
+      
+    } catch (error) {
+      throw new Error(`授權失敗: ${error.message}`);
+    }
   }
 
-  // 下載檔案（個別檔案連結）
-  async downloadFileFromUrl(shareUrl, fileName = null) {
-    try {
-      console.log(`⬇️ 開始下載檔案: ${shareUrl}`);
+  async startAuthServer() {
+    return new Promise((resolve, reject) => {
+      const http = require('http');
+      const url = require('url');
       
-      const fileId = this.extractFileIdFromUrl(shareUrl);
-      console.log(`🆔 檔案 ID: ${fileId}`);
-      
-      const downloadUrl = this.generateDirectDownloadUrl(fileId);
-      
-      if (!fileName) {
-        fileName = `download_${fileId}`;
-      }
-      
-      const filePath = path.join(this.tempDir, fileName);
-      
-      const response = await axios({
-        method: 'GET',
-        url: downloadUrl,
-        responseType: 'stream',
-        timeout: 60000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      const server = http.createServer((req, res) => {
+        const query = url.parse(req.url, true).query;
+        
+        if (query.code) {
+          // 成功獲取授權碼
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`
+            <html>
+              <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h2>✅ 授權成功！</h2>
+                <p>您可以關閉這個頁面，返回終端機繼續操作。</p>
+                <script>setTimeout(() => window.close(), 2000);</script>
+              </body>
+            </html>
+          `);
+          
+          server.close();
+          resolve(query.code);
+          
+        } else if (query.error) {
+          // 授權失敗
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`
+            <html>
+              <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h2>❌ 授權失敗</h2>
+                <p>錯誤: ${query.error}</p>
+                <p>請關閉這個頁面並重試。</p>
+              </body>
+            </html>
+          `);
+          
+          server.close();
+          reject(new Error(query.error));
         }
       });
+      
+      server.listen(8080, () => {
+        console.log('🌐 臨時授權服務器已啟動在 http://localhost:8080');
+      });
+      
+      // 設置超時
+      setTimeout(() => {
+        server.close();
+        reject(new Error('授權超時，請重試'));
+      }, 300000); // 5分鐘超時
+    });
+  }
+
+  async saveTokens(tokens) {
+    try {
+      const tempDir = path.dirname(this.tokenPath);
+      await fs.ensureDir(tempDir);
+      await fs.writeJSON(this.tokenPath, tokens, { spaces: 2 });
+    } catch (error) {
+      console.error('保存 tokens 失敗:', error);
+    }
+  }
+
+  async getLatestFileFromFolder(folderId, fileTypes = []) {
+    try {
+      console.log(`🔍 搜尋文件夾中的最新檔案: ${folderId}`);
+      
+      // 先嘗試獲取所有檔案來除錯
+      console.log('🔍 查詢所有檔案...');
+      let allFilesQuery = `'${folderId}' in parents and trashed = false`;
+      
+      const allFilesResponse = await this.drive.files.list({
+        q: allFilesQuery,
+        orderBy: 'modifiedTime desc',
+        fields: 'files(id, name, mimeType, modifiedTime, size)',
+        pageSize: 20
+      });
+
+      const allFiles = allFilesResponse.data.files;
+      console.log(`📊 文件夾中共有 ${allFiles ? allFiles.length : 0} 個檔案`);
+      
+      if (allFiles && allFiles.length > 0) {
+        console.log('📁 前幾個檔案:');
+        allFiles.slice(0, 5).forEach((file, index) => {
+          console.log(`   ${index + 1}. ${file.name} (${file.mimeType}) - ${file.modifiedTime}`);
+        });
+      }
+
+      if (!allFiles || allFiles.length === 0) {
+        throw new Error(`文件夾 ${folderId} 中沒有找到任何檔案，請檢查文件夾 ID 和權限設定`);
+      }
+
+      // 如果指定了檔案類型，進行過濾
+      let filteredFiles = allFiles;
+      if (fileTypes.length > 0) {
+        filteredFiles = allFiles.filter(file => 
+          fileTypes.some(type => file.mimeType && file.mimeType.includes(type))
+        );
+        
+        console.log(`🔍 篩選後符合類型 [${fileTypes.join(', ')}] 的檔案: ${filteredFiles.length} 個`);
+        
+        if (filteredFiles.length === 0) {
+          console.log('⚠️ 沒有找到符合類型的檔案，返回最新檔案');
+          filteredFiles = allFiles;
+        }
+      }
+
+      const latestFile = filteredFiles[0];
+      console.log(`✅ 選擇檔案: ${latestFile.name} (${latestFile.mimeType})`);
+      
+      return latestFile;
+    } catch (error) {
+      console.error('獲取最新檔案失敗:', error);
+      throw error;
+    }
+  }
+
+  async downloadFile(fileId, fileName) {
+    try {
+      const tempDir = path.join(__dirname, '../../temp');
+      await fs.ensureDir(tempDir);
+
+      const filePath = path.join(tempDir, fileName);
+      
+      console.log(`⬇️ 開始下載檔案: ${fileName}`);
+      
+      // 下載檔案
+      const response = await this.drive.files.get({
+        fileId: fileId,
+        alt: 'media'
+      }, { responseType: 'stream' });
 
       const writeStream = fs.createWriteStream(filePath);
       response.data.pipe(writeStream);
@@ -155,164 +244,116 @@ class GoogleDriveService {
       return new Promise((resolve, reject) => {
         writeStream.on('finish', () => {
           console.log(`✅ 檔案下載完成: ${filePath}`);
-          resolve({
-            path: filePath,
-            originalName: fileName,
-            fileId: fileId
-          });
+          resolve(filePath);
         });
-        
         writeStream.on('error', (error) => {
-          console.error(`❌ 檔案下載失敗: ${error.message}`);
+          console.error(`❌ 檔案下載失敗: ${error}`);
           reject(error);
         });
       });
-      
-    } catch (error) {
-      console.error('下載檔案失敗:', error.message);
-      throw error;
-    }
-  }
-
-  // 從指定文件夾下載最新音檔和圖片
-  async downloadLatestFilesFromFolders(audioFolderUrl, imageFolderUrl) {
-    console.log('🚀 開始從文件夾下載最新檔案...');
-    
-    const results = {
-      audio: null,
-      image: null,
-      timestamp: new Date().toISOString()
-    };
-    
-    try {
-      // 下載音檔
-      if (audioFolderUrl) {
-        console.log('🎵 下載音檔...');
-        const audioResult = await this.downloadFromPublicFolder(audioFolderUrl, 'audio');
-        results.audio = audioResult;
-      }
-      
-      // 下載圖片
-      if (imageFolderUrl) {
-        console.log('🖼️ 下載圖片...');
-        const imageResult = await this.downloadFromPublicFolder(imageFolderUrl, 'image');
-        results.image = imageResult;
-      }
-      
-      // 儲存路徑到 JSON 檔案
-      await this.savePathsToJson(results);
-      
-      console.log('✅ 所有檔案下載完成，路徑已儲存到 JSON');
-      return results;
-      
     } catch (error) {
       console.error('下載檔案失敗:', error);
       throw error;
     }
   }
 
-  // 儲存檔案路徑到 JSON
-  async savePathsToJson(pathsData) {
+  async downloadLatestAudioFile() {
     try {
-      const jsonData = {
-        lastUpdated: pathsData.timestamp,
-        files: {
-          audio: pathsData.audio ? {
-            path: pathsData.audio.path,
-            fileName: pathsData.audio.fileName,
-            type: pathsData.audio.type,
-            needsRealDownload: pathsData.audio.needsRealDownload || false
-          } : null,
-          image: pathsData.image ? {
-            path: pathsData.image.path,
-            fileName: pathsData.image.fileName,
-            type: pathsData.image.type,
-            needsRealDownload: pathsData.image.needsRealDownload || false
-          } : null
-        }
+      console.log('🎵 獲取最新音檔...');
+      
+      // 從音檔文件夾獲取最新音檔
+      const latestAudio = await this.getLatestFileFromFolder(
+        this.AUDIO_FOLDER_ID, 
+        ['audio'] // 只搜尋音檔
+      );
+
+      // 下載檔案
+      const filePath = await this.downloadFile(latestAudio.id, latestAudio.name);
+      
+      return {
+        path: filePath,
+        originalName: latestAudio.name,
+        fileId: latestAudio.id
       };
-      
-      await fs.writeJson(this.pathsJsonFile, jsonData, { spaces: 2 });
-      console.log(`💾 檔案路徑已儲存到: ${this.pathsJsonFile}`);
-      
     } catch (error) {
-      console.error('儲存路徑到 JSON 失敗:', error);
+      console.error('下載音檔失敗:', error);
       throw error;
     }
   }
 
-  // 從 JSON 檔案讀取路徑
-  async loadPathsFromJson() {
-    try {
-      if (await fs.pathExists(this.pathsJsonFile)) {
-        const data = await fs.readJson(this.pathsJsonFile);
-        console.log(`📖 從 JSON 檔案讀取路徑: ${this.pathsJsonFile}`);
-        return data;
-      } else {
-        console.log('📋 JSON 檔案不存在，返回空資料');
-        return null;
-      }
-    } catch (error) {
-      console.error('讀取 JSON 檔案失敗:', error);
-      return null;
-    }
-  }
-
-  // 取得最新檔案路徑（供 Firstory 上傳使用）
-  async getLatestFilePaths() {
-    const pathsData = await this.loadPathsFromJson();
-    
-    if (!pathsData) {
-      throw new Error('找不到檔案路徑資料，請先執行下載');
-    }
-    
-    return {
-      audioPath: pathsData.files.audio?.path,
-      imagePath: pathsData.files.image?.path,
-      lastUpdated: pathsData.lastUpdated
-    };
-  }
-
-  // 回退方法：從環境變數下載最新音檔
-  async downloadLatestAudioFile() {
-    const audioUrl = process.env.GOOGLE_DRIVE_AUDIO_URL;
-    
-    if (!audioUrl) {
-      throw new Error('請設定 GOOGLE_DRIVE_AUDIO_URL 環境變數或先執行 npm run download');
-    }
-    
-    console.log('🎵 下載音檔檔案...');
-    const result = await this.downloadFileFromUrl(audioUrl, 'latest_audio.mp3');
-    
-    return {
-      path: result.path,
-      originalName: result.originalName,
-      fileId: result.fileId
-    };
-  }
-
-  // 回退方法：從環境變數下載最新封面圖片
   async downloadLatestCoverImage() {
-    const coverUrl = process.env.GOOGLE_DRIVE_COVER_URL;
-    
-    if (!coverUrl) {
-      throw new Error('請設定 GOOGLE_DRIVE_COVER_URL 環境變數或先執行 npm run download');
+    try {
+      console.log('🖼️ 獲取最新封面圖片...');
+      
+      // 從封面文件夾獲取最新圖片
+      const latestImage = await this.getLatestFileFromFolder(
+        this.COVER_FOLDER_ID, 
+        ['image'] // 只搜尋圖片檔
+      );
+
+      // 下載檔案
+      const filePath = await this.downloadFile(latestImage.id, latestImage.name);
+      
+      return {
+        path: filePath,
+        originalName: latestImage.name,
+        fileId: latestImage.id
+      };
+    } catch (error) {
+      console.error('下載封面圖片失敗:', error);
+      throw error;
+    }
+  }
+
+  // 保留舊的函數以維持向後兼容性
+  async downloadAudioFile(fileId) {
+    if (!fileId) {
+      // 如果沒有提供 fileId，使用新的方法獲取最新音檔
+      const result = await this.downloadLatestAudioFile();
+      return result.path;
     }
     
-    console.log('🖼️ 下載封面圖片...');
-    const result = await this.downloadFileFromUrl(coverUrl, 'latest_cover.png');
+    // 原有的下載邏輯（使用特定 fileId）
+    try {
+      const fileInfo = await this.drive.files.get({
+        fileId: fileId,
+        fields: 'name'
+      });
+      
+      const filePath = await this.downloadFile(fileId, fileInfo.data.name);
+      return filePath;
+    } catch (error) {
+      console.error('下載音檔失敗:', error);
+      throw error;
+    }
+  }
+
+  async downloadCoverImage(fileId) {
+    if (!fileId) {
+      // 如果沒有提供 fileId，使用新的方法獲取最新封面
+      const result = await this.downloadLatestCoverImage();
+      return result.path;
+    }
     
-    return {
-      path: result.path,
-      originalName: result.originalName,
-      fileId: result.fileId
-    };
+    // 原有的下載邏輯（使用特定 fileId）
+    try {
+      const fileInfo = await this.drive.files.get({
+        fileId: fileId,
+        fields: 'name'
+      });
+      
+      const filePath = await this.downloadFile(fileId, fileInfo.data.name);
+      return filePath;
+    } catch (error) {
+      console.error('下載封面失敗:', error);
+      throw error;
+    }
   }
 
   async cleanupTempFiles() {
     try {
-      await fs.emptyDir(this.tempDir);
-      console.log('🗑️ 臨時檔案清理完成');
+      const tempDir = path.join(__dirname, '../../temp');
+      await fs.emptyDir(tempDir);
     } catch (error) {
       console.error('清理暫存檔案失敗:', error);
     }

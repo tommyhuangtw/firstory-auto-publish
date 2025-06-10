@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Firstory Podcast 自動上傳系統啟動腳本
+# SoundOn Podcast 自動上傳系統啟動腳本
 
-echo "🎙️  啟動 Firstory Podcast 自動上傳系統..."
+echo "🎙️  啟動 SoundOn Podcast 自動上傳系統..."
 
 # 檢查 Node.js 是否安裝
 if ! command -v node &> /dev/null; then

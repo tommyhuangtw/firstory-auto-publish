@@ -126,7 +126,7 @@ ${emailHtml.substring(0, 500)}...
 
  👉 新增智慧代理人與模組市場，程式設計自動化再進化！
 
-留言告訴我你對這一集的想法： https://open.firstory.me/user/cmay8xsor005301wpfp40apg1/comments`;    const prompt = `
+留言告訴我你對這一集的想法！`;    const prompt = `
 請基於以下 Email HTML 內容，生成一個 Podcast 描述：
 
 內容：
@@ -143,7 +143,7 @@ ${exampleDescription}
    - 簡短描述（用 👉 開頭）
 4. 保持活潑有趣的語調
 5. 加入適當的 emoji
-6. 最後加上留言呼籲：留言告訴我你對這一集的想法： https://open.firstory.me/user/cmay8xsor005301wpfp40apg1/comments
+6. 最後加上留言呼籲：留言告訴我你對這一集的想法！
 
 總字數控制在 200-400 字之間。
 `;
