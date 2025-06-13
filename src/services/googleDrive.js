@@ -111,10 +111,13 @@ class GoogleDriveService {
     // 先找到可用端口
     const availablePort = await this.findAvailablePort(8080);
     
-    // 更新重定向 URI 而不是重新創建 OAuth2 客戶端
+    // 創建新的 OAuth2 客戶端使用動態端口
     const redirectUri = `http://localhost:${availablePort}`;
-    this.oauth2Client.setCredentials({});
-    this.oauth2Client.redirectUri = redirectUri;
+    this.oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
+    );
     
     // 產生授權 URL
     const authUrl = this.oauth2Client.generateAuthUrl({
@@ -138,7 +141,7 @@ class GoogleDriveService {
       const { tokens } = await this.oauth2Client.getToken(authCode);
       this.oauth2Client.setCredentials(tokens);
       
-      // 手動保存 tokens（event listener 也會觸發，但確保保存）
+      // 保存 tokens
       await this.saveTokens(tokens);
       console.log('✅ Google Drive 授權完成並已保存');
       

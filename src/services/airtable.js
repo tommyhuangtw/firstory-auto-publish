@@ -174,6 +174,7 @@ class AirtableService {
       // 第一步：生成10個候選標題
       console.log('🎯 第一步：生成10個候選標題...');
       const titleCandidates = await this.generateTitleCandidates(textContent);
+      console.log(titleCandidates)
       
       // 第二步：選擇最佳標題
       console.log('🏆 第二步：選擇最佳標題...');
