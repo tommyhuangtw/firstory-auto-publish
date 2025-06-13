@@ -1167,9 +1167,9 @@ class SoundOnUploader {
         await this.page.keyboard.press('Enter');
       }
       
-      // 6. 簡單等待2秒，然後假設上傳完成
-      this.logger.info('⏳ 等待2秒讓上傳完成...');
-      await this.page.waitForTimeout(2000);
+      // 6. 等待上傳完成，增加額外等待時間確保穩定性
+      this.logger.info('⏳ 等待5秒讓封面圖片上傳完全完成...');
+      await this.page.waitForTimeout(5000);
       
       this.logger.info('✅ 封面圖片上傳完成');
       await this.page.screenshot({ path: 'temp/cover-upload-success.png' });

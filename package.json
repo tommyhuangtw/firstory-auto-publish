@@ -1,10 +1,12 @@
 {
   "name": "soundon-podcast-automation",
   "version": "1.0.0",
-  "description": "Automated podcast uploading system for SoundOn with Google Drive integration",
-  "main": "index.js",
+  "description": "Automated podcast uploading system for SoundOn with Google Drive integration and interactive title selection",
+  "main": "interactive-soundon-flow.js",
   "scripts": {
-    "start": "node complete-soundon-flow.js",
+    "start": "node interactive-soundon-flow.js",
+    "interactive": "node interactive-soundon-flow.js",
+    "legacy-flow": "node complete-soundon-flow.js",
     "test-auth": "node test-auth-only.js",
     "test-google-drive": "node test-google-drive.js",
     "test-basic-upload": "node test-basic-upload.js",
@@ -12,7 +14,6 @@
     "test-studio": "node test-studio-upload.js",
     "test-upload-page": "node test-upload-page.js",
     "soundon-automation": "node src/soundon-automation.js",
-    "complete-flow": "node complete-soundon-flow.js",
     "check-state": "node check-current-state.js",
     "check-tokens": "node check-google-tokens.js"
   },
@@ -21,7 +22,10 @@
     "automation",
     "soundon",
     "google-drive",
-    "playwright"
+    "playwright",
+    "ai",
+    "interactive",
+    "title-selection"
   ],
   "author": "Your Name",
   "license": "MIT",
