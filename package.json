@@ -13,7 +13,8 @@
     "test-upload-page": "node test-upload-page.js",
     "soundon-automation": "node src/soundon-automation.js",
     "complete-flow": "node complete-soundon-flow.js",
-    "check-state": "node check-current-state.js"
+    "check-state": "node check-current-state.js",
+    "check-tokens": "node check-google-tokens.js"
   },
   "keywords": [
     "podcast",

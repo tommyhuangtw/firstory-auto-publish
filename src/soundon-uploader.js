@@ -846,8 +846,66 @@ class SoundOnUploader {
         }
       }
       
-      // 等待發布處理
-      await this.page.waitForTimeout(5000);
+      // 等待發布處理，並檢查是否出現確認對話框
+      await this.page.waitForTimeout(2000);
+      
+      // 處理發布後的確認對話框
+      this.logger.info('檢查是否出現確認對話框...');
+      const confirmDialogSelectors = [
+        '//button[@type="button" and contains(@class, "ant-btn") and contains(@class, "ant-btn-primary")]/span[text()="確認"]',
+        'button.ant-btn.ant-btn-primary:has(span:text("確認"))',
+        'button[type="button"].ant-btn.ant-btn-primary:has(span:text("確認"))',
+        'button:has-text("確認")',
+        'button:has-text("確定")',
+        'button:has-text("OK")',
+        '.ant-modal button.ant-btn-primary:has-text("確認")',
+        '.ant-modal-footer button.ant-btn-primary'
+      ];
+      
+      let confirmClicked = false;
+      for (const selector of confirmDialogSelectors) {
+        try {
+          this.logger.info(`🔍 檢查確認對話框按鈕: ${selector}`);
+          
+          let confirmButton;
+          // 檢查是否為 XPath 選擇器
+          if (selector.startsWith('//')) {
+            confirmButton = this.page.locator(`xpath=${selector}`);
+          } else {
+            confirmButton = this.page.locator(selector);
+          }
+          
+          const count = await confirmButton.count();
+          if (count > 0) {
+            const isVisible = await confirmButton.first().isVisible({ timeout: 3000 });
+            if (isVisible) {
+              const buttonText = await confirmButton.first().textContent();
+              this.logger.info(`✅ 找到確認按鈕，文字內容: "${buttonText}"`);
+              
+              // 點擊確認按鈕
+              await confirmButton.first().click();
+              this.logger.info(`✅ 成功點擊確認按鈕: ${selector}`);
+              confirmClicked = true;
+              
+              // 等待對話框關閉
+              await this.page.waitForTimeout(2000);
+              break;
+            }
+          }
+        } catch (e) {
+          this.logger.debug(`確認按鈕選擇器失敗: ${selector}, 錯誤: ${e.message}`);
+          continue;
+        }
+      }
+      
+      if (confirmClicked) {
+        this.logger.info('✅ 已處理確認對話框');
+      } else {
+        this.logger.info('ℹ️ 未發現確認對話框，繼續發布流程');
+      }
+      
+      // 再等待一段時間讓發布完成
+      await this.page.waitForTimeout(3000);
       
       // 檢查發布成功的指示
       const successSelectors = [

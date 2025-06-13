@@ -23,12 +23,18 @@ class GoogleDriveService {
         throw new Error('請在 .env 檔案中設定 GOOGLE_CLIENT_ID 和 GOOGLE_CLIENT_SECRET');
       }
 
-      // 創建 OAuth2 客戶端
+      // 創建 OAuth2 客戶端（暫時使用默認端口，實際端口會在授權時動態設置）
       this.oauth2Client = new google.auth.OAuth2(
         clientId,
         clientSecret,
-        'http://localhost:8080' // 使用 localhost:8080 作為重定向 URI
+        'http://localhost:8080' // 默認重定向 URI，會在授權時動態更新
       );
+      
+      // 設置自動刷新 token
+      this.oauth2Client.on('tokens', (tokens) => {
+        console.log('🔄 收到新的 tokens，正在保存...');
+        this.saveTokens(tokens);
+      });
 
       // 嘗試載入已保存的 token
       const hasValidToken = await this.loadSavedTokens();
@@ -50,8 +56,12 @@ class GoogleDriveService {
 
   async loadSavedTokens() {
     try {
+      console.log(`🔍 檢查已保存的 tokens: ${this.tokenPath}`);
+      
       if (fs.existsSync(this.tokenPath)) {
         const tokens = await fs.readJSON(this.tokenPath);
+        console.log('📄 找到已保存的 tokens，正在驗證...');
+        
         this.oauth2Client.setCredentials(tokens);
         
         // 檢查 token 是否仍然有效
@@ -62,18 +72,50 @@ class GoogleDriveService {
           console.log('✅ 使用已保存的 Google Drive tokens');
           return true;
         } catch (error) {
-          console.log('⚠️ 已保存的 tokens 已過期，需要重新授權');
-          return false;
+          console.log('⚠️ 已保存的 tokens 已過期，嘗試刷新...');
+          
+          // 嘗試使用 refresh token 刷新 access token
+          if (tokens.refresh_token) {
+            try {
+              console.log('🔄 使用 refresh token 刷新 access token...');
+              const { credentials } = await this.oauth2Client.refreshAccessToken();
+              
+              // 保留原來的 refresh_token
+              credentials.refresh_token = tokens.refresh_token;
+              
+              this.oauth2Client.setCredentials(credentials);
+              await this.saveTokens(credentials);
+              
+              console.log('✅ 成功刷新 Google Drive tokens');
+              return true;
+            } catch (refreshError) {
+              console.log('❌ 刷新 tokens 失敗，需要重新授權:', refreshError.message);
+              return false;
+            }
+          } else {
+            console.log('❌ 沒有 refresh_token，需要重新授權');
+            return false;
+          }
         }
+      } else {
+        console.log('📄 沒有找到已保存的 tokens');
       }
       return false;
     } catch (error) {
-      console.log('⚠️ 載入 tokens 失敗，需要重新授權');
+      console.log('⚠️ 載入 tokens 失敗，需要重新授權:', error.message);
       return false;
     }
   }
 
   async getNewTokens() {
+    // 先找到可用端口
+    const availablePort = await this.findAvailablePort(8080);
+    
+    // 更新重定向 URI 而不是重新創建 OAuth2 客戶端
+    const redirectUri = `http://localhost:${availablePort}`;
+    this.oauth2Client.setCredentials({});
+    this.oauth2Client.redirectUri = redirectUri;
+    
     // 產生授權 URL
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -86,17 +128,17 @@ class GoogleDriveService {
 
     console.log('\n🔗 請在瀏覽器中開啟以下 URL 進行授權:');
     console.log(authUrl);
-    console.log('\n⚡ 授權完成後，瀏覽器將會自動重定向到 localhost，請稍候...');
+    console.log(`\n⚡ 授權完成後，瀏覽器將會自動重定向到 localhost:${availablePort}，請稍候...`);
 
     // 創建臨時 HTTP 服務器接收授權碼
-    const authCode = await this.startAuthServer();
+    const authCode = await this.startAuthServer(availablePort);
     
     try {
       // 使用授權碼獲取 tokens
       const { tokens } = await this.oauth2Client.getToken(authCode);
       this.oauth2Client.setCredentials(tokens);
       
-      // 保存 tokens
+      // 手動保存 tokens（event listener 也會觸發，但確保保存）
       await this.saveTokens(tokens);
       console.log('✅ Google Drive 授權完成並已保存');
       
@@ -105,10 +147,31 @@ class GoogleDriveService {
     }
   }
 
-  async startAuthServer() {
+  async findAvailablePort(startPort = 8080) {
+    const net = require('net');
+    
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      
+      server.listen(startPort, () => {
+        const { port } = server.address();
+        server.close(() => {
+          resolve(port);
+        });
+      });
+      
+      server.on('error', () => {
+        resolve(this.findAvailablePort(startPort + 1));
+      });
+    });
+  }
+
+  async startAuthServer(port) {
     return new Promise((resolve, reject) => {
       const http = require('http');
       const url = require('url');
+      
+      console.log(`🌐 使用端口: ${port}`);
       
       const server = http.createServer((req, res) => {
         const query = url.parse(req.url, true).query;
@@ -147,8 +210,8 @@ class GoogleDriveService {
         }
       });
       
-      server.listen(8080, () => {
-        console.log('🌐 臨時授權服務器已啟動在 http://localhost:8080');
+      server.listen(port, () => {
+        console.log(`🌐 臨時授權服務器已啟動在 http://localhost:${port}`);
       });
       
       // 設置超時
@@ -163,7 +226,19 @@ class GoogleDriveService {
     try {
       const tempDir = path.dirname(this.tokenPath);
       await fs.ensureDir(tempDir);
-      await fs.writeJSON(this.tokenPath, tokens, { spaces: 2 });
+      
+      // 確保包含 refresh_token
+      const tokensToSave = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        scope: tokens.scope,
+        token_type: tokens.token_type,
+        expiry_date: tokens.expiry_date
+      };
+      
+      await fs.writeJSON(this.tokenPath, tokensToSave, { spaces: 2 });
+      console.log(`💾 已保存 Google Drive tokens 到: ${this.tokenPath}`);
+      console.log(`📝 Token 詳情: access_token=${tokens.access_token ? '已設定' : '未設定'}, refresh_token=${tokens.refresh_token ? '已設定' : '未設定'}`);
     } catch (error) {
       console.error('保存 tokens 失敗:', error);
     }
