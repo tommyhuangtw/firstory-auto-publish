@@ -297,19 +297,27 @@ async function generateDiverseTitles(originalTitle, description) {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
-你是一個專業的 Podcast 標題創作專家。請根據以下資訊，生成 10 個風格多樣、吸引人的 Podcast 標題：
+請根據以下 Podcast 內容，生成10個吸引人的標題。標題必須包含知名AI工具或公司名稱，讓用戶有熟悉感並想要點擊。
 
 原始標題：${originalTitle}
 內容描述：${description}
 
-要求：
-1. 每個標題都要有不同的風格和角度
-2. 標題要吸引人、有趣、容易記住
-3. 適合 AI 科技新聞類型的 Podcast
-4. 長度控制在 15-30 個中文字
-5. 可以使用不同的表達方式：疑問句、感嘆句、陳述句等
-6. 可以加入一些流行的網路用語或表情符號
-7. 要有新聞感和時效性
+標題要求：
+1. 標題長度要和下方範例差不多（約20-30字），內容要有吸引力且資訊豐富。
+2. 標題必須使用臺灣常用的繁體中文用語。
+3. 如果內容有提到特定AI工具或產品，請務必在標題中明確寫出工具名稱。
+4. 每個標題都要有明確主題、工具名稱或亮點，語氣活潑、吸睛。
+5. 適合台灣年輕族群。
+
+標題範例格式：
+- Cursor CEO預言無Code未來！NanoBrowser一鍵操控太神
+- Cursor + Claude：AI程式碼神器，打造未來軟體開發！
+- AI自主溝通！DeepAgent驚人突破，Copilot與Claude聯手
+- VEO 3超狂進化！用手機就能免費做AI影片？
+- AI工具界核彈級更新！Veo 3自動剪、Suno寫歌、Gemini
+- 一天做12倍事？Claude Squad拯救爆炸行程的神隊友
+- AI幫你找創業題目、寫網站，還能自動除錯！這些工具太狂
+- AI副業爆發中！從開店到頻道複製，每月賺50K的祕密都在這
 
 請直接提供 10 個標題，每行一個，不要編號，不要其他說明文字。
 `;
@@ -394,6 +402,8 @@ ${candidateTitles.map((title, index) => `${index + 1}. ${title}`).join('\n')}
 4. 社交媒體分享潛力
 5. 目標受眾的興趣匹配度
 6. 標題的獨特性和記憶點
+7. 用語需貼近台灣Podcast圈常見標題
+8. 會讓AI學習者點進來的標題
 
 請只回答最佳標題的編號（1-${candidateTitles.length}），不要其他說明。
 `;

@@ -263,16 +263,21 @@ class AirtableService {
 ${content}
 
 標題要求：
-1. 包含知名AI工具名稱（如：ChatGPT、Claude、Gemini、GPT-4、Midjourney、Stable Diffusion、OpenAI、Google、Microsoft、Meta等）
-2. 要有吸引力和急迫感
-3. 使用誇張但真實的形容詞（如：核彈級、爆發、狂飆、翻倍等）
-4. 長度在15-30字之間
-5. 適合台灣年輕族群
+1. 標題長度要和下方範例差不多（約20-30字），內容要有吸引力且資訊豐富。
+2. 標題必須使用臺灣常用的繁體中文用語。
+3. 如果內容有提到特定AI工具或產品，請務必在標題中明確寫出工具名稱。
+4. 每個標題都要有明確主題、工具名稱或亮點，語氣活潑、吸睛。
+5. 適合台灣年輕族群。
 
 標題範例格式：
-- AI 工具界核彈級更新！ChatGPT、Claude、Gemini 三強爭霸戰開打
-- OpenAI 放大招！GPT-5 功能曝光，Claude 緊急應戰
-- Google Gemini 2.0 狂飆升級！免費超越 GPT-4，開發者搶瘋了
+- EP10 – Cursor CEO預言無Code未來！NanoBrowser一鍵操控太神
+- EP9 – Cursor + Claude：AI程式碼神器，打造未來軟體開發！
+- EP8 – AI自主溝通！DeepAgent驚人突破，Copilot與Claude聯手
+- EP7 – VEO 3超狂進化！用手機就能免費做AI影片？
+- EP6 – AI工具界核彈級更新！Veo 3自動剪、Suno寫歌、Gemini
+- EP5 – 一天做12倍事？Claude Squad拯救爆炸行程的神隊友
+- EP4 – AI幫你找創業題目、寫網站，還能自動除錯！這些工具太狂
+- EP3 – AI副業爆發中！從開店到頻道複製，每月賺50K的祕密都在這
 
 請生成10個不同風格的標題，以JSON格式回傳：
 {
@@ -308,6 +313,7 @@ ${content.substring(0, 1000)}
 3. 知名度指標：是否包含用戶熟悉的AI工具或公司名稱？
 4. 情感驅動：是否能激發好奇心、FOMO或學習動機？
 5. 搜尋友善：是否包含熱門關鍵字？
+6. 用語風格需貼近台灣Podcast圈常見標題
 
 請選出最佳標題，並簡述選擇理由。以JSON格式回傳：
 {
