@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎙️ AI懶人報控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .dashboard {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+        
+        .status-bar {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .status-item:last-child { margin-bottom: 0; }
+        
+        .status-label {
+            font-weight: 600;
+            color: #64748b;
+        }
+        
+        .status-value {
+            font-weight: 700;
+            color: #0f172a;
+        }
+        
+        .main-content {
+            text-align: center;
+        }
+        
+        .upload-button {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        
+        .upload-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(16, 185, 129, 0.4);
+        }
+        
+        .upload-button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .stop-button {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        
+        .process-info {
+            background: #dbeafe;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            border-left: 4px solid #3b82f6;
+            display: none;
+        }
+        
+        .process-info.show {
+            display: block;
+        }
+        
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .action-btn {
+            padding: 12px 20px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: #64748b;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .action-btn:hover {
+            border-color: #3b82f6;
+            color: #3b82f6;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: white;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .actions {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎙️ AI懶人報控制台</h1>
+            <p>Web版本 - 遠程觸發系統</p>
+        </div>
+        
+        <div class="dashboard">
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-label">📊 系統狀態</span>
+                    <span class="status-value" id="system-status">載入中...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">📅 下一集</span>
+                    <span class="status-value">EP12 (自動檢測)</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">🕒 最後更新</span>
+                    <span class="status-value" id="last-update">--</span>
+                </div>
+            </div>
+            
+            <div class="main-content">
+                <button class="upload-button" id="upload-btn" onclick="startUpload()">
+                    ▶️ 開始上傳 Podcast
+                </button>
+                
+                <div style="text-align: center;">
+                    <button class="stop-button" id="stop-btn" onclick="stopUpload()" style="display: none;">
+                        ⏹️ 停止流程
+                    </button>
+                </div>
+                
+                <div class="process-info" id="process-info">
+                    <div style="font-weight: 600; margin-bottom: 10px;">🚀 流程執行中...</div>
+                    <div>
+                        ✅ 系統將執行以下步驟：<br>
+                        1. 🔍 檢測下一集編號<br>
+                        2. 🤖 AI生成10個候選標題<br>
+                        3. 📧 發送選擇郵件到您的Gmail<br>
+                        4. ⏰ 等待您在Email中選擇標題<br>
+                        5. 📥 下載檔案並上傳到SoundOn
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <a href="#" class="action-btn" onclick="refreshStatus()">🔄 重新整理</a>
+                    <a href="#" class="action-btn" onclick="openOriginal()">💻 原版流程</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>🚀 不影響你現有的 npm start 流程</p>
+            <p>💡 可在任何地方觸發Podcast上傳</p>
+        </div>
+    </div>
+
+    <script>
+        let statusCheckInterval;
+        
+        // 載入系統狀態
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                const statusElement = document.getElementById('system-status');
+                const uploadBtn = document.getElementById('upload-btn');
+                const stopBtn = document.getElementById('stop-btn');
+                const processInfo = document.getElementById('process-info');
+                
+                // 更新狀態顯示
+                switch(data.status) {
+                    case 'idle':
+                        statusElement.textContent = '🟢 待命中';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
+                        stopBtn.style.display = 'none';
+                        processInfo.classList.remove('show');
+                        break;
+                    case 'running':
+                        statusElement.textContent = '🔄 執行中';
+                        uploadBtn.disabled = true;
+                        uploadBtn.textContent = '🚀 執行中...';
+                        stopBtn.style.display = 'inline-block';
+                        processInfo.classList.add('show');
+                        break;
+                    case 'completed':
+                        statusElement.textContent = '✅ 已完成';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
+                        stopBtn.style.display = 'none';
+                        processInfo.classList.remove('show');
+                        break;
+                    case 'failed':
+                        statusElement.textContent = '❌ 執行失敗';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '🔄 重新嘗試';
+                        stopBtn.style.display = 'none';
+                        processInfo.classList.remove('show');
+                        break;
+                    case 'stopped':
+                        statusElement.textContent = '⏹️ 已停止';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
+                        stopBtn.style.display = 'none';
+                        processInfo.classList.remove('show');
+                        break;
+                }
+                
+                document.getElementById('last-update').textContent = 
+                    new Date().toLocaleTimeString();
+                    
+            } catch (error) {
+                console.error('載入狀態失敗:', error);
+                document.getElementById('system-status').textContent = '❌ 連接錯誤';
+            }
+        }
+        
+        // 開始上傳
+        async function startUpload() {
+            if (!confirm('確定要開始Podcast上傳流程嗎？\n\n系統將會：\n1. 生成AI標題\n2. 發送郵件給您選擇\n3. 自動完成上傳')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/start-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'started') {
+                    alert('🚀 上傳流程已啟動！\n\n請注意：\n1. 您稍後會收到Gmail標題選擇郵件\n2. 請在郵件中點選您想要的標題\n3. 系統會自動完成後續上傳');
+                    
+                    // 開始輪詢狀態
+                    startStatusPolling();
+                } else {
+                    alert('❌ 啟動失敗：' + result.message);
+                }
+                
+                loadSystemStatus();
+                
+            } catch (error) {
+                console.error('啟動失敗:', error);
+                alert('❌ 啟動失敗：' + error.message);
+            }
+        }
+        
+        // 停止上傳
+        async function stopUpload() {
+            if (!confirm('確定要停止當前流程嗎？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/stop-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                alert('⏹️ ' + result.message);
+                
+                loadSystemStatus();
+                stopStatusPolling();
+                
+            } catch (error) {
+                console.error('停止失敗:', error);
+                alert('❌ 停止失敗：' + error.message);
+            }
+        }
+        
+        // 開始狀態輪詢
+        function startStatusPolling() {
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
+            statusCheckInterval = setInterval(loadSystemStatus, 3000);
+        }
+        
+        // 停止狀態輪詢
+        function stopStatusPolling() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+                statusCheckInterval = null;
+            }
+        }
+        
+        // 重新整理狀態
+        function refreshStatus() {
+            loadSystemStatus();
+        }
+        
+        // 開啟原版流程說明
+        function openOriginal() {
+            alert('💻 原版流程說明：\n\n在終端機執行：\nnpm start\n\n這個Web控制台不會影響你原有的流程！');
+        }
+        
+        // 頁面載入
+        window.addEventListener('load', () => {
+            loadSystemStatus();
+            
+            // 每30秒更新一次狀態
+            setInterval(loadSystemStatus, 30000);
+        });
+        
+        // 頁面關閉時清理
+        window.addEventListener('beforeunload', () => {
+            stopStatusPolling();
+        });
+    </script>
+</body>
+</html>

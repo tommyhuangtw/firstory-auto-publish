@@ -44,7 +44,7 @@ class GmailService {
     }
   }
 
-  async sendTitleConfirmationEmail(candidateTitles, description, serverPort, episodeNumber) {
+  async sendTitleConfirmationEmail(candidateTitles, description, serverPort, episodeNumber, publicUrl = null) {
     try {
       const recipientEmail = process.env.RECIPIENT_EMAIL;
       if (!recipientEmail) {
@@ -57,7 +57,7 @@ class GmailService {
       const day = today.getDate();
       const emailSubject = `🎙️ ${month}月${day}日 EP${episodeNumber} - AI懶人報標題選擇`;
       
-      const emailBody = this.generateEmailHTML(candidateTitles, description, serverPort, episodeNumber, month, day);
+      const emailBody = this.generateEmailHTML(candidateTitles, description, serverPort, episodeNumber, month, day, publicUrl);
 
       // 構建郵件內容，使用正確的 UTF-8 編碼
       const message = [
@@ -87,10 +87,13 @@ class GmailService {
     }
   }
 
-  generateEmailHTML(candidateTitles, description, serverPort, episodeNumber, month, day) {
+  generateEmailHTML(candidateTitles, description, serverPort, episodeNumber, month, day, publicUrl = null) {
+    // 決定使用哪個URL：優先使用公網URL，否則使用localhost
+    const baseUrl = publicUrl || `http://localhost:${serverPort}`;
+    
     const titleButtons = candidateTitles.map((title, index) => `
       <div style="margin: 15px 0;">
-        <a href="http://localhost:${serverPort}/select?index=${index}" 
+        <a href="${baseUrl}/select?index=${index}" 
            style="display: block; 
                   background: white; 
                   color: #1e293b; 

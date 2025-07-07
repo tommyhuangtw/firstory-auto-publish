@@ -68,7 +68,16 @@ async function runInteractiveSoundOnFlow() {
     
     // 7. 發送 Gmail 確認郵件（使用帶集數的標題）
     console.log('📧 發送標題確認郵件...');
-    await gmail.sendTitleConfirmationEmail(titlesWithEpisodeNumber, candidateData.description, serverPort, nextEpisodeNumber);
+    
+    // 檢查是否從Web控制台觸發，如果是則使用公網URL
+    const publicUrl = process.env.WEB_CONSOLE_MODE === 'true' ? process.env.PUBLIC_URL : null;
+    if (publicUrl) {
+      console.log(`🌍 使用公網URL發送郵件: ${publicUrl}`);
+    } else {
+      console.log(`📍 使用本地URL發送郵件: http://localhost:${serverPort}`);
+    }
+    
+    await gmail.sendTitleConfirmationEmail(titlesWithEpisodeNumber, candidateData.description, serverPort, nextEpisodeNumber, publicUrl);
     console.log('✅ 標題確認郵件已發送\n');
     
     // 8. 等待用戶選擇標題（帶超時機制）

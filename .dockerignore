@@ -1,0 +1,42 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README*.md
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# 本地開發檔案
+.env.local
+.env.development
+
+# 日誌檔案
+logs/*
+*.log
+
+# 暫存檔案
+temp/downloads/*
+temp/browser-data/*
+
+# 僅保留必要的憑證檔案模板
+temp/*
+!temp/google-tokens.json
+!temp/gmail-tokens.json
+
+# 測試檔案
+test/*
+*.test.js
+
+# IDE檔案
+.vscode
+.idea
+*.swp
+*.swo
+
+# macOS檔案
+.DS_Store
+
+# 其他
+coverage
+.nyc_output

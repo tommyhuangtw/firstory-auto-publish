@@ -1,20 +1,68 @@
 version: '3.8'
 
 services:
-  soundon-uploader:
+  podcast-automation:
     build: .
-    container_name: soundon-podcast-automation
+    container_name: podcast-automation-web
     restart: unless-stopped
+    ports:
+      - "8888:8888"
     environment:
+      # 從.env檔案載入環境變數
       - NODE_ENV=production
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - AIRTABLE_TABLE_NAME=${AIRTABLE_TABLE_NAME}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+      - RECIPIENT_EMAIL=${RECIPIENT_EMAIL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SOUNDON_EMAIL=${SOUNDON_EMAIL}
+      - SOUNDON_PASSWORD=${SOUNDON_PASSWORD}
       - HEADLESS=true
+      - TIMEOUT=${TIMEOUT}
     volumes:
-      - ./config:/app/config:ro
+      # 持久化重要目錄
       - ./temp:/app/temp
-      - ./.env:/app/.env:ro
+      - ./logs:/app/logs
+      - ./config:/app/config
+      # 掛載憑證文件
+      - ./temp/google-tokens.json:/app/temp/google-tokens.json
+      - ./temp/gmail-tokens.json:/app/temp/gmail-tokens.json
+    networks:
+      - podcast-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx反向代理 (整合到現有的nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: podcast-nginx
+    restart: unless-stopped
+    ports:
+      - "4000:80"  # 使用端口4000避免與現有nginx衝突
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - podcast-automation
     networks:
       - podcast-network
 
 networks:
   podcast-network:
     driver: bridge
+
+volumes:
+  podcast_data:
+    driver: local

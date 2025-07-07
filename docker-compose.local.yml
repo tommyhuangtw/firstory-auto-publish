@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  podcast-web-console:
+    build: 
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: podcast-automation-local
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - NODE_ENV=production
+      - WEB_CONSOLE_PORT=8888
+      - PUBLIC_URL=${PUBLIC_URL}
+      - PLAYWRIGHT_BROWSERS_PATH=0
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - PLAYWRIGHT_HEADLESS=true
+    env_file:
+      - .env
+    volumes:
+      # 持久化重要數據
+      - ./temp:/app/temp
+      - ./logs:/app/logs
+      - ./config:/app/config
+      # 保持瀏覽器session數據
+      - podcast_browser_data:/app/temp/browser-data
+    networks:
+      - podcast-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ngrok容器 - 自動暴露服務
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: podcast-ngrok
+    restart: unless-stopped
+    command: 
+      - "tunnel"
+      - "--label"
+      - "edge=edghts_2NzI5MDY3NTc0Mjk1NzQ2ODQ"  # 你需要從ngrok dashboard獲取
+      - "http://podcast-web-console:8888"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - podcast-web-console
+    networks:
+      - podcast-network
+    ports:
+      - "4040:4040"  # ngrok web界面
+
+networks:
+  podcast-network:
+    driver: bridge
+
+volumes:
+  podcast_browser_data:
+    driver: local

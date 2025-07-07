@@ -1,0 +1,68 @@
+# 專為本地24/7運行設計的Dockerfile
+FROM node:20-alpine
+
+# 安裝系統依賴
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    curl \
+    bash \
+    dumb-init
+
+# 創建app用戶
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S podcastuser -u 1001 -G nodejs
+
+# 設置工作目錄
+WORKDIR /app
+
+# 複製package文件並安裝依賴
+COPY package*.json ./
+COPY web-console/package*.json ./web-console/
+
+# 安裝主項目依賴
+RUN npm ci --only=production
+
+# 切換到podcastuser並設置Playwright環境
+USER podcastuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/podcastuser/.cache/ms-playwright
+
+# 安裝Playwright瀏覽器 (在podcastuser下)
+RUN npx playwright install chromium
+
+# 切回root暫時安裝web console依賴
+USER root
+
+# 安裝Web控制台依賴
+WORKDIR /app/web-console
+RUN npm install --production
+
+# 回到主目錄
+WORKDIR /app
+
+# 複製所有應用代碼
+COPY . .
+
+# 創建必要目錄並設置權限
+RUN mkdir -p temp/downloads temp/browser-data logs && \
+    chown -R podcastuser:nodejs /app
+
+# 切換到非root用戶
+USER podcastuser
+
+# 暴露端口
+EXPOSE 8888
+
+# 健康檢查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8888/health || exit 1
+
+# 使用dumb-init作為PID 1，處理信號
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+
+# 啟動Web控制台
+CMD ["node", "web-console/server.js"]

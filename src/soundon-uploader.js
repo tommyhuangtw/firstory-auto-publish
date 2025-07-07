@@ -20,7 +20,7 @@ class SoundOnUploader {
     }
 
     // 使用持久化的 user data directory 來保持登入狀態
-    this.browser = await chromium.launchPersistentContext(this.userDataDir, {
+    const launchOptions = {
       headless: process.env.PLAYWRIGHT_HEADLESS === 'true',
       slowMo: 1000,
       viewport: { width: 1920, height: 1080 },
@@ -31,7 +31,15 @@ class SoundOnUploader {
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows'
       ]
-    });
+    };
+
+    // 如果在 Docker 環境中，使用系統的 Chromium
+    if (process.env.NODE_ENV === 'production' && fs.existsSync('/usr/bin/chromium-browser')) {
+      launchOptions.executablePath = '/usr/bin/chromium-browser';
+      launchOptions.args.push('--no-sandbox', '--disable-setuid-sandbox');
+    }
+
+    this.browser = await chromium.launchPersistentContext(this.userDataDir, launchOptions);
     
     this.page = this.browser.pages()[0] || await this.browser.newPage();
     await this.page.setViewportSize({ width: 1920, height: 1080 });

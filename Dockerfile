@@ -1,36 +1,59 @@
-FROM node:18-slim
+# 使用官方Node.js 18映像
+FROM node:18-alpine
 
-# 安裝系統依賴
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
+# 安裝系統依賴（Playwright需要）
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ttf-freefont \
+    curl \
+    bash
 
-# 設定工作目錄
+# 設置Chromium執行檔路徑
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# 設置工作目錄
 WORKDIR /app
 
-# 複製 package.json 和 package-lock.json
+# 複製package文件
 COPY package*.json ./
+COPY web-console/package*.json ./web-console/
 
-# 安裝 Node.js 依賴
-RUN npm ci --only=production
+# 安裝主項目依賴
+RUN npm install
 
-# 安裝 Playwright 和瀏覽器
-RUN npx playwright install chromium
-RUN npx playwright install-deps chromium
+# 安裝Web控制台依賴
+WORKDIR /app/web-console
+RUN npm install
 
-# 複製應用程式碼
+# 回到主目錄
+WORKDIR /app
+
+# 複製所有項目文件
 COPY . .
 
-# 建立必要的目錄
-RUN mkdir -p temp config
+# 創建必要目錄
+RUN mkdir -p temp/downloads temp/browser-data logs
 
-# 設定權限
-RUN chmod +x start.sh
+# 設置權限
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S podcastuser -u 1001 -G nodejs && \
+    chown -R podcastuser:nodejs /app
 
-# 暴露埠號 (如果需要)
-EXPOSE 3000
+# 切換到非root用戶
+USER podcastuser
 
-# 啟動命令
-CMD ["npm", "start"]
+# 暴露端口
+EXPOSE 8888
+
+# 健康檢查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8888/health || exit 1
+
+# 啟動Web控制台
+CMD ["node", "web-console/server.js"]
