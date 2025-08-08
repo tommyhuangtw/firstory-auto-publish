@@ -1,4 +1,5 @@
 const Airtable = require('airtable');
+const { OpenRouterService } = require('./openRouterService');
 
 class AirtableService {
   constructor() {
@@ -6,6 +7,7 @@ class AirtableService {
       apiKey: process.env.AIRTABLE_API_KEY
     }).base(process.env.AIRTABLE_BASE_ID);
     this.tableName = 'Daily Podcast Summary'; // 直接指定表格名稱
+    this.openRouter = new OpenRouterService();
   }
 
   async getRecordsToUpload() {
@@ -150,6 +152,8 @@ class AirtableService {
       return {
         recordId: record.id,
         title: generatedContent.title,
+        titles: generatedContent.titles,
+        bestTitleIndex: generatedContent.bestTitleIndex,
         description: generatedContent.description,
         originalEmailHtml: emailHtml,
         date: record.get('Date'),
@@ -178,14 +182,16 @@ class AirtableService {
       
       // 第二步：選擇最佳標題
       console.log('🏆 第二步：選擇最佳標題...');
-      const bestTitle = await this.selectBestTitle(titleCandidates, textContent);
+      const bestTitleData = await this.selectBestTitle(titleCandidates, textContent);
       
       // 第三步：生成5個工具的描述
       console.log('📝 第三步：生成5個工具的描述...');
       const description = await this.generateToolsDescription(textContent);
       
       return {
-        title: bestTitle,
+        title: bestTitleData.title,
+        titles: titleCandidates,
+        bestTitleIndex: bestTitleData.index,
         description: description
       };
       
@@ -193,7 +199,12 @@ class AirtableService {
       console.error('❌ AI 生成內容失敗:', error.message);
       
       // 備用方案：使用改進的智能模板
-      return this.generateEnhancedFallback(emailHtml);
+      const fallbackContent = this.generateEnhancedFallback(emailHtml);
+      return {
+        ...fallbackContent,
+        titles: [fallbackContent.title],
+        bestTitleIndex: 0
+      };
     }
   }
 
@@ -222,17 +233,30 @@ class AirtableService {
       const prompt = this.buildTitleSelectionPrompt(titleCandidates, content);
       const response = await this.callGemini(prompt);
       
-      if (response.bestTitle) {
-        console.log(`🏆 選出最佳標題: ${response.bestTitle}`);
-        return response.bestTitle;
+      if (response.bestIndex && response.bestTitle) {
+        const index = response.bestIndex - 1; // 轉換為 0 基礎索引
+        if (index >= 0 && index < titleCandidates.length) {
+          console.log(`🏆 選出最佳標題: ${titleCandidates[index]}`);
+          return {
+            title: titleCandidates[index],
+            index: index
+          };
+        }
       }
       
       // 如果選擇失敗，使用第一個候選標題
-      return titleCandidates[0] || this.getFallbackTitles()[0];
+      console.log('⚠️ 使用第一個標題作為默認選擇');
+      return {
+        title: titleCandidates[0] || this.getFallbackTitles()[0],
+        index: 0
+      };
       
     } catch (error) {
       console.error('❌ 選擇最佳標題失敗:', error.message);
-      return titleCandidates[0] || this.getFallbackTitles()[0];
+      return {
+        title: titleCandidates[0] || this.getFallbackTitles()[0],
+        index: 0
+      };
     }
   }
 
@@ -257,29 +281,42 @@ class AirtableService {
 
   buildTitleGenerationPrompt(content) {
     return `
-請根據以下 Podcast 內容，生成10個吸引人的標題。標題必須包含知名AI工具或公司名稱，讓用戶有熟悉感並想要點擊。
+你是一位經驗豐富的 Podcast 製作人，深知如何吸引觀眾眼光、提高點擊率，並且了解台灣聽眾的喜好。請根據以下 Podcast 內容，運用你的專業知識生成10個吸引人的標題。標題必須包含知名AI工具或公司名稱，讓用戶有熟悉感並想要點擊。
 
 內容摘要：
 ${content}
 
 標題要求：
-1. 標題長度要和下方範例差不多（約20-30字），內容要有吸引力且資訊豐富。
-2. 標題必須使用臺灣常用的繁體中文用語。
-3. 如果內容有提到特定AI工具或產品，請務必在標題中明確寫出工具名稱。
-4. 每個標題都要有明確主題、工具名稱或亮點，語氣活潑、吸睛。
-5. 適合台灣年輕族群。
+1. 聚焦明確主題：每個標題都要有一個清晰的核心主題，避免模糊不清
+2. 突顯聽眾好處或解決的痛點：明確告訴聽眾「聽了這集能獲得什麼」或「解決什麼問題」
+3. 工具選擇策略：每個標題包含 1-2 個你認為觀眾最感興趣的 AI 工具或產品名稱，不要貪多
+4. **標題長度要求：每個標題控制在 35-45 個字之間，確保內容豐富但不冗長**
+5. 標題必須使用臺灣常用的繁體中文用語，適合台灣年輕族群
+6. **重要：不要在標題開頭加上 EPxx 或任何集數編號，只要純標題內容**
 
-標題範例格式：
-- EP10 – Cursor CEO預言無Code未來！NanoBrowser一鍵操控太神
-- EP9 – Cursor + Claude：AI程式碼神器，打造未來軟體開發！
-- EP8 – AI自主溝通！DeepAgent驚人突破，Copilot與Claude聯手
-- EP7 – VEO 3超狂進化！用手機就能免費做AI影片？
-- EP6 – AI工具界核彈級更新！Veo 3自動剪、Suno寫歌、Gemini
-- EP5 – 一天做12倍事？Claude Squad拯救爆炸行程的神隊友
-- EP4 – AI幫你找創業題目、寫網站，還能自動除錯！這些工具太狂
-- EP3 – AI副業爆發中！從開店到頻道複製，每月賺50K的祕密都在這
+請使用多種風格創作，包含但不限於：
+- 資訊型：直接說明重點資訊（例：Claude 3.5 全新功能解析！5大更新讓寫程式效率翻倍）
+- 幽默型：用輕鬆詼諧的方式吸引注意（例：ChatGPT 瘋了？竟然開始教我怎麼談戀愛）
+- 誇張型：用驚嘆語氣製造衝擊感（例：太扯了！這個 AI 工具讓我一天賺進一個月薪水）
+- 對話式：像在跟朋友聊天（例：你知道嗎？Midjourney 新功能讓設計師都失業了）
 
-請生成10個不同風格的標題，以JSON格式回傳：
+標題範例（注意每個標題只聚焦 1-2 個工具，控制在 35-45 字）：
+- Cursor AI 實測心得：10個必學技巧讓開發效率暴增3倍，從此告別加班人生！
+- 我用 ChatGPT 寫情書大成功？女友說比我本人浪漫，這 AI 到底有什麼魔力？
+- Claude Code 一鍵生成完整 App？從前端到後端全包，工程師真的要失業了嗎？
+- 不用寫程式也能玩 n8n？打造超強 AI 自動化流程，連阿嬤都學會了你還等什麼！
+- 還在手動處理資料？Zapier + ChatGPT 幫你省下80%時間，老闆都懷疑你偷懶！
+- 靠 Midjourney 月入10萬？揭密7個 AI 繪圖變現術，讓創意直接變成新台幣！
+- 全世界都在瘋 Perplexity？實測後我懂了，這搜尋引擎簡直是 Google 殺手！
+- ChatGPT vs Claude 終極對決：誰才是最強 AI 程式助手？實測結果超乎想像！
+
+生成策略：
+- 先從內容中找出最熱門、最實用的 1-2 個 AI 工具作為標題主角
+- 不要在一個標題中塞入太多工具名稱，保持焦點
+- 可以用「這個工具」「神級AI」等詞彙製造懸念，但至少要明確提到一個具體工具
+- **重要：直接給出標題內容，不要在標題前面加上類型標記（如【資訊型】、【幽默型】等）**
+
+請生成10個不同風格的標題，確保涵蓋多種語氣風格，不要包含任何集數編號（如EPxx），也不要加類型標記，以JSON格式回傳：
 {
   "titles": [
     "標題1",
@@ -315,9 +352,10 @@ ${content.substring(0, 1000)}
 5. 搜尋友善：是否包含熱門關鍵字？
 6. 用語風格需貼近台灣Podcast圈常見標題
 
-請選出最佳標題，並簡述選擇理由。以JSON格式回傳：
+請選出最佳標題的編號（1-10），並簡述選擇理由。以JSON格式回傳：
 {
-  "bestTitle": "選中的最佳標題",
+  "bestIndex": 1,
+  "bestTitle": "選中的最佳標題（完整複製）",
   "reason": "選擇理由（包含評分解析）",
   "score": {
     "clickAttraction": 9,
@@ -381,79 +419,29 @@ ${content}
 
   async callGemini(prompt) {
     try {
-      console.log('🤖 呼叫 Gemini API...');
+      console.log('🤖 呼叫 OpenRouter API...');
       
-      // 如果有 Gemini API Key，使用真實 API
-      if (process.env.GEMINI_API_KEY) {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: prompt
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              topK: 40,
-              topP: 0.8,
-              maxOutputTokens: 2048,
-            }
-          })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.candidates[0].content.parts[0].text;
-          
-          // 改進的 JSON 解析邏輯
-          try {
-            // 首先嘗試直接解析
-            const parsed = JSON.parse(content);
-            console.log('✅ Gemini API 回應成功 (直接JSON)');
-            return parsed;
-          } catch (e) {
-            // 如果直接解析失敗，嘗試提取程式碼塊中的JSON
-            try {
-              // 查找 ```json 或 ``` 程式碼塊
-              const jsonBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-              if (jsonBlockMatch) {
-                const jsonStr = jsonBlockMatch[1];
-                const parsed = JSON.parse(jsonStr);
-                console.log('✅ Gemini API 回應成功 (程式碼塊JSON)');
-                return parsed;
-              }
-              
-              // 嘗試查找單獨的 { } 塊
-              const jsonMatch = content.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                console.log('✅ Gemini API 回應成功 (提取JSON)');
-                return parsed;
-              }
-              
-              console.log('⚠️ Gemini 回應不包含有效 JSON，返回純文字');
-              return { text: content };
-              
-            } catch (parseError) {
-              console.log('⚠️ Gemini JSON 解析失敗，返回純文字');
-              return { text: content };
-            }
-          }
-        } else {
-          const errorData = await response.json();
-          console.log('⚠️ Gemini API 請求失敗:', errorData);
-        }
+      // 使用 OpenRouter 服務來生成 JSON 回應
+      const result = await this.openRouter.generateJSON(prompt, {
+        temperature: 0.7,
+        maxTokens: 2048
+      });
+      
+      if (result.success && result.data) {
+        console.log(`✅ OpenRouter API 回應成功 (使用模型: ${result.model})`);
+        return result.data;
+      } else if (result.success && result.content) {
+        // 如果沒有成功解析 JSON，但有內容，嘗試返回純文字
+        console.log('⚠️ OpenRouter 回應不包含有效 JSON，返回純文字');
+        return { text: result.content };
+      } else {
+        console.log('⚠️ OpenRouter API 請求失敗:', result.error);
+        // 使用備用方案
+        return this.generateSmartFallback();
       }
       
-      // 備用方案
-      return this.generateSmartFallback();
-      
     } catch (error) {
-      console.error('❌ Gemini API 呼叫失敗:', error.message);
+      console.error('❌ OpenRouter API 呼叫失敗:', error.message);
       return this.generateSmartFallback();
     }
   }

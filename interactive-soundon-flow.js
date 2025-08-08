@@ -3,7 +3,6 @@ const { GoogleDriveService } = require('./src/services/googleDrive');
 const { AirtableService } = require('./src/services/airtable');
 const { GmailService } = require('./src/services/gmail');
 const { TitleSelectionServer } = require('./src/services/titleSelectionServer');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
@@ -41,20 +40,20 @@ async function runInteractiveSoundOnFlow() {
     const nextEpisodeNumber = await getNextEpisodeNumber(uploader);
     console.log(`✅ 下一集編號：EP${nextEpisodeNumber}\n`);
     
-    // 4. 從 Airtable 生成候選標題
-    console.log('🤖 從 Airtable 生成候選標題...');
+    // 4. 從 Airtable 生成候選標題和描述
+    console.log('🤖 從 Airtable 生成候選標題和描述...');
     const candidateData = await airtable.getLatestEpisodeContent();
     
-    // 使用 AI 生成多樣化的候選標題
-    console.log('🎯 使用 AI 生成多樣化標題選項...');
-    const candidateTitles = await generateDiverseTitles(candidateData.title, candidateData.description);
+    // 使用 Airtable 返回的標題列表和最佳標題索引
+    const candidateTitles = candidateData.titles || [candidateData.title];
+    const bestTitleIndex = candidateData.bestTitleIndex || 0;
     
-    // 使用 AI 選擇最佳標題
-    console.log('🤖 AI 正在分析並選擇最佳標題...');
-    const bestTitleIndex = await selectBestTitle(candidateTitles, candidateData.description);
-    console.log(`🏆 AI 推薦的最佳標題是第 ${bestTitleIndex + 1} 個: ${candidateTitles[bestTitleIndex]}`);
-    
-    console.log(`✅ 生成了 ${candidateTitles.length} 個候選標題\n`);
+    console.log(`✅ 獲得 ${candidateTitles.length} 個候選標題`);
+    console.log('🎯 候選標題列表：');
+    candidateTitles.forEach((title, index) => {
+      console.log(`   ${index + 1}. ${title}`);
+    });
+    console.log(`🏆 AI 推薦的最佳標題是第 ${bestTitleIndex + 1} 個: ${candidateTitles[bestTitleIndex]}\n`);
     
     // 5. 為候選標題添加集數編號
     const titlesWithEpisodeNumber = candidateTitles.map(title => 
@@ -299,144 +298,8 @@ async function getNextEpisodeNumber(uploader) {
   }
 }
 
-// 使用 Gemini AI 生成多樣化標題
-async function generateDiverseTitles(originalTitle, description) {
-  try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `
-請根據以下 Podcast 內容，生成10個吸引人的標題。標題必須包含知名AI工具或公司名稱，讓用戶有熟悉感並想要點擊。
-
-原始標題：${originalTitle}
-內容描述：${description}
-
-標題要求：
-1. 標題長度要和下方範例差不多（約20-30字），內容要有吸引力且資訊豐富。
-2. 標題必須使用臺灣常用的繁體中文用語。
-3. 如果內容有提到特定AI工具或產品，請務必在標題中明確寫出工具名稱。
-4. 每個標題都要有明確主題、工具名稱或亮點，語氣活潑、吸睛。
-5. 適合台灣年輕族群。
-
-標題範例格式：
-- Cursor CEO預言無Code未來！NanoBrowser一鍵操控太神
-- Cursor + Claude：AI程式碼神器，打造未來軟體開發！
-- AI自主溝通！DeepAgent驚人突破，Copilot與Claude聯手
-- VEO 3超狂進化！用手機就能免費做AI影片？
-- AI工具界核彈級更新！Veo 3自動剪、Suno寫歌、Gemini
-- 一天做12倍事？Claude Squad拯救爆炸行程的神隊友
-- AI幫你找創業題目、寫網站，還能自動除錯！這些工具太狂
-- AI副業爆發中！從開店到頻道複製，每月賺50K的祕密都在這
-
-請直接提供 10 個標題，每行一個，不要編號，不要其他說明文字。
-`;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    // 解析生成的標題
-    const generatedTitles = text.split('\n')
-      .map(title => title.trim())
-      .filter(title => title.length > 0 && !title.match(/^\d+[\.\)]/)) // 過濾掉編號
-      .slice(0, 10); // 確保只取前10個
-
-    // 如果生成的標題不足10個，補充一些備用標題
-    if (generatedTitles.length < 10) {
-      const backupTitles = [
-        `${originalTitle} | 深度解析`,
-        `今日焦點：${originalTitle}`,
-        `AI 前線報導：${originalTitle}`,
-        `科技新知：${originalTitle}`,
-        `數位時代：${originalTitle}`,
-        `熱門話題：${originalTitle}`,
-        `最新消息：${originalTitle}`,
-        `科技趨勢：${originalTitle}`
-      ];
-      
-      // 添加備用標題直到達到10個
-      for (const backup of backupTitles) {
-        if (generatedTitles.length >= 10) break;
-        if (!generatedTitles.includes(backup)) {
-          generatedTitles.push(backup);
-        }
-      }
-    }
-
-    console.log('🎨 AI 生成的候選標題：');
-    generatedTitles.forEach((title, index) => {
-      console.log(`   ${index + 1}. ${title}`);
-    });
-
-    return generatedTitles.slice(0, 10); // 確保返回10個標題
-
-  } catch (error) {
-    console.error('❌ AI 標題生成失敗:', error);
-    console.log('⚠️ 使用備用標題生成方式...');
-    
-    // 備用方案：手動生成多樣化標題
-    return [
-      originalTitle,
-      `${originalTitle} | 深度解析`,
-      `今日焦點：${originalTitle}`,
-      `AI 前線報導：${originalTitle}`,
-      `科技新知：${originalTitle}`,
-      `數位時代：${originalTitle}`,
-      `熱門話題：${originalTitle}`,
-      `最新消息：${originalTitle}`,
-      `科技趨勢：${originalTitle}`,
-      `創新科技：${originalTitle}`
-    ];
-  }
-}
-
-// 使用 AI 選擇最佳標題
-async function selectBestTitle(candidateTitles, description) {
-  try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `
-你是一個專業的 Podcast 標題評估專家。請從以下 ${candidateTitles.length} 個候選標題中選出最佳的一個。
-
-內容描述：${description}
-
-候選標題：
-${candidateTitles.map((title, index) => `${index + 1}. ${title}`).join('\n')}
-
-評估標準：
-1. 吸引力和點擊率潛力
-2. 與內容的相關性
-3. SEO 友好度
-4. 社交媒體分享潛力
-5. 目標受眾的興趣匹配度
-6. 標題的獨特性和記憶點
-7. 用語需貼近台灣Podcast圈常見標題
-8. 會讓AI學習者點進來的標題
-
-請只回答最佳標題的編號（1-${candidateTitles.length}），不要其他說明。
-`;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text().trim();
-    
-    // 解析AI選擇的編號
-    const selectedNumber = parseInt(text.match(/\d+/)?.[0]);
-    
-    if (selectedNumber && selectedNumber >= 1 && selectedNumber <= candidateTitles.length) {
-      return selectedNumber - 1; // 轉換為0基索引
-    } else {
-      console.log('⚠️ AI 選擇結果無效，使用第一個標題作為默認');
-      return 0;
-    }
-
-  } catch (error) {
-    console.error('❌ AI 最佳標題選擇失敗:', error);
-    console.log('⚠️ 使用第一個標題作為默認最佳選擇');
-    return 0; // 默認選擇第一個標題
-  }
-}
+// 注意：標題生成和選擇邏輯已移至 AirtableService
+// 使用 OpenRouter API 統一處理所有 AI 請求
 
 // 帶超時機制的標題選擇等待
 async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs) {
