@@ -584,17 +584,17 @@ class SoundOnUploader {
     try {
       this.logger.info('設定廣告選項...');
       
-      // 片頭動態廣告選擇"是"
-      const preAdYesRadio = this.page.locator('#daiStatus input[type="radio"][value="active"]');
-      await preAdYesRadio.waitFor({ timeout: 10000 });
-      await preAdYesRadio.check();
-      this.logger.info('片頭動態廣告已選擇"是"');
+      // 片頭動態廣告選擇"否"
+      const preAdNoRadio = this.page.locator('#daiStatus input[type="radio"][value="inactive"]');
+      await preAdNoRadio.waitFor({ timeout: 10000 });
+      await preAdNoRadio.check();
+      this.logger.info('片頭動態廣告已選擇"否"');
       
-      // 片中動態廣告選擇"是"
-      const midAdYesRadio = this.page.locator('#daiMiddleStatus input[type="radio"][value="active"]');
-      await midAdYesRadio.waitFor({ timeout: 10000 });
-      await midAdYesRadio.check();
-      this.logger.info('片中動態廣告已選擇"是"');
+      // 片中動態廣告選擇"否"
+      const midAdNoRadio = this.page.locator('#daiMiddleStatus input[type="radio"][value="inactive"]');
+      await midAdNoRadio.waitFor({ timeout: 10000 });
+      await midAdNoRadio.check();
+      this.logger.info('片中動態廣告已選擇"否"');
       
       return true;
       

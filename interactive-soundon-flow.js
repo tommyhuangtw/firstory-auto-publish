@@ -159,7 +159,7 @@ async function runInteractiveSoundOnFlow() {
     if (!adSuccess) {
       console.log('⚠️ 設定動態廣告選項失敗，但繼續流程');
     } else {
-      console.log('✅ 動態廣告選項設定成功（片頭和片中都選擇"是"）\n');
+      console.log('✅ 動態廣告選項設定成功（片頭和片中都選擇"否"）\n');
     }
     
     console.log('🖼️ 上傳封面圖片...');
