@@ -14,6 +14,7 @@ async function runInteractiveSoundOnFlow() {
   const gmail = new GmailService();
   const titleServer = new TitleSelectionServer();
   
+  const downloadedFilePaths = [];
   try {
     console.log('🎙️ 開始 SoundOn 互動式自動上傳流程...\n');
     
@@ -79,8 +80,23 @@ async function runInteractiveSoundOnFlow() {
     await gmail.sendTitleConfirmationEmail(titlesWithEpisodeNumber, candidateData.description, serverPort, nextEpisodeNumber, publicUrl);
     console.log('✅ 標題確認郵件已發送\n');
     
-    // 8. 等待用戶選擇標題（帶超時機制）
-    console.log('⏳ 等待用戶選擇標題...');
+    // 8. 下載音檔並行轉換
+    console.log('⏳ 在等待用戶選擇標題的同時，背景開始下載及轉檔...');
+    const audioPromise = googleDrive.downloadLatestAudioFile()
+      .then(audioResult => {
+        console.log(`✅ 音檔下載完成: ${audioResult.originalName}`);
+        console.log(`📁 音檔路徑: ${audioResult.path}`);
+        downloadedFilePaths.push(audioResult.path); // 追蹤原始音檔
+        return convertAudioToMp3(audioResult.path);
+      })
+      .then(mp3Path => {
+        if (mp3Path !== downloadedFilePaths[0]) {
+          downloadedFilePaths.push(mp3Path); // 追蹤轉換後的 MP3
+        }
+        return mp3Path;
+      });
+
+    // 9. 等待用戶選擇標題（帶超時機制）
     console.log('📱 請檢查您的郵件並點擊喜歡的標題');
     console.log('⏰ 如果 2 分鐘內沒有選擇，將自動使用 AI 推薦的最佳標題');
     
@@ -95,31 +111,27 @@ async function runInteractiveSoundOnFlow() {
       console.log(`✅ 用戶選擇了標題: ${selectedTitleData.title}\n`);
     }
     
-    // 9. 關閉標題選擇服務器
+    // 10. 關閉標題選擇服務器
     await titleServer.stop();
     
-    // 10. 下載 Google Drive 檔案
-    console.log('📥 從 Google Drive 下載檔案...');
-    
-    // 下載音檔
-    console.log('🎵 下載最新音檔...');
-    const audioResult = await googleDrive.downloadLatestAudioFile();
-    console.log(`✅ 音檔下載完成: ${audioResult.originalName}`);
-    console.log(`📁 音檔路徑: ${audioResult.path}`);
-    
-    // 下載封面圖片
+    // 11. 等待音檔處理完成
+    console.log('⏳ 等待音檔處理完成...');
+    const finalAudioPath = await audioPromise;
+    console.log(`✅ 音檔已準備就緒: ${finalAudioPath}\n`);
+
+    // 12. 下載封面圖片
     console.log('🖼️ 下載最新封面圖片...');
     const coverResult = await googleDrive.downloadLatestCoverImage();
     console.log(`✅ 封面圖片下載完成: ${coverResult.originalName}`);
     console.log(`📁 封面圖片路徑: ${coverResult.path}\n`);
     
-    // 11. 開始上傳流程
+    // 13. 開始上傳流程
     console.log('🚀 開始上傳到 SoundOn...');
     
     const episodeData = {
       title: selectedTitleData.title, // 已經包含 EP 編號
       description: candidateData.description,
-      audioPath: audioResult.path,
+      audioPath: finalAudioPath, // 使用轉換後的 MP3 路徑
       coverPath: coverResult.path
     };
     
@@ -193,7 +205,15 @@ async function runInteractiveSoundOnFlow() {
   } finally {
     // 清理臨時文件
     try {
-      const tempFiles = ['temp/daily_podcast_chinese_*', 'temp/AI懶人報用圖_*'];
+      // 清理音檔
+      downloadedFilePaths.forEach(filePath => {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`🗑️ 已清理音檔: ${filePath}`);
+        }
+      });
+
+      const tempFiles = ['temp/AI懶人報用圖_*'];
       for (const pattern of tempFiles) {
         const files = require('glob').sync(pattern);
         files.forEach(file => {
@@ -331,6 +351,40 @@ async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs)
       }
     });
   });
+}
+
+async function convertAudioToMp3(audioPath) {
+  console.log('🔧 開始將音檔轉換為 MP3 格式...');
+  
+  const originalExt = path.extname(audioPath);
+  let mp3Path;
+  if (originalExt) {
+    mp3Path = audioPath.replace(originalExt, '.mp3');
+  } else {
+    mp3Path = audioPath + '.mp3';
+  }
+  const command = `ffmpeg -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const process = require('child_process').exec(command, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`❌ FFmpeg 轉換失敗: ${error.message}`);
+          console.error(`-- FFmpeg stderr: ${stderr}`);
+          return reject(error);
+        }
+        console.log('✅ FFmpeg 轉換成功！');
+        if (stdout) console.log(`-- FFmpeg stdout: ${stdout}`);
+        resolve();
+      });
+    });
+    
+    console.log(`✅ 成功轉換音檔為 MP3: ${mp3Path}`);
+    return mp3Path;
+  } catch (error) {
+    console.error('❌ 音檔轉換為 MP3 失敗:', error);
+    throw error;
+  }
 }
 
 // 如果直接執行此腳本

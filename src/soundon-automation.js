@@ -199,16 +199,62 @@ AI懶人報 Podcast
     }
   }
 
+  async convertAudioToMp3(audioPath) {
+    this.logger.info('開始將音檔轉換為 MP3 格式...');
+    
+    const originalExt = path.extname(audioPath);
+    let mp3Path;
+    if (originalExt) {
+      mp3Path = audioPath.replace(originalExt, '.mp3');
+    } else {
+      mp3Path = audioPath + '.mp3';
+    }
+
+    const command = `ffmpeg -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
+
+    try {
+      await new Promise((resolve, reject) => {
+        const process = require('child_process').exec(command, (error, stdout, stderr) => {
+          if (error) {
+            this.logger.error(`FFmpeg 轉換失敗: ${error.message}`);
+            this.logger.error(`FFmpeg stderr: ${stderr}`);
+            return reject(error);
+          }
+          this.logger.info('FFmpeg 轉換成功！');
+          this.logger.info(`FFmpeg stdout: ${stdout}`);
+          resolve();
+        });
+      });
+      
+      this.logger.info(`成功轉換音檔為 MP3: ${mp3Path}`);
+      return mp3Path;
+    } catch (error) {
+      this.logger.error('音檔轉換為 MP3 失敗:', error);
+      throw error;
+    }
+  }
+
   async run() {
+    const downloadedFilePaths = [];
     try {
       // 初始化系統
       await this.initialize();
       
       // 下載最新音檔
       const audioInfo = await this.downloadLatestAudio();
+      downloadedFilePaths.push(audioInfo.path);
+      
+      // 轉換音檔為 MP3
+      const mp3AudioPath = await this.convertAudioToMp3(audioInfo.path);
+      if (mp3AudioPath !== audioInfo.path) {
+        downloadedFilePaths.push(mp3AudioPath);
+      }
+      
+      // 更新 audioInfo 中的路徑
+      const mp3AudioInfo = { ...audioInfo, path: mp3AudioPath };
       
       // 上傳到 SoundOn
-      await this.uploadToSoundOn(audioInfo);
+      await this.uploadToSoundOn(mp3AudioInfo);
       
       this.logger.info('🎉 自動化流程完成！');
       
@@ -217,6 +263,17 @@ AI懶人報 Podcast
       throw error;
     } finally {
       // 清理資源
+      try {
+        downloadedFilePaths.forEach(filePath => {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            this.logger.info(`🗑️ 已清理音檔: ${filePath}`);
+          }
+        });
+      } catch (cleanupError) {
+        this.logger.error('清理音檔時發生錯誤:', cleanupError.message);
+      }
+
       if (this.soundonUploader) {
         await this.soundonUploader.close();
       }
