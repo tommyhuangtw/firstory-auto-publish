@@ -232,84 +232,198 @@ async function runInteractiveSoundOnFlow() {
   }
 }
 
-// 新增函數：獲取下一集編號
+// 新增函數：獲取下一集編號 - 改進版本，解決超時問題
 async function getNextEpisodeNumber(uploader) {
   try {
     console.log('🔍 正在分析現有單集列表...');
-    
-    // 嘗試從單集列表頁面解析EP編號
-    try {
-      // 從當前頁面導航到單集管理頁面
-      console.log('🌐 導航到單集管理頁面...');
-      
-      // 等待頁面載入完成
-      await uploader.page.waitForLoadState('networkidle');
-      
-      // 尋找並點擊單集管理連結
-      const episodeManagementSelector = 'a[href*="/episodes"], a[href*="單集"], .menu-item:has-text("單集"), [data-testid*="episode"]';
-      
+
+    // 嘗試從單集列表頁面解析EP編號，使用重試機制
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await uploader.page.waitForSelector(episodeManagementSelector, { timeout: 5000 });
-        await uploader.page.click(episodeManagementSelector);
-        console.log('✅ 成功點擊單集管理連結');
-      } catch (clickError) {
-        // 如果找不到連結，直接導航到URL
-        console.log('⚠️ 找不到單集管理連結，嘗試直接導航...');
-        await uploader.page.goto('https://soundon.fm/app/podcasts/ca974d36-6fcc-46fc-a339-ba7ed8902c80/episodes', { 
-          waitUntil: 'networkidle',
-          timeout: 30000 
-        });
-      }
-      
-      // 等待單集列表表格載入
-      console.log('⏳ 等待單集列表載入...');
-      await uploader.page.waitForSelector('.episode-title-link', { timeout: 15000 });
-      console.log('✅ 單集列表載入完成');
-      
-      // 獲取所有單集標題
-      const episodeTitles = await uploader.page.evaluate(() => {
-        const titleLinks = document.querySelectorAll('.episode-title-link');
-        return Array.from(titleLinks).map(link => link.textContent.trim());
-      });
-      
-      console.log(`📋 找到 ${episodeTitles.length} 個單集:`);
-      episodeTitles.slice(0, 5).forEach((title, index) => {
-        console.log(`   ${index + 1}. ${title}`);
-      });
-      
-      // 解析EP編號
-      const episodeNumbers = [];
-      episodeTitles.forEach(title => {
-        const match = title.match(/^EP(\d+)/);
-        if (match) {
-          const epNumber = parseInt(match[1]);
-          episodeNumbers.push(epNumber);
+        console.log(`🌐 導航到單集管理頁面 (第 ${attempt} 次嘗試)...`);
+
+        // 改進的頁面載入檢測 - 使用 domcontentloaded 替代 networkidle
+        const pageLoadTimeout = parseInt(process.env.PAGE_LOAD_TIMEOUT) || 60000;
+        await uploader.page.waitForLoadState('domcontentloaded', { timeout: pageLoadTimeout });
+        console.log('✅ 基本頁面結構載入完成');
+
+        // 等待一小段時間讓動態內容載入
+        await uploader.page.waitForTimeout(2000);
+
+        // 增強的單集管理連結選擇器
+        const episodeManagementSelectors = [
+          'a[href*="/episodes"]',
+          'a[href*="單集"]',
+          '.menu-item:has-text("單集")',
+          '[data-testid*="episode"]',
+          'nav a:has-text("單集")',
+          '.ant-menu-item:has-text("單集")',
+          'a:has-text("Episode")',
+          'button:has-text("單集管理")'
+        ];
+
+        let navigationSuccess = false;
+
+        // 嘗試點擊單集管理連結
+        for (const selector of episodeManagementSelectors) {
+          try {
+            console.log(`🔍 嘗試選擇器: ${selector}`);
+            const element = uploader.page.locator(selector);
+            const count = await element.count();
+
+            if (count > 0) {
+              const elementWaitTimeout = parseInt(process.env.ELEMENT_WAIT_TIMEOUT) || 30000;
+            const isVisible = await element.first().isVisible({ timeout: Math.min(elementWaitTimeout / 10, 3000) });
+              if (isVisible) {
+                await element.first().click();
+                console.log(`✅ 成功點擊單集管理連結: ${selector}`);
+                navigationSuccess = true;
+                break;
+              }
+            }
+          } catch (selectorError) {
+            console.log(`⚠️ 選擇器失敗: ${selector}`);
+            continue;
+          }
         }
-      });
-      
-      if (episodeNumbers.length > 0) {
-        // 找出最大的EP編號
-        const maxEpisodeNumber = Math.max(...episodeNumbers);
-        const nextEpisodeNumber = maxEpisodeNumber + 1;
-        
-        console.log(`📊 找到的EP編號: ${episodeNumbers.sort((a, b) => b - a).slice(0, 5).join(', ')}...`);
-        console.log(`🎯 最新集數: EP${maxEpisodeNumber}`);
-        console.log(`🎯 下一集將是: EP${nextEpisodeNumber}`);
-        
-        return nextEpisodeNumber;
-      } else {
-        throw new Error('無法從標題中解析出EP編號');
+
+        // 如果無法透過連結導航，直接前往URL
+        if (!navigationSuccess) {
+          console.log('⚠️ 找不到單集管理連結，嘗試直接導航...');
+          const navigationTimeout = parseInt(process.env.NAVIGATION_TIMEOUT) || 60000;
+          await uploader.page.goto('https://soundon.fm/app/podcasts/ca974d36-6fcc-46fc-a339-ba7ed8902c80/episodes', {
+            waitUntil: 'domcontentloaded',
+            timeout: navigationTimeout
+          });
+
+          // 等待頁面完全載入
+          await uploader.page.waitForTimeout(3000);
+        }
+
+        // 等待單集列表載入，使用多種選擇器
+        console.log('⏳ 等待單集列表載入...');
+        const episodeListSelectors = [
+          '.episode-title-link',
+          '.ant-table-tbody tr',
+          '[data-testid="episode-list"]',
+          '.episode-item',
+          'table tr td a',
+          '.episode-row'
+        ];
+
+        let episodeListFound = false;
+        const elementWaitTimeout = parseInt(process.env.ELEMENT_WAIT_TIMEOUT) || 30000;
+        for (const selector of episodeListSelectors) {
+          try {
+            await uploader.page.waitForSelector(selector, { timeout: elementWaitTimeout });
+            console.log(`✅ 單集列表載入完成 (使用選擇器: ${selector})`);
+            episodeListFound = true;
+            break;
+          } catch (listError) {
+            console.log(`⚠️ 選擇器未找到: ${selector}`);
+            continue;
+          }
+        }
+
+        if (!episodeListFound) {
+          throw new Error('無法找到單集列表');
+        }
+
+        // 等待額外時間確保內容完全載入
+        await uploader.page.waitForTimeout(2000);
+
+        // 獲取所有單集標題，使用多種方法
+        let episodeTitles = [];
+
+        // 方法1: 標準的 episode-title-link
+        try {
+          episodeTitles = await uploader.page.evaluate(() => {
+            const titleLinks = document.querySelectorAll('.episode-title-link');
+            return Array.from(titleLinks).map(link => link.textContent.trim());
+          });
+        } catch (e) {
+          console.log('⚠️ 方法1失敗，嘗試方法2...');
+        }
+
+        // 方法2: 表格中的連結
+        if (episodeTitles.length === 0) {
+          try {
+            episodeTitles = await uploader.page.evaluate(() => {
+              const tableLinks = document.querySelectorAll('table tr td a, .ant-table-tbody tr td a');
+              return Array.from(tableLinks).map(link => link.textContent.trim()).filter(text => text.includes('EP'));
+            });
+          } catch (e) {
+            console.log('⚠️ 方法2失敗，嘗試方法3...');
+          }
+        }
+
+        // 方法3: 任何包含EP的文本
+        if (episodeTitles.length === 0) {
+          try {
+            episodeTitles = await uploader.page.evaluate(() => {
+              const allElements = document.querySelectorAll('*');
+              const episodeTitles = [];
+              for (const element of allElements) {
+                const text = element.textContent?.trim();
+                if (text && text.match(/^EP\d+/)) {
+                  episodeTitles.push(text);
+                }
+              }
+              return [...new Set(episodeTitles)]; // 去重
+            });
+          } catch (e) {
+            console.log('⚠️ 方法3也失敗了');
+          }
+        }
+
+        console.log(`📋 找到 ${episodeTitles.length} 個單集:`);
+        episodeTitles.slice(0, 5).forEach((title, index) => {
+          console.log(`   ${index + 1}. ${title}`);
+        });
+
+        // 解析EP編號
+        const episodeNumbers = [];
+        episodeTitles.forEach(title => {
+          const match = title.match(/^EP(\d+)/);
+          if (match) {
+            const epNumber = parseInt(match[1]);
+            episodeNumbers.push(epNumber);
+          }
+        });
+
+        if (episodeNumbers.length > 0) {
+          // 找出最大的EP編號
+          const maxEpisodeNumber = Math.max(...episodeNumbers);
+          const nextEpisodeNumber = maxEpisodeNumber + 1;
+
+          console.log(`📊 找到的EP編號: ${episodeNumbers.sort((a, b) => b - a).slice(0, 5).join(', ')}...`);
+          console.log(`🎯 最新集數: EP${maxEpisodeNumber}`);
+          console.log(`🎯 下一集將是: EP${nextEpisodeNumber}`);
+
+          return nextEpisodeNumber;
+        } else {
+          throw new Error('無法從標題中解析出EP編號');
+        }
+
+      } catch (parseError) {
+        console.error(`❌ 第 ${attempt} 次嘗試失敗:`, parseError.message);
+
+        if (attempt < 3) {
+          const retryDelay = (parseInt(process.env.RETRY_DELAY_BASE) || 2000) * attempt;
+          console.log(`⏳ 等待 ${retryDelay / 1000} 秒後重試...`);
+          await uploader.page.waitForTimeout(retryDelay);
+          continue;
+        } else {
+          console.log('⚠️ 所有嘗試都失敗，使用備用方案...');
+          break;
+        }
       }
-      
-    } catch (parseError) {
-      console.error('❌ 自動解析集數失敗:', parseError.message);
-      console.log('⚠️ 使用備用方案...');
-      
-      // 備用方案：基於已知信息
-      console.log('📊 基於HTML顯示，最新集數應該是 EP10');
-      console.log('🎯 下一集將是: EP11');
-      return 11;
     }
+
+    // 備用方案：基於已知信息
+    console.log('📊 基於HTML顯示，最新集數應該是 EP10');
+    console.log('🎯 下一集將是: EP11');
+    return 11;
 
   } catch (error) {
     console.error('❌ 獲取集數失敗:', error);
@@ -363,7 +477,7 @@ async function convertAudioToMp3(audioPath) {
   } else {
     mp3Path = audioPath + '.mp3';
   }
-  const command = `ffmpeg -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
+  const command = `ffmpeg -y -nostdin -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
 
   try {
     await new Promise((resolve, reject) => {

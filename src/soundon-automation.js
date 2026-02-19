@@ -207,13 +207,12 @@ AI懶人報 Podcast
     if (originalExt) {
       mp3Path = audioPath.replace(originalExt, '.mp3');
     } else {
-      mp3Path = audioPath + '.mp3';
-    }
-
-    const command = `ffmpeg -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
-
-    try {
-      await new Promise((resolve, reject) => {
+            mp3Path = audioPath + '.mp3';
+          }
+          const command = `ffmpeg -y -nostdin -i "${audioPath}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`;
+      
+          try {
+            await new Promise((resolve, reject) => {
         const process = require('child_process').exec(command, (error, stdout, stderr) => {
           if (error) {
             this.logger.error(`FFmpeg 轉換失敗: ${error.message}`);

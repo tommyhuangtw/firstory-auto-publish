@@ -24,12 +24,15 @@ class SoundOnUploader {
       headless: process.env.PLAYWRIGHT_HEADLESS === 'true',
       slowMo: 1000,
       viewport: { width: 1920, height: 1080 },
+      timeout: 60000, // 增加瀏覽器啟動超時時間
       args: [
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
-        '--disable-backgrounding-occluded-windows'
+        '--disable-backgrounding-occluded-windows',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
       ]
     };
 
@@ -95,69 +98,92 @@ class SoundOnUploader {
   }
 
   async login() {
-    try {
-      this.logger.info('開始 SoundOn 登入流程...');
-      
-      // 1. 進入登入頁面
-      await this.page.goto('https://host.soundon.fm/app/podcasts/ca974d36-6fcc-46fc-a339-ba7ed8902c80/episodes', { waitUntil: 'domcontentloaded' });
-      this.logger.info('已進入 SoundOn 登入頁面');
-      
-      // 檢查是否已經登入
-      if (this.page.url().includes('/episodes')) {
-        this.logger.info('已處於登入狀態');
-        return true;
+    // 重試登入最多3次
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        this.logger.info(`開始 SoundOn 登入流程 (第 ${attempt} 次嘗試)...`);
+
+        // 1. 進入登入頁面，使用可配置的超時時間
+        const navigationTimeout = parseInt(process.env.NAVIGATION_TIMEOUT) || 60000;
+        await this.page.goto('https://host.soundon.fm/app/podcasts/ca974d36-6fcc-46fc-a339-ba7ed8902c80/episodes', {
+          waitUntil: 'domcontentloaded',
+          timeout: navigationTimeout
+        });
+        this.logger.info('已進入 SoundOn 登入頁面');
+
+        // 等待頁面穩定
+        await this.page.waitForTimeout(2000);
+
+        // 檢查是否已經登入
+        if (this.page.url().includes('/episodes')) {
+          this.logger.info('已處於登入狀態');
+          return true;
+        }
+
+        // 等待 email 輸入框出現，使用可配置的超時時間
+        const elementWaitTimeout = parseInt(process.env.ELEMENT_WAIT_TIMEOUT) || 30000;
+        const emailInput = this.page.locator('input[type="email"], input[name="email"]');
+        await emailInput.waitFor({ timeout: elementWaitTimeout });
+
+        // 2. 填入登入資訊
+        const email = 'tommyhuang0511@gmail.com';
+        const password = 'Lanrenbao654183!';
+
+        this.logger.info(`使用帳號登入: ${email}`);
+
+        await emailInput.fill(email);
+        this.logger.info('Email 已填入');
+
+        const passwordInput = this.page.locator('input[type="password"], input[name="password"]');
+        await passwordInput.fill(password);
+        this.logger.info('密碼已填入');
+
+        // 3. 點擊登入按鈕
+        const loginButton = this.page.locator('button[type="submit"], button:has-text("登入")');
+        await loginButton.click();
+        this.logger.info('已點擊登入按鈕');
+
+        // 4. 等待登入完成或失敗，使用可配置的超時時間
+        const loginTimeout = parseInt(process.env.LOGIN_TIMEOUT) || 60000;
+        this.logger.info('等待登入結果...');
+        await Promise.race([
+          // 成功：URL 變為 dashboard
+          this.page.waitForURL('**/episodes', { timeout: loginTimeout }),
+          // 失敗：出現錯誤訊息
+          this.page.locator('text="登入失敗", text="帳號或密碼錯誤"').waitFor({ timeout: loginTimeout })
+        ]);
+
+        // 5. 檢查是否成功登入
+        const finalUrl = this.page.url();
+        this.logger.info(`登入後 URL: ${finalUrl}`);
+
+        if (finalUrl.includes('/episodes')) {
+          this.logger.info('登入成功，已進入 SoundOn Dashboard');
+          await this.saveCookies();
+          return true;
+        } else {
+          const errorMessage = await this.page.locator('text="登入失敗", text="帳號或密碼錯誤"').textContent().catch(() => '未找到明確的錯誤訊息');
+          throw new Error(`登入後無法進入 dashboard，當前 URL: ${finalUrl}。錯誤訊息: ${errorMessage}`);
+        }
+
+      } catch (error) {
+        this.logger.error(`第 ${attempt} 次登入嘗試失敗:`, error);
+
+        if (attempt < 3) {
+          const retryDelay = (parseInt(process.env.RETRY_DELAY_BASE) || 2000) * attempt;
+          this.logger.info(`⏳ 等待 ${retryDelay / 1000} 秒後重試...`);
+          await this.page.waitForTimeout(retryDelay);
+          continue;
+        } else {
+          await this.page.screenshot({ path: 'temp/login-error.png' });
+          this.logger.info('登入錯誤截圖已保存');
+          return false;
+        }
       }
-      
-      // 等待 email 輸入框出現
-      const emailInput = this.page.locator('input[type="email"], input[name="email"]');
-      await emailInput.waitFor({ timeout: 20000 });
-
-      // 2. 填入登入資訊
-      const email = 'tommyhuang0511@gmail.com';
-      const password = 'Lanrenbao654183!';
-      
-      this.logger.info(`使用帳號登入: ${email}`);
-
-      await emailInput.fill(email);
-      this.logger.info('Email 已填入');
-
-      const passwordInput = this.page.locator('input[type="password"], input[name="password"]');
-      await passwordInput.fill(password);
-      this.logger.info('密碼已填入');
-
-      // 3. 點擊登入按鈕
-      const loginButton = this.page.locator('button[type="submit"], button:has-text("登入")');
-      await loginButton.click();
-      this.logger.info('已點擊登入按鈕');
-
-      // 4. 等待登入完成或失敗
-      this.logger.info('等待登入結果...');
-      await Promise.race([
-        // 成功：URL 變為 dashboard
-        this.page.waitForURL('**/episodes', { timeout: 30000 }),
-        // 失敗：出現錯誤訊息
-        this.page.locator('text="登入失敗", text="帳號或密碼錯誤"').waitFor({ timeout: 30000 })
-      ]);
-
-      // 5. 檢查是否成功登入
-      const finalUrl = this.page.url();
-      this.logger.info(`登入後 URL: ${finalUrl}`);
-      
-      if (finalUrl.includes('/episodes')) {
-        this.logger.info('登入成功，已進入 SoundOn Dashboard');
-        await this.saveCookies();
-        return true;
-      } else {
-        const errorMessage = await this.page.locator('text="登入失敗", text="帳號或密碼錯誤"').textContent().catch(() => '未找到明確的錯誤訊息');
-        throw new Error(`登入後無法進入 dashboard，當前 URL: ${finalUrl}。錯誤訊息: ${errorMessage}`);
-      }
-      
-    } catch (error) {
-      this.logger.error('登入失敗:', error);
-      await this.page.screenshot({ path: 'temp/login-error.png' });
-      this.logger.info('登入錯誤截圖已保存');
-      return false;
     }
+
+    // 如果所有嘗試都失敗
+    return false;
   }
 
   async clickNewEpisode() {

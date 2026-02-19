@@ -149,22 +149,33 @@ class AirtableService {
       // 使用 AI 生成標題和描述
       const generatedContent = await this.generateTitleAndDescription(emailHtml);
       
+      // 歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
+      // 👉 https://buymeacoffee.com/ailanrenbao
+
       const appendedText = `
+    🚀 本集節目由 VoAI 絕好聲創 提供技術支援。
+    🎤 VoAI 提供最有「台灣味」的 AI 聲音，支援情感語音、文字轉 Podcast、聲音複製，甚至能一鍵生成虛擬人！
+    
+    🔥 現在輸入優惠碼 AILRB26
+    結帳直接享 95% 折扣！
 
-歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
-👉 https://buymeacoffee.com/ailanrenbao
+    如果使用的是 API 方案，
+    還可以再多送 10% 用量加碼 💪
+    👉 立刻體驗：https://www.voai.ai/
+  
+    `;
 
-🚀 特別感謝贊助
-本集節目由 VoAI 絕好聲創 提供技術支援。
-🎤 VoAI 提供最有「台灣味」的 AI 聲音，支援情感語音、台式口音，甚至能一鍵生成虛擬人！
-👉 立刻體驗：https://www.voai.ai/`;
+    const appendedText2 =  `
+    歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
+    👉 https://buymeacoffee.com/ailanrenbao
+    `
 
       return {
         recordId: record.id,
         title: generatedContent.title,
         titles: generatedContent.titles,
         bestTitleIndex: generatedContent.bestTitleIndex,
-        description: generatedContent.description + appendedText,
+        description: appendedText + generatedContent.description + appendedText2,
         originalEmailHtml: emailHtml,
         date: record.get('Date'),
         rawContent: record.get('Raw Podcast Summary Raw') || '', // 可能的備用欄位
