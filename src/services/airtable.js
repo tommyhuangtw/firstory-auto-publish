@@ -152,8 +152,7 @@ class AirtableService {
       // 歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
       // 👉 https://buymeacoffee.com/ailanrenbao
 
-      const appendedText = `
-    🚀 本集節目由 VoAI 絕好聲創 提供技術支援。
+      const appendedText = `🚀 本集節目由 VoAI 絕好聲創 提供技術支援。
     🎤 VoAI 提供最有「台灣味」的 AI 聲音，支援情感語音、文字轉 Podcast、聲音複製，甚至能一鍵生成虛擬人！
     
     🔥 現在輸入優惠碼 AILRB26
@@ -162,10 +161,12 @@ class AirtableService {
     如果使用的是 API 方案，
     還可以再多送 10% 用量加碼 💪
     👉 立刻體驗：https://www.voai.ai/
-  
+
+
     `;
 
     const appendedText2 =  `
+
     歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
     👉 https://buymeacoffee.com/ailanrenbao
     `
