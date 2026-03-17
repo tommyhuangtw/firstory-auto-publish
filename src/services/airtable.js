@@ -162,7 +162,6 @@ class AirtableService {
     還可以再多送 10% 用量加碼 💪
     👉 立刻體驗：https://www.voai.ai/
 
-
     `;
 
     const appendedText2 =  `
