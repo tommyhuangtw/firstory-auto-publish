@@ -121,7 +121,7 @@ class AirtableService {
     }
   }
 
-  async getLatestEpisodeContent() {
+  async getLatestEpisodeContent(segment = null) {
     try {
       console.log('📊 從 Airtable 獲取最新單集內容...');
       console.log(`🔍 連接到表格: ${this.tableName}`);
@@ -147,22 +147,28 @@ class AirtableService {
       console.log(`📄 Email html 長度: ${emailHtml.length} 字元`);
       
       // 使用 AI 生成標題和描述
-      const generatedContent = await this.generateTitleAndDescription(emailHtml);
+      const generatedContent = await this.generateTitleAndDescription(emailHtml, segment);
       
       // 歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
       // 👉 https://buymeacoffee.com/ailanrenbao
 
-      const appendedText = `🚀 本集節目由 VoAI 絕好聲創 提供技術支援。
-    🎤 VoAI 提供最有「台灣味」的 AI 聲音，支援情感語音、文字轉 Podcast、聲音複製，甚至能一鍵生成虛擬人！
-    
-    🔥 現在輸入優惠碼 AILRB26
-    結帳直接享 95% 折扣！
+      // [保留] 舊 VoAI 業配文：
+      // const appendedText_voai = `🚀 本集節目由 VoAI 絕好聲創 提供技術支援。
+      // 🎤 VoAI 提供最有「台灣味」的 AI 聲音，支援情感語音、文字轉 Podcast、聲音複製，甚至能一鍵生成虛擬人！
+      // 🔥 現在輸入優惠碼 AILRB26 結帳直接享 95% 折扣！
+      // 如果使用的是 API 方案，還可以再多送 10% 用量加碼 💪
+      // 👉 立刻體驗：https://www.voai.ai/`;
 
-    如果使用的是 API 方案，
-    還可以再多送 10% 用量加碼 💪
-    👉 立刻體驗：https://www.voai.ai/
+      const appendedText = `🔥 《AI 懶人報》一週五更、16 萬人次、科技榜 #2 的自動化祕密公開！
+想知道如何用 AI 打造一套能衝榜、還能接到 NordVPN 業配的「自動化內容產線」嗎？
+我直接拆解了 104 個 n8n 節點流程與完整 Prompts，把這套獲利思維送給你。
+(內容包含：自動選題、台灣口音校對、業配自動插入、多路發布系統)
 
-    `;
+🎁 限時 7 天 4 折優惠（NT. 2,490）：
+👉 優惠連結：
+portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK
+
+`;
 
     const appendedText2 =  `
 
@@ -176,6 +182,7 @@ class AirtableService {
         titles: generatedContent.titles,
         bestTitleIndex: generatedContent.bestTitleIndex,
         description: appendedText + generatedContent.description + appendedText2,
+        tags: generatedContent.tags,
         originalEmailHtml: emailHtml,
         date: record.get('Date'),
         rawContent: record.get('Raw Podcast Summary Raw') || '', // 可能的備用欄位
@@ -188,7 +195,7 @@ class AirtableService {
     }
   }
 
-  async generateTitleAndDescription(emailHtml) {
+  async generateTitleAndDescription(emailHtml, segment = null) {
     try {
       console.log('🤖 使用 Gemini AI 生成標題和描述...');
       
@@ -198,22 +205,27 @@ class AirtableService {
       
       // 第一步：生成10個候選標題
       console.log('🎯 第一步：生成10個候選標題...');
-      const titleCandidates = await this.generateTitleCandidates(textContent);
+      const titleCandidates = await this.generateTitleCandidates(textContent, segment);
       console.log(titleCandidates)
-      
+
       // 第二步：選擇最佳標題
       console.log('🏆 第二步：選擇最佳標題...');
       const bestTitleData = await this.selectBestTitle(titleCandidates, textContent);
-      
-      // 第三步：生成5個工具的描述
-      console.log('📝 第三步：生成5個工具的描述...');
-      const description = await this.generateToolsDescription(textContent);
-      
+
+      // 第三步：生成描述
+      console.log('📝 第三步：生成描述...');
+      const description = await this.generateToolsDescription(textContent, segment);
+
+      // 第四步：生成 YouTube Tags
+      console.log('🏷️ 第四步：生成 YouTube Tags...');
+      const tags = await this.generateYouTubeTags(textContent, bestTitleData.title);
+
       return {
         title: bestTitleData.title,
         titles: titleCandidates,
         bestTitleIndex: bestTitleData.index,
-        description: description
+        description: description,
+        tags: tags
       };
       
     } catch (error) {
@@ -229,9 +241,11 @@ class AirtableService {
     }
   }
 
-  async generateTitleCandidates(content) {
+  async generateTitleCandidates(content, segment = null) {
     try {
-      const prompt = this.buildTitleGenerationPrompt(content);
+      const prompt = segment === '機器人觀察週報'
+        ? this.buildRobotTitleGenerationPrompt(content)
+        : this.buildTitleGenerationPrompt(content);
       const response = await this.callGemini(prompt);
       
       // 解析10個標題
@@ -281,22 +295,59 @@ class AirtableService {
     }
   }
 
-  async generateToolsDescription(content) {
+  async generateToolsDescription(content, segment = null) {
     try {
-      const prompt = this.buildDescriptionPrompt(content);
+      const prompt = segment === '機器人觀察週報'
+        ? this.buildRobotDescriptionPrompt(content)
+        : this.buildDescriptionPrompt(content);
       const response = await this.callGemini(prompt);
       
       if (response.description) {
-        console.log('✅ 成功生成5個工具的描述');
+        console.log(`✅ 成功生成描述${segment ? ` (${segment})` : ''}`);
         return response.description;
       }
-      
+
       // 解析文字回應
       return this.parseDescriptionFromText(response.text || JSON.stringify(response));
-      
+
     } catch (error) {
       console.error('❌ 生成描述失敗:', error.message);
-      return this.getFallbackDescription();
+      return segment === '機器人觀察週報' ? this.getRobotFallbackDescription() : this.getFallbackDescription();
+    }
+  }
+
+  async generateYouTubeTags(content, title) {
+    try {
+      const prompt = `你是 YouTube SEO 專家。請根據以下 Podcast 內容和標題，生成 YouTube 影片的 tags，以最大化搜尋曝光。
+
+標題：${title}
+
+內容摘要：
+${content}
+
+要求：
+1. 生成 20-30 個 tags
+2. 必須包含：品牌 tag（AI懶人報、AI懶人報 Podcast）、內容中提到的具體 AI 工具/公司名稱、相關技術領域關鍵字
+3. 混合中英文 tags（繁體中文 + English）
+4. 從廣泛到具體：先放大範圍 tag（如 AI、人工智慧），再放具體 tag（如工具名稱、技術名詞）
+5. 加入台灣用戶常搜尋的用語
+
+請以 JSON 格式回傳：
+{
+  "tags": ["tag1", "tag2", "tag3", ...]
+}`;
+
+      const response = await this.callGemini(prompt);
+
+      if (response.tags && Array.isArray(response.tags)) {
+        console.log(`✅ 成功生成 ${response.tags.length} 個 YouTube Tags`);
+        return response.tags;
+      }
+
+      throw new Error('回應格式不正確');
+    } catch (error) {
+      console.error('⚠️ 生成 Tags 失敗，使用預設 Tags:', error.message);
+      return ['AI', 'AI懶人報', 'AI懶人報 Podcast', 'podcast', 'AI工具', '人工智慧', 'AI新聞', 'ChatGPT', 'Claude', 'OpenAI', 'Gemini', 'AI教學', 'AI應用', '科技新聞'];
     }
   }
 
@@ -436,6 +487,127 @@ ${content}
   "description": "完整的描述內容"
 }
 `;
+  }
+
+  buildRobotTitleGenerationPrompt(content) {
+    return `
+你是一位經驗豐富的 Podcast 製作人，專注於機器人科技與趨勢報導，深知如何吸引觀眾眼光、提高點擊率，並且了解台灣聽眾的喜好。請根據以下「機器人觀察週報」Podcast 內容，運用你的專業知識生成10個吸引人的標題。標題必須包含知名機器人品牌、公司或技術名稱，讓用戶有熟悉感並想要點擊。
+
+內容摘要：
+${content}
+
+標題要求：
+1. 聚焦明確主題：每個標題都要有一個清晰的核心主題，圍繞機器人趨勢、技術突破或產業動態
+2. 突顯聽眾好處或引發好奇：明確告訴聽眾「聽了這集能了解什麼趨勢」或「會被什麼消息震撼」
+3. 品牌/公司選擇策略：每個標題包含 1-2 個具體的機器人品牌、公司或技術名稱（如 Tesla Optimus、Figure、Boston Dynamics、Unitree、Fauna Robotics 等），不要貪多
+4. **標題長度要求：每個標題控制在 35-45 個字之間，確保內容豐富但不冗長**
+5. 標題必須使用臺灣常用的繁體中文用語，適合台灣年輕族群
+6. **重要：不要在標題開頭加上 EPxx 或任何集數編號，只要純標題內容**
+
+請使用多種風格創作，包含但不限於：
+- 資訊型：直接說明重點趨勢（例：Figure 02 正式進駐 BMW 產線！人形機器人量產時代真的來了）
+- 震撼型：用驚嘆語氣製造衝擊感（例：AI 告白：留著人類只因「有利用價值」？聽完毛骨悚然的機器人真心話）
+- 對話式：像在跟朋友聊天（例：家裡要有會動的「Siri」？Fauna Robotics 的 Sprout，讓家庭 AI 夥伴不再是夢！）
+- 未來感：描繪即將到來的變化（例：2026 年你的同事可能是機器人？企業級人形機器人部署全面啟動）
+
+標題範例（注意每個標題只聚焦 1-2 個品牌，控制在 35-45 字）：
+- AI 告白：留著人類只因「有利用價值」？聽完毛骨悚然的機器人真心話
+- 家裡要有會動的「Siri」？Fauna Robotics 的 Sprout，讓家庭 AI 夥伴不再是夢！
+- Figure 02 進工廠了！BMW 產線實測，人形機器人真的比人類快？
+- Tesla Optimus 又進化！馬斯克說明年就要賣，你敢買嗎？
+- Boston Dynamics 新影片嚇壞全網！Atlas 機器人竟然學會後空翻搬貨了
+- Unitree 四足機器狗只要台幣10萬？中國機器人大軍來襲，產業格局要變天！
+
+生成策略：
+- 先從內容中找出最震撼、最有話題性的 1-2 個機器人品牌或事件作為標題主角
+- 不要在一個標題中塞入太多品牌名稱，保持焦點
+- 可以用「這台機器人」「超狂機器人」等詞彙製造懸念，但至少要明確提到一個具體品牌或技術
+- **重要：直接給出標題內容，不要在標題前面加上類型標記（如【資訊型】、【震撼型】等）**
+
+請生成10個不同風格的標題，確保涵蓋多種語氣風格，不要包含任何集數編號（如EPxx），也不要加類型標記，以JSON格式回傳：
+{
+  "titles": [
+    "標題1",
+    "標題2",
+    "標題3",
+    "標題4",
+    "標題5",
+    "標題6",
+    "標題7",
+    "標題8",
+    "標題9",
+    "標題10"
+  ]
+}
+`;
+  }
+
+  buildRobotDescriptionPrompt(content) {
+    return `
+請根據以下「機器人觀察週報」的內容，按照指定格式生成 Podcast 描述。描述必須包含5個本週最重要的機器人趨勢或新聞亮點，每個亮點都要有延伸解讀和影響分析。
+
+內容摘要：
+${content}
+
+必須嚴格按照以下格式：
+
+開頭段落（吸引人的總結，點出本週機器人圈的重大趨勢，語氣興奮有衝擊力）🤖
+
+💡 亮點1名稱（機器人品牌/公司/技術）：簡短描述事件或突破
+👉 延伸解讀：對產業的影響或未來展望
+
+💡 亮點2名稱：簡短描述事件或突破
+👉 延伸解讀：對產業的影響或未來展望
+
+💡 亮點3名稱：簡短描述事件或突破
+👉 延伸解讀：對產業的影響或未來展望
+
+💡 亮點4名稱：簡短描述事件或突破
+👉 延伸解讀：對產業的影響或未來展望
+
+💡 亮點5名稱：簡短描述事件或突破
+👉 延伸解讀：對產業的影響或未來展望
+
+格式要求：
+1. 每個💡後面要有具體的機器人品牌、公司或技術名稱
+2. 每個👉要有實際的產業影響分析或未來展望
+3. 語調輕鬆有趣但帶有科技觀點，適合年輕族群
+4. 亮點要涵蓋不同面向（人形機器人、家用機器人、工業應用、AI 整合、政策法規等）
+5. 總長度約200-350字
+
+參考範例：
+本週機器人圈又炸了！從人形機器人進工廠到家用 AI 夥伴登場，精選 5 大機器人趨勢帶你一次看完 🤖
+
+💡 Figure 02 人形機器人：BMW 工廠實測上線，組裝速度比人類快 3 倍！
+👉 製造業大洗牌倒數？這次不是 demo，是真的量產導入了
+
+💡 Fauna Robotics Sprout：家裡的「會動 Siri」真的來了
+👉 不只是語音助手，還能幫你收快遞、陪小孩寫作業，家庭機器人市場正式起飛
+
+請以JSON格式回傳：
+{
+  "description": "完整的描述內容"
+}
+`;
+  }
+
+  getRobotFallbackDescription() {
+    return `本週機器人圈重磅消息不斷！從人形機器人到家用 AI 夥伴，精選 5 大趨勢帶你掌握最新動態 🤖
+
+💡 Figure 02 人形機器人：正式進駐 BMW 產線，開啟量產時代
+👉 不再只是展示品，製造業即將迎來「人機協作」新標準！
+
+💡 Tesla Optimus：馬斯克再放豪語，明年將開始對外銷售
+👉 特斯拉的機器人帝國藍圖逐步成形，你準備好了嗎？
+
+💡 Boston Dynamics Atlas：全新電動版本亮相，動作更流暢
+👉 液壓退場、電動上陣，人形機器人的「實用化」更近一步！
+
+💡 Unitree 四足機器狗：價格腰斬至台幣10萬以下
+👉 中國機器人大軍來襲，消費級機器人市場正式開打！
+
+💡 家用機器人市場：多家新創搶進家庭場景
+👉 從陪伴到家務，2026 年可能是家用機器人元年！`;
   }
 
   async callGemini(prompt) {

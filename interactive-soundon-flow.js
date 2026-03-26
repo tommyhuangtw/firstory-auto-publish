@@ -3,9 +3,75 @@ const { GoogleDriveService } = require('./src/services/googleDrive');
 const { AirtableService } = require('./src/services/airtable');
 const { GmailService } = require('./src/services/gmail');
 const { TitleSelectionServer } = require('./src/services/titleSelectionServer');
+const { ThumbnailGenerator } = require('./src/services/thumbnailGenerator');
+const { VideoCreator } = require('./src/services/videoCreator');
+const { YouTubeService } = require('./src/services/youtube');
+const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
+
+// 特別單元對應表
+const SEGMENTS = {
+  robot: '機器人觀察週報',
+  weekly: 'AI懶人精選週報'
+};
+
+// 解析 CLI 參數 --segment <type>
+function parseSegmentArg() {
+  const args = process.argv.slice(2);
+  const segmentIdx = args.indexOf('--segment');
+  if (segmentIdx !== -1 && args[segmentIdx + 1]) {
+    const key = args[segmentIdx + 1];
+    if (SEGMENTS[key]) {
+      return SEGMENTS[key];
+    }
+    console.warn(`⚠️ 未知的 segment 類型: "${key}"，可用選項: ${Object.keys(SEGMENTS).join(', ')}`);
+  }
+  return null;
+}
+
+const segmentName = parseSegmentArg();
+
+const MAX_COVER_SIZE = 500 * 1024; // 500KB
+
+async function compressImageForSoundOn(imagePath) {
+  const stats = fs.statSync(imagePath);
+  if (stats.size <= MAX_COVER_SIZE) {
+    console.log(`   檔案大小 ${(stats.size / 1024).toFixed(0)}KB，無需壓縮`);
+    return imagePath;
+  }
+
+  console.log(`   原始大小: ${(stats.size / 1024).toFixed(0)}KB，開始壓縮...`);
+  const targetSize = 480 * 1024; // 留 20KB buffer
+  const ratio = targetSize / stats.size;
+  // 將壓縮比例映射到 quality (10-90)
+  const estimatedQuality = Math.max(10, Math.min(90, Math.round(ratio * 90)));
+
+  const ext = path.extname(imagePath);
+  const outputPath = imagePath.replace(ext, '_compressed.jpg');
+
+  await sharp(imagePath)
+    .resize({ width: 1400, withoutEnlargement: true })
+    .jpeg({ quality: estimatedQuality })
+    .toFile(outputPath);
+
+  const newStats = fs.statSync(outputPath);
+  // 邊界情況：仍超過 500KB，用更低 quality 重壓
+  if (newStats.size > MAX_COVER_SIZE) {
+    const retryQuality = Math.max(10, Math.round(estimatedQuality * 0.6));
+    await sharp(imagePath)
+      .resize({ width: 1400, withoutEnlargement: true })
+      .jpeg({ quality: retryQuality })
+      .toFile(outputPath);
+    const finalStats = fs.statSync(outputPath);
+    console.log(`   重新壓縮 (quality=${retryQuality}): ${(finalStats.size / 1024).toFixed(0)}KB`);
+  } else {
+    console.log(`   壓縮完成 (quality=${estimatedQuality}): ${(newStats.size / 1024).toFixed(0)}KB`);
+  }
+
+  return outputPath;
+}
 
 async function runInteractiveSoundOnFlow() {
   const uploader = new SoundOnUploader();
@@ -43,7 +109,7 @@ async function runInteractiveSoundOnFlow() {
     
     // 4. 從 Airtable 生成候選標題和描述
     console.log('🤖 從 Airtable 生成候選標題和描述...');
-    const candidateData = await airtable.getLatestEpisodeContent();
+    const candidateData = await airtable.getLatestEpisodeContent(segmentName);
     
     // 使用 Airtable 返回的標題列表和最佳標題索引
     const candidateTitles = candidateData.titles || [candidateData.title];
@@ -56,10 +122,16 @@ async function runInteractiveSoundOnFlow() {
     });
     console.log(`🏆 AI 推薦的最佳標題是第 ${bestTitleIndex + 1} 個: ${candidateTitles[bestTitleIndex]}\n`);
     
-    // 5. 為候選標題添加集數編號
-    const titlesWithEpisodeNumber = candidateTitles.map(title => 
-      `EP${nextEpisodeNumber} - ${title}`
-    );
+    // 5. 為候選標題添加集數編號（特別單元使用不同格式）
+    if (segmentName) {
+      console.log(`📌 特別單元模式：${segmentName}\n`);
+    }
+    const titlesWithEpisodeNumber = candidateTitles.map(title => {
+      if (segmentName) {
+        return `EP${nextEpisodeNumber} ｜ ${segmentName} - ${title}`;
+      }
+      return `EP${nextEpisodeNumber} - ${title}`;
+    });
     
     // 6. 啟動標題選擇服務器
     console.log('🌐 啟動標題選擇服務器...');
@@ -124,15 +196,22 @@ async function runInteractiveSoundOnFlow() {
     const coverResult = await googleDrive.downloadLatestCoverImage();
     console.log(`✅ 封面圖片下載完成: ${coverResult.originalName}`);
     console.log(`📁 封面圖片路徑: ${coverResult.path}\n`);
-    
+
+    // 12.5 壓縮封面圖片（SoundOn 限制 500KB）
+    console.log('🗜️ 檢查封面圖片大小...');
+    const compressedCoverPath = await compressImageForSoundOn(coverResult.path);
+    if (compressedCoverPath !== coverResult.path) {
+      downloadedFilePaths.push(compressedCoverPath);
+    }
+
     // 13. 開始上傳流程
     console.log('🚀 開始上傳到 SoundOn...');
-    
+
     const episodeData = {
       title: selectedTitleData.title, // 已經包含 EP 編號
       description: candidateData.description,
       audioPath: finalAudioPath, // 使用轉換後的 MP3 路徑
-      coverPath: coverResult.path
+      coverPath: compressedCoverPath
     };
     
     // 上傳流程
@@ -190,13 +269,78 @@ async function runInteractiveSoundOnFlow() {
     console.log('✅ 單集發布成功\n');
     
     console.log('🎉 SoundOn 互動式自動上傳完成！');
-    console.log(`📺 已成功上傳: ${episodeData.title}`);
+    console.log(`📺 已成功上傳: ${episodeData.title}\n`);
+
+    // ═══════════════════════════════════════════════════
+    // YouTube 發佈流程
+    // ═══════════════════════════════════════════════════
+    let youtubeResult = null;
+    try {
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📺 開始 YouTube 發佈流程...\n');
+
+      // 14. 生成 YouTube 縮圖（預設奶油暖色風格）
+      const thumbnailGen = new ThumbnailGenerator();
+      const thumbnailPath = await thumbnailGen.generateDefaultThumbnail({
+        title: selectedTitleData.title.replace(/^EP\d+\s*-\s*/, ''),
+        episodeNumber: nextEpisodeNumber,
+        coverImagePath: coverResult.path,
+        description: '每日 AI 精華，幫你降低資訊焦慮'
+      });
+      downloadedFilePaths.push(thumbnailPath);
+
+      // 15. 合成影片（音檔 + 封面圖 → MP4）
+      console.log('🎬 合成 YouTube 影片...');
+      const videoCreator = new VideoCreator();
+      const videoPath = await videoCreator.createVideoFromAudioAndImage(
+        finalAudioPath,
+        coverResult.path
+      );
+      downloadedFilePaths.push(videoPath);
+      console.log(`✅ 影片合成完成\n`);
+
+      // 16. 上傳到 YouTube
+      console.log('🚀 上傳到 YouTube...');
+      const youtubeService = new YouTubeService();
+      await youtubeService.initializeAuth();
+
+      let youtubeTitle;
+      if (segmentName) {
+        // 特別單元：AI懶人報Podcast ｜ EP253 機器人觀察週報 - [標題]
+        const pureTitle = selectedTitleData.title.replace(/^EP\d+\s*｜\s*/, '');
+        youtubeTitle = `AI懶人報Podcast ｜ EP${nextEpisodeNumber} ${pureTitle}`;
+      } else {
+        youtubeTitle = `AI懶人報Podcast ｜ ${selectedTitleData.title}`;
+      }
+      youtubeResult = await youtubeService.uploadVideo({
+        videoPath,
+        title: youtubeTitle,
+        description: buildYouTubeDescription(candidateData.description, candidateData.tags),
+        tags: candidateData.tags,
+        privacyStatus: 'public',
+        thumbnailPath: thumbnailPath
+      });
+
+      console.log(`\n🎉 YouTube 上傳成功！`);
+      console.log(`📺 ${youtubeResult.videoUrl}\n`);
+
+    } catch (ytError) {
+      console.error('⚠️ YouTube 發佈失敗（SoundOn 已成功）:', ytError.message);
+    }
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎉 全部流程完成！');
+    console.log(`🎙️ SoundOn: ${episodeData.title}`);
+    if (youtubeResult) {
+      console.log(`📺 YouTube: ${youtubeResult.videoUrl}`);
+    }
 
     return {
       success: true,
       episodeTitle: episodeData.title,
       selectedIndex: selectedTitleData.index,
-      episodeNumber: nextEpisodeNumber
+      episodeNumber: nextEpisodeNumber,
+      youtubeUrl: youtubeResult?.videoUrl || null
     };
     
   } catch (error) {
@@ -465,6 +609,34 @@ async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs)
       }
     });
   });
+}
+
+// 組合 YouTube 影片描述（SoundOn 完整描述 + YouTube 專屬尾段）
+function buildYouTubeDescription(soundOnDescription, tags) {
+  // 清理描述：移除 markdown **粗體**、清除行首多餘空格
+  const cleaned = soundOnDescription
+    .replace(/\*\*/g, '')
+    .split('\n')
+    .map(line => line.replace(/^[\t ]+/, ''))
+    .join('\n');
+
+  // 從 tags 生成 hashtags（取前 15 個，去空格轉為 hashtag 格式）
+  const hashtags = (tags || [])
+    .slice(0, 15)
+    .map(t => '#' + t.replace(/\s+/g, ''))
+    .join(' ');
+
+  return cleaned
+    + '\n\n---'
+    + '\n🎙️ AI懶人報 Podcast — 每日 AI 精華，幫你降低資訊焦慮'
+    + '\n'
+    + '\n📢 收聽更多平台：'
+    + '\nApple Podcast / Spotify / KKBOX'
+    + '\n👉 https://portaly.cc/ailrb'
+    + '\n'
+    + '\n💬 合作聯繫：ailanrenbao@gmail.com'
+    + '\n'
+    + '\n' + hashtags;
 }
 
 async function convertAudioToMp3(audioPath) {

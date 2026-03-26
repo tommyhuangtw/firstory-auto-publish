@@ -126,8 +126,11 @@ class SoundOnUploader {
         await emailInput.waitFor({ timeout: elementWaitTimeout });
 
         // 2. 填入登入資訊
-        const email = 'tommyhuang0511@gmail.com';
-        const password = 'Lanrenbao654183!';
+        const email = process.env.SOUNDON_EMAIL;
+        const password = process.env.SOUNDON_PASSWORD;
+        if (!email || !password) {
+          throw new Error('未設定 SOUNDON_EMAIL 或 SOUNDON_PASSWORD 環境變數');
+        }
 
         this.logger.info(`使用帳號登入: ${email}`);
 

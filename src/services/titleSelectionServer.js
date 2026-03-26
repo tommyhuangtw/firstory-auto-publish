@@ -9,37 +9,35 @@ class TitleSelectionServer {
     this.selectedTitle = null;
     this.selectionPromise = null;
     this.resolveSelection = null;
+    // 縮圖選擇
+    this.selectedThumbnail = null;
+    this.resolveThumbnailSelection = null;
   }
 
   async start() {
-    return new Promise((resolve, reject) => {
-      // 找一個可用的端口
-      this.port = 3000;
-      
-      // 設置路由
-      this.setupRoutes();
-      
-      // 啟動服務器
-      this.server = this.app.listen(this.port, (error) => {
-        if (error) {
-          // 如果端口被占用，嘗試下一個端口
-          if (error.code === 'EADDRINUSE') {
-            this.port++;
-            this.server = this.app.listen(this.port, (retryError) => {
-              if (retryError) {
-                reject(retryError);
-              } else {
-                resolve(this.port);
-              }
-            });
-          } else {
-            reject(error);
-          }
-        } else {
-          resolve(this.port);
+    this.setupRoutes();
+
+    const startPort = 3001;
+    const maxAttempts = 10;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const port = startPort + attempt;
+      try {
+        await new Promise((resolve, reject) => {
+          const server = this.app.listen(port, () => resolve());
+          server.on('error', (err) => reject(err));
+          this.server = server;
+        });
+        this.port = port;
+        return this.port;
+      } catch (err) {
+        if (err.code === 'EADDRINUSE' && attempt < maxAttempts - 1) {
+          console.log(`⚠️ 端口 ${port} 已被佔用，嘗試端口 ${port + 1}...`);
+          continue;
         }
-      });
-    });
+        throw err;
+      }
+    }
   }
 
   setupRoutes() {
@@ -66,6 +64,27 @@ class TitleSelectionServer {
         this.resolveSelection(this.selectedTitle);
       }
     });
+
+    // 縮圖選擇端點
+    this.app.get('/select-thumbnail', (req, res) => {
+      const index = parseInt(req.query.index);
+
+      if (isNaN(index)) {
+        res.status(400).send('無效的縮圖索引');
+        return;
+      }
+
+      this.selectedThumbnail = { index, timestamp: new Date() };
+
+      res.send(this.generateThumbnailConfirmationHTML(index));
+
+      if (this.resolveThumbnailSelection) {
+        this.resolveThumbnailSelection(this.selectedThumbnail);
+      }
+    });
+
+    // 縮圖圖片靜態服務（供 Email 預覽）
+    this.app.use('/thumbnails', express.static(path.join(__dirname, '../../temp')));
 
     // 健康檢查端點
     this.app.get('/health', (req, res) => {
@@ -147,15 +166,47 @@ class TitleSelectionServer {
   async waitForSelection() {
     return new Promise((resolve) => {
       this.resolveSelection = (selectedData) => {
-        // 這裡需要從原始的候選標題列表中獲取實際的標題
-        // 由於我們只有索引，需要在調用時傳入標題列表
         resolve({
           index: selectedData.index,
-          title: null, // 將在外部設置
+          title: null,
           timestamp: selectedData.timestamp
         });
       };
     });
+  }
+
+  async waitForThumbnailSelection() {
+    return new Promise((resolve) => {
+      this.resolveThumbnailSelection = (selectedData) => {
+        resolve({
+          index: selectedData.index,
+          timestamp: selectedData.timestamp
+        });
+      };
+    });
+  }
+
+  generateThumbnailConfirmationHTML(selectedIndex) {
+    const labels = ['純白經典', '奶油暖色', '暖色變體'];
+    const label = labels[selectedIndex] || `方案 ${selectedIndex + 1}`;
+    return `
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>縮圖選擇確認 - AI懶人報</title></head>
+    <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#e8c66a 0%,#d4a44a 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;">
+      <div style="max-width:500px;margin:0 auto;padding:40px 20px;">
+        <div style="background:white;border-radius:20px;padding:40px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.1);">
+          <div style="font-size:64px;margin-bottom:20px;">🖼️</div>
+          <h1 style="color:#2c2417;font-size:28px;font-weight:700;margin:0 0 15px 0;">縮圖選擇成功！</h1>
+          <p style="color:#6b5b3e;font-size:18px;margin:0 0 30px 0;font-weight:500;">您選擇了「${label}」風格</p>
+          <div style="background:#fef3c7;border:2px solid #e8c66a;border-radius:12px;padding:20px;margin-bottom:20px;">
+            <p style="color:#92400e;margin:0;font-size:14px;">🚀 系統將使用此縮圖上傳到 YouTube</p>
+          </div>
+          <p style="color:#9ca3af;font-size:12px;">🤖 AI懶人報自動化系統</p>
+        </div>
+      </div>
+      <script>setTimeout(()=>window.close(),5000);</script>
+    </body></html>`;
   }
 
   async stop() {

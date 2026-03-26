@@ -5,6 +5,8 @@
   "main": "interactive-soundon-flow.js",
   "scripts": {
     "start": "node interactive-soundon-flow.js",
+    "start:robot": "node interactive-soundon-flow.js --segment robot",
+    "start:weekly": "node interactive-soundon-flow.js --segment weekly",
     "interactive": "node interactive-soundon-flow.js",
     "legacy-flow": "node complete-soundon-flow.js",
     "test-auth": "node test-auth-only.js",
@@ -15,7 +17,8 @@
     "test-upload-page": "node test-upload-page.js",
     "soundon-automation": "node src/soundon-automation.js",
     "check-state": "node check-current-state.js",
-    "check-tokens": "node check-google-tokens.js"
+    "check-tokens": "node check-google-tokens.js",
+    "test-youtube": "node test-youtube-flow.js"
   },
   "keywords": [
     "podcast",
@@ -37,6 +40,7 @@
     "fs-extra": "^11.3.0",
     "glob": "^11.0.3",
     "googleapis": "^128.0.0",
-    "playwright": "^1.40.0"
+    "playwright": "^1.40.0",
+    "sharp": "^0.34.5"
   }
 }
