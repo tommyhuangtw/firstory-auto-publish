@@ -1,10 +1,10 @@
 # AI懶人報 Podcast 自動化系統
 
-智能化 Podcast 上傳系統，支援 SoundOn 平台，整合 Google Drive、Airtable、Gmail 和 AI 標題生成。
+智能化 Podcast 上傳系統，支援 SoundOn 與 YouTube 平台，整合 Google Drive、Airtable、Gmail、OpenRouter AI 和 Web 控制台。
 
 ## 🚀 功能特色
 
-- ✅ **AI 標題生成**: 使用 Gemini AI 生成 10 個多樣化的吸引人標題
+- ✅ **AI 標題生成**: 透過 OpenRouter (Gemini) 生成 10 個多樣化的吸引人標題
 - ✅ **互動式標題選擇**: 透過 Gmail 發送候選標題，用戶點擊選擇
 - ✅ **自動集數檢測**: 智能分析現有單集，自動判斷下一集編號
 - ✅ **超時機制**: 2分鐘內未選擇自動使用 AI 推薦的最佳標題
@@ -12,6 +12,9 @@
 - ✅ **Airtable 內容管理**: 從 Airtable 獲取單集內容和描述
 - ✅ **完整 SoundOn 上傳**: 包含動態廣告設定和封面上傳
 - ✅ **YouTube 自動發佈**: 自動生成縮圖、合成影片並上傳到 YouTube
+- ✅ **手動上傳流程**: 無需 Airtable/Google Drive，直接指定音檔和文稿上傳
+- ✅ **Web 控制台**: 瀏覽器介面操作上傳流程
+- ✅ **AI 縮圖生成**: 透過 Kie.ai (Ideogram/Qwen) 生成 YouTube 縮圖
 - ✅ **特別單元支援**: 支援「機器人觀察週報」和「AI懶人精選週報」等特別單元，自動切換標題/描述 Prompt
 - ✅ **智能日誌**: 詳細的操作記錄和進度追蹤
 
@@ -30,6 +33,21 @@ npm start
 5. 📥 下載 Google Drive 檔案
 6. 🚀 自動上傳到 SoundOn
 7. 📺 自動生成縮圖、合成影片並上傳到 YouTube
+
+### 手動上傳模式
+
+不依賴 Airtable/Google Drive，直接指定本地檔案：
+```bash
+node manual-upload-flow.js
+```
+
+### Web 控制台
+
+透過瀏覽器介面操作：
+```bash
+cd web-console && node server.js
+# 開啟 http://localhost:8888
+```
 
 ### 特別單元模式
 
@@ -85,7 +103,7 @@ AIRTABLE_API_KEY=your_airtable_api_key
 AIRTABLE_BASE_ID=your_base_id
 AIRTABLE_TABLE_NAME=your_table_name
 
-# OpenRouter AI 設定 (Gemini)
+# OpenRouter AI 設定
 OPENROUTER_API_KEY=your_openrouter_api_key
 
 # Playwright 設定
@@ -115,6 +133,12 @@ npm run start:weekly
 
 # 🔄 同上 (別名)
 npm run interactive
+
+# 📦 手動上傳流程
+node manual-upload-flow.js
+
+# 🌐 啟動 Web 控制台
+cd web-console && node server.js
 
 # 📺 測試 YouTube 上傳流程
 npm run test-youtube
@@ -156,7 +180,7 @@ npm run test-studio
 
 3. **🤖 AI 標題生成**
    - 從 Airtable 獲取最新內容
-   - Gemini AI 生成 10 個多樣化標題
+   - 透過 OpenRouter (Gemini) 生成 10 個多樣化標題
    - AI 分析並推薦最佳標題
 
 4. **📧 互動式標題選擇**
@@ -176,7 +200,7 @@ npm run test-studio
    - 發布單集
 
 7. **📺 YouTube 發佈**
-   - 生成自訂縮圖
+   - 透過 Kie.ai 生成自訂縮圖
    - 合成影片 (音檔 + 封面圖 → MP4)
    - 上傳到 YouTube (含標題、描述、Tags、縮圖)
 
@@ -184,21 +208,31 @@ npm run test-studio
 
 ```
 firstory-podcast-automation/
-├── interactive-soundon-flow.js    # 🎯 主要互動式流程
+├── interactive-soundon-flow.js       # 🎯 主要互動式流程 (Airtable + Google Drive)
+├── manual-upload-flow.js             # 📦 手動上傳流程 (本地檔案)
+├── complete-soundon-flow.js          # 🔙 舊版流程
 ├── src/
-│   ├── soundon-uploader.js        # SoundOn 上傳器
-│   └── services/
-│       ├── googleDrive.js         # Google Drive 服務
-│       ├── gmail.js               # Gmail 服務
-│       ├── airtable.js            # Airtable 服務
-│       ├── titleSelectionServer.js # 標題選擇服務器
-│       ├── youtube.js             # YouTube 上傳服務
-│       ├── thumbnailGenerator.js  # 縮圖生成器
-│       └── videoCreator.js        # 影片合成器 (音檔+圖片→MP4)
-├── temp/                          # 暫存目錄
-│   ├── downloads/                 # 檔案下載
-│   └── browser-data/              # 瀏覽器資料
-└── credentials.json               # Google OAuth 憑證
+│   ├── soundon-uploader.js           # SoundOn 上傳器
+│   ├── services/
+│   │   ├── googleDrive.js            # Google Drive 服務
+│   │   ├── gmail.js                  # Gmail 服務
+│   │   ├── airtable.js               # Airtable 服務
+│   │   ├── contentGenerator.js       # AI 內容生成器 (標題/描述/Tags)
+│   │   ├── openRouterService.js      # OpenRouter API 服務 (Gemini)
+│   │   ├── kieAi.js                  # Kie.ai 圖片生成服務
+│   │   ├── titleSelectionServer.js   # 標題選擇服務器
+│   │   ├── youtube.js                # YouTube 上傳服務
+│   │   ├── thumbnailGenerator.js     # 縮圖生成器
+│   │   └── videoCreator.js           # 影片合成器 (音檔+圖片→MP4)
+│   └── utils/
+│       └── flowHelpers.js            # 共用工具 (音檔轉換/圖片壓縮/描述組裝)
+├── web-console/
+│   ├── server.js                     # Web 控制台伺服器 (port 8888)
+│   └── public/index.html             # Web 介面
+├── temp/                             # 暫存目錄
+│   ├── downloads/                    # 檔案下載
+│   └── browser-data/                 # 瀏覽器資料
+└── credentials.json                  # Google OAuth 憑證
 ```
 
 ## 📊 資料結構要求
@@ -211,9 +245,13 @@ Google Drive/
 ```
 
 ### Airtable 表格欄位
-- `title`: 單集標題
-- `description`: 單集描述
-- `date`: 發布日期
+- `Email html`: Email HTML 內容 (用於 AI 生成)
+- `Youtube Title1`: YouTube 標題
+- `Raw Podcast Summary`: Podcast 內容摘要
+- `Audio File ID`: Google Drive 音檔 ID
+- `Cover Image ID`: Google Drive 封面圖 ID
+- `Date`: 發布日期
+- `Status`: 上傳狀態
 
 ## 🎨 AI 標題生成特色
 
@@ -237,7 +275,7 @@ Google Drive/
    - 確認單集列表頁面可正常訪問
 
 3. **AI 標題生成失敗**
-   - 檢查 Gemini API 金鑰
+   - 檢查 OpenRouter API 金鑰
    - 確認網路連線
    - 系統會自動使用備用標題
 
@@ -247,7 +285,14 @@ Google Drive/
 
 ## 📈 版本歷史
 
-- **v3.0**: YouTube 自動發佈 + 特別單元支援 (目前版本)
+- **v4.0**: 手動上傳流程 + Web 控制台 (目前版本)
+  - 新增手動上傳流程 (`manual-upload-flow.js`)，無需 Airtable/Google Drive
+  - Web 控制台介面，透過瀏覽器操作上傳
+  - 重構內容生成為獨立 `ContentGenerator` 模組
+  - 新增 OpenRouter 多模型支援 (Gemini + Claude fallback)
+  - 新增 Kie.ai 圖片生成服務
+  - 共用工具函數抽取至 `flowHelpers.js`
+- **v3.0**: YouTube 自動發佈 + 特別單元支援
   - YouTube 影片自動合成與上傳（縮圖生成、影片合成）
   - `--segment` 參數支援週四「機器人觀察週報」、週日「AI懶人精選週報」
   - 各單元專屬標題/描述 AI Prompt
