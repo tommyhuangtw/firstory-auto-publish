@@ -123,7 +123,11 @@ class ContentGenerator {
 
       if (response.description) {
         console.log(`✅ 成功生成描述${segment ? ` (${segment})` : ''}`);
-        return response.description;
+        // 移除 LLM 可能生成的 Google Drive 連結行
+        return response.description
+          .replace(/.*drive\.google\.com.*\n?/g, '')
+          .replace(/.*🎧\s*點擊這裡收聽.*\n?/g, '')
+          .trim();
       }
 
       // 解析文字回應
@@ -291,6 +295,7 @@ ${content}
 3. 語調輕鬆有趣，適合年輕族群
 4. 工具要涵蓋不同領域（開發、設計、內容創作、自動化、分析等）
 5. 總長度約200-350字
+6. 不要包含任何外部連結（如 Google Drive、YouTube 連結等），也不要加「點擊收聽」之類的導流文字
 
 參考範例：
 從找創業點子到打造 App，全都交給 AI！今天幫你精選 5 支熱門 AI 工具影片，讓寫程式變得跟玩一樣簡單 🚀
@@ -393,6 +398,7 @@ ${content}
 3. 語調輕鬆有趣但帶有科技觀點，適合年輕族群
 4. 亮點要涵蓋不同面向（人形機器人、家用機器人、工業應用、AI 整合、政策法規等）
 5. 總長度約200-350字
+6. 不要包含任何外部連結（如 Google Drive、YouTube 連結等），也不要加「點擊收聽」之類的導流文字
 
 參考範例：
 本週機器人圈又炸了！從人形機器人進工廠到家用 AI 夥伴登場，精選 5 大機器人趨勢帶你一次看完 🤖

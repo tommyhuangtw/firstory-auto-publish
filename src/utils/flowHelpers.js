@@ -252,10 +252,15 @@ async function getNextEpisodeNumber(uploader) {
 async function convertAudioToMp3(audioPath) {
   console.log('🔧 開始將音檔轉換為 MP3 格式...');
 
-  const originalExt = path.extname(audioPath);
+  const originalExt = path.extname(audioPath).toLowerCase();
+  if (originalExt === '.mp3') {
+    console.log('✅ 音檔已是 MP3 格式，跳過轉換');
+    return audioPath;
+  }
+
   let mp3Path;
   if (originalExt) {
-    mp3Path = audioPath.replace(originalExt, '.mp3');
+    mp3Path = audioPath.replace(path.extname(audioPath), '.mp3');
   } else {
     mp3Path = audioPath + '.mp3';
   }
@@ -343,15 +348,35 @@ async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs)
   });
 }
 
-// 業配文字
-const APPENDED_TEXT = `🔥 《AI 懶人報》一週五更、16 萬人次、科技榜 #2 的自動化祕密公開！
-想知道如何用 AI 打造一套能衝榜、還能接到 NordVPN 業配的「自動化內容產線」嗎？
-我直接拆解了 104 個 n8n 節點流程與完整 Prompts，把這套獲利思維送給你。
-(內容包含：自動選題、台灣口音校對、業配自動插入、多路發布系統)
+// // 業配文字 (舊)
+// const APPENDED_TEXT = `🔥 《AI 懶人報》一週五更、16 萬人次、科技榜 #2 的自動化祕密公開！
+// 想知道如何用 AI 打造一套能衝榜、還能接到 NordVPN 業配的「自動化內容產線」嗎？
+// 我直接拆解了 104 個 n8n 節點流程與完整 Prompts，把這套獲利思維送給你。
+// (內容包含：自動選題、台灣口音校對、業配自動插入、多路發布系統)
+//
+// 🎁 原價 NT. 5,990，現在限時 5 折優惠（NT. 2,990）：
+// 👉 優惠連結：
+// portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK
+//
+// `;
 
-🎁 原價 NT. 5,990，現在限時 5 折優惠（NT. 2,990）：
-👉 優惠連結：
-portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK
+// 業配文字
+const APPENDED_TEXT = `🚀【懶人報專屬好康】現代系統設計實戰營：矽谷大咖帶你突破職涯瓶頸！
+在 AI 時代，寫 Code 漂亮不再是唯一指標，「系統架構能力」才是面試大廠（Google、Meta、OpenAI）勝出的關鍵護城河！
+
+這門課由兩位矽谷老將親自帶領：
+🤖 Terry Chen（10 年矽谷經驗、50 萬訂閱 YouTuber）
+🤖 Bohr Wang（曾任職於 OpenAI、Google、Meta 的主任工程師）
+
+💡 你將學會：
+👉 大廠實戰架構： 拆解 Spotify 排行榜、Tesla RoboTaxi、YouTube 等千萬級流量系統。
+👉 不可替代性： 掌握 AI 無法代勞的決策力（資料庫選擇、高併發處理、架構省錢術）。
+👉 最新 AI 應用： 實戰 RAG 智能系統與 MCP 協議 Agent 架構。
+
+🔥懶人報聽眾限定：超過 5 折超狂優惠！
+現在點擊下方連結結帳，直接享有專屬「半價以上」折扣，投資自己職涯的最高槓桿：
+👉 專屬優惠連結：
+https://www.buildmoat.org/?promo_code=promo_1TIqotIXmUwiEgU6tciLjSiI
 
 `;
 
