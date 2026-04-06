@@ -211,6 +211,128 @@ class GmailService {
     </html>
     `;
   }
+  async sendThumbnailSelectionEmail(thumbnailOptions, episodeTitle, episodeNumber, serverPort, publicUrl = null) {
+    try {
+      const recipientEmail = process.env.RECIPIENT_EMAIL;
+      if (!recipientEmail) {
+        throw new Error('未設定收件人郵箱 (RECIPIENT_EMAIL)');
+      }
+
+      const today = new Date();
+      const month = today.getMonth() + 1;
+      const day = today.getDate();
+      const emailSubject = `🖼️ ${month}月${day}日 EP${episodeNumber} - YouTube 縮圖選擇`;
+
+      const emailBody = this.generateThumbnailEmailHTML(thumbnailOptions, episodeTitle, episodeNumber, serverPort, month, day, publicUrl);
+
+      const message = [
+        `To: ${recipientEmail}`,
+        `Subject: =?UTF-8?B?${Buffer.from(emailSubject).toString('base64')}?=`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
+        '',
+        Buffer.from(emailBody).toString('base64')
+      ].join('\n');
+
+      const encodedMessage = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      await this.gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw: encodedMessage }
+      });
+
+      console.log(`✅ 縮圖選擇郵件已發送到: ${recipientEmail}`);
+    } catch (error) {
+      console.error('❌ 發送縮圖郵件失敗:', error);
+      throw error;
+    }
+  }
+
+  generateThumbnailEmailHTML(thumbnailOptions, episodeTitle, episodeNumber, serverPort, month, day, publicUrl = null) {
+    const baseUrl = publicUrl || `http://localhost:${serverPort}`;
+    const fs = require('fs');
+
+    const thumbnailCards = thumbnailOptions.map((opt, index) => {
+      // 將縮圖轉為 base64 嵌入郵件（確保圖片可見）
+      let imgSrc = `${baseUrl}/thumbnails/${require('path').basename(opt.path)}`;
+      try {
+        const imgBuffer = fs.readFileSync(opt.path);
+        imgSrc = `data:image/png;base64,${imgBuffer.toString('base64')}`;
+      } catch (e) {
+        // 如果讀取失敗就用 URL
+      }
+
+      return `
+        <div style="margin:20px 0;">
+          <a href="${baseUrl}/select-thumbnail?index=${index}"
+             style="display:block;text-decoration:none;border-radius:12px;overflow:hidden;
+                    border:3px solid #e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.08);
+                    transition:all 0.3s ease;">
+            <img src="${imgSrc}" alt="方案 ${index + 1}: ${opt.label}"
+                 style="width:100%;height:auto;display:block;" />
+            <div style="background:white;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div style="font-size:16px;font-weight:700;color:#1e293b;">方案 ${index + 1}：${opt.label}</div>
+              </div>
+              <div style="background:#e8c66a;color:#2c2417;padding:8px 20px;border-radius:8px;font-size:14px;font-weight:700;">
+                選擇此風格
+              </div>
+            </div>
+          </a>
+        </div>`;
+    }).join('');
+
+    return `
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI懶人報 - YouTube 縮圖選擇</title></head>
+    <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#e8c66a 0%,#d4a44a 100%);min-height:100vh;">
+      <div style="max-width:680px;margin:0 auto;padding:40px 20px;">
+
+        <!-- Header -->
+        <div style="text-align:center;margin-bottom:40px;">
+          <h1 style="color:white;font-size:28px;font-weight:700;margin:0 0 10px 0;text-shadow:0 2px 4px rgba(0,0,0,0.2);">
+            🖼️ YouTube 縮圖選擇
+          </h1>
+          <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">
+            EP${episodeNumber} · ${month}月${day}日
+          </p>
+        </div>
+
+        <!-- Main Card -->
+        <div style="background:rgba(255,255,255,0.97);border-radius:20px;padding:36px;box-shadow:0 20px 40px rgba(0,0,0,0.1);">
+
+          <!-- Episode Title -->
+          <div style="background:#f8f6f2;border-radius:12px;padding:18px 24px;margin-bottom:28px;border:1px solid #e8e0d4;">
+            <div style="font-size:13px;color:#999;margin-bottom:6px;font-weight:600;letter-spacing:1px;">已選標題</div>
+            <div style="font-size:17px;color:#1e293b;font-weight:700;">${episodeTitle}</div>
+          </div>
+
+          <!-- Notice -->
+          <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:12px;padding:16px 20px;margin-bottom:28px;">
+            <p style="color:#92400e;margin:0;font-size:14px;line-height:1.5;">
+              ⚡ 請點擊下方任一縮圖選擇 YouTube 封面。2 分鐘內未選擇將自動使用方案 1。
+            </p>
+          </div>
+
+          <!-- Thumbnail Options -->
+          <h3 style="color:#1e293b;font-size:18px;font-weight:600;margin:0 0 8px 0;text-align:center;">
+            🎯 請選擇縮圖風格
+          </h3>
+
+          ${thumbnailCards}
+
+          <!-- Footer -->
+          <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:2px solid #e2e8f0;">
+            <p style="color:#64748b;font-size:12px;margin:0;">
+              🤖 AI懶人報自動化系統 | 選擇後將自動上傳到 YouTube
+            </p>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+  }
 }
 
 module.exports = { GmailService }; 

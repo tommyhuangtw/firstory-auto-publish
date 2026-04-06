@@ -11,6 +11,8 @@
 - ✅ **Google Drive 整合**: 自動下載最新音檔和封面圖片
 - ✅ **Airtable 內容管理**: 從 Airtable 獲取單集內容和描述
 - ✅ **完整 SoundOn 上傳**: 包含動態廣告設定和封面上傳
+- ✅ **YouTube 自動發佈**: 自動生成縮圖、合成影片並上傳到 YouTube
+- ✅ **特別單元支援**: 支援「機器人觀察週報」和「AI懶人精選週報」等特別單元，自動切換標題/描述 Prompt
 - ✅ **智能日誌**: 詳細的操作記錄和進度追蹤
 
 ## 🎯 快速開始
@@ -27,14 +29,38 @@ npm start
 4. ⏰ 等待您選擇標題 (2分鐘超時)
 5. 📥 下載 Google Drive 檔案
 6. 🚀 自動上傳到 SoundOn
+7. 📺 自動生成縮圖、合成影片並上傳到 YouTube
+
+### 特別單元模式
+
+週四和週日有特別單元，使用 `--segment` 參數指定：
+
+```bash
+# 週四：機器人觀察週報
+npm run start:robot
+# 或
+npm start -- --segment robot
+
+# 週日：AI懶人精選週報
+npm run start:weekly
+# 或
+npm start -- --segment weekly
+```
+
+特別單元會自動調整：
+- **標題格式**: `EP256 ｜ 機器人觀察週報 - [標題]`（一般日為 `EP256 - [標題]`）
+- **YouTube 標題**: `AI懶人報Podcast ｜ EP256 機器人觀察週報 - [標題]`
+- **AI Prompt**: 根據單元類型切換標題和描述的生成 Prompt（例如機器人週報會聚焦機器人趨勢而非 AI 工具）
 
 ## 📋 環境要求
 
 - Node.js 16+
-- Google Cloud Console 專案 (Google Drive + Gmail API)
+- FFmpeg (用於音檔轉換和影片合成)
+- Google Cloud Console 專案 (Google Drive + Gmail + YouTube Data API)
 - Airtable 帳號和 API 金鑰
-- Gemini AI API 金鑰
+- OpenRouter API 金鑰 (Gemini AI)
 - SoundOn 帳號
+- YouTube 頻道 (需完成 OAuth 驗證)
 
 ## ⚙️ 安裝設定
 
@@ -59,8 +85,8 @@ AIRTABLE_API_KEY=your_airtable_api_key
 AIRTABLE_BASE_ID=your_base_id
 AIRTABLE_TABLE_NAME=your_table_name
 
-# Gemini AI 設定
-GEMINI_API_KEY=your_gemini_api_key
+# OpenRouter AI 設定 (Gemini)
+OPENROUTER_API_KEY=your_openrouter_api_key
 
 # Playwright 設定
 PLAYWRIGHT_HEADLESS=false
@@ -68,7 +94,7 @@ PLAYWRIGHT_HEADLESS=false
 
 ### 3. Google API 設定
 1. 前往 [Google Cloud Console](https://console.cloud.google.com/)
-2. 啟用 Google Drive API 和 Gmail API
+2. 啟用 Google Drive API、Gmail API 和 YouTube Data API v3
 3. 建立 OAuth 2.0 客戶端 ID
 4. 在重新導向 URI 中添加: `http://localhost:3000/oauth2callback`
 5. 下載 credentials.json 並放置在專案根目錄
@@ -81,8 +107,17 @@ PLAYWRIGHT_HEADLESS=false
 # 🚀 啟動完整互動式流程 (預設)
 npm start
 
+# 🤖 週四：機器人觀察週報
+npm run start:robot
+
+# 📰 週日：AI懶人精選週報
+npm run start:weekly
+
 # 🔄 同上 (別名)
 npm run interactive
+
+# 📺 測試 YouTube 上傳流程
+npm run test-youtube
 
 # 📧 重新授權 Gmail (如需要)
 node reauth-gmail.js
@@ -140,6 +175,11 @@ npm run test-studio
    - 設定單集類型和動態廣告
    - 發布單集
 
+7. **📺 YouTube 發佈**
+   - 生成自訂縮圖
+   - 合成影片 (音檔 + 封面圖 → MP4)
+   - 上傳到 YouTube (含標題、描述、Tags、縮圖)
+
 ## 📁 專案結構
 
 ```
@@ -151,7 +191,10 @@ firstory-podcast-automation/
 │       ├── googleDrive.js         # Google Drive 服務
 │       ├── gmail.js               # Gmail 服務
 │       ├── airtable.js            # Airtable 服務
-│       └── titleSelectionServer.js # 標題選擇服務器
+│       ├── titleSelectionServer.js # 標題選擇服務器
+│       ├── youtube.js             # YouTube 上傳服務
+│       ├── thumbnailGenerator.js  # 縮圖生成器
+│       └── videoCreator.js        # 影片合成器 (音檔+圖片→MP4)
 ├── temp/                          # 暫存目錄
 │   ├── downloads/                 # 檔案下載
 │   └── browser-data/              # 瀏覽器資料
@@ -204,7 +247,12 @@ Google Drive/
 
 ## 📈 版本歷史
 
-- **v2.0**: 互動式 AI 標題選擇流程 (目前版本)
+- **v3.0**: YouTube 自動發佈 + 特別單元支援 (目前版本)
+  - YouTube 影片自動合成與上傳（縮圖生成、影片合成）
+  - `--segment` 參數支援週四「機器人觀察週報」、週日「AI懶人精選週報」
+  - 各單元專屬標題/描述 AI Prompt
+  - Description 課程推廣區塊（可切換）
+- **v2.0**: 互動式 AI 標題選擇流程
 - **v1.0**: 基礎自動化上傳流程
 
 ## 🤝 貢獻

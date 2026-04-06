@@ -3,377 +3,662 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎙️ AI懶人報控制台</title>
+    <title>AI懶人報控制台</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: #333;
         }
-        
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
+
+        .container { max-width: 650px; margin: 0 auto; padding: 20px; }
+
+        .header { text-align: center; color: white; margin-bottom: 20px; }
+        .header h1 { font-size: 2rem; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .header p { opacity: 0.9; }
+
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px 12px 0 0;
+            overflow: hidden;
         }
-        
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
+        .tab-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
         }
-        
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        .tab-btn.active {
+            background: white;
+            color: #333;
+            border-radius: 12px 12px 0 0;
         }
-        
+
         .dashboard {
             background: white;
-            border-radius: 15px;
+            border-radius: 0 0 15px 15px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            padding: 30px;
+            padding: 25px;
         }
-        
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Shared styles */
         .status-bar {
             background: #f8fafc;
             border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-            border-left: 4px solid #3b82f6;
-        }
-        
-        .status-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-        
-        .status-item:last-child { margin-bottom: 0; }
-        
-        .status-label {
-            font-weight: 600;
-            color: #64748b;
-        }
-        
-        .status-value {
-            font-weight: 700;
-            color: #0f172a;
-        }
-        
-        .main-content {
-            text-align: center;
-        }
-        
-        .upload-button {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 15px 30px;
-            font-size: 1.2rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
-            width: 100%;
-            margin-bottom: 20px;
-        }
-        
-        .upload-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 25px rgba(16, 185, 129, 0.4);
-        }
-        
-        .upload-button:disabled {
-            background: #94a3b8;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .stop-button {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 10px 25px;
-            font-size: 1rem;
-            cursor: pointer;
-            margin-left: 10px;
-        }
-        
-        .process-info {
-            background: #dbeafe;
-            border-radius: 10px;
             padding: 15px;
-            margin-top: 20px;
+            margin-bottom: 20px;
             border-left: 4px solid #3b82f6;
-            display: none;
         }
-        
-        .process-info.show {
-            display: block;
+        .status-item { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .status-item:last-child { margin-bottom: 0; }
+        .status-label { font-weight: 600; color: #64748b; font-size: 0.9rem; }
+        .status-value { font-weight: 700; color: #0f172a; font-size: 0.9rem; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white; border: none; border-radius: 12px;
+            padding: 14px 24px; font-size: 1.1rem; font-weight: 700;
+            cursor: pointer; transition: all 0.3s ease;
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+            width: 100%;
         }
-        
-        .actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 30px;
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(16, 185, 129, 0.4); }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white; border: none; border-radius: 10px;
+            padding: 10px 20px; font-size: 0.95rem; cursor: pointer;
         }
-        
-        .action-btn {
-            padding: 12px 20px;
-            border: 2px solid #e2e8f0;
-            background: white;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            color: #64748b;
-            font-weight: 600;
-            text-align: center;
+
+        .btn-secondary {
+            padding: 10px 18px; border: 2px solid #e2e8f0; background: white;
+            border-radius: 8px; cursor: pointer; transition: all 0.3s;
+            color: #64748b; font-weight: 600; text-align: center;
         }
-        
-        .action-btn:hover {
-            border-color: #3b82f6;
-            color: #3b82f6;
+        .btn-secondary:hover { border-color: #3b82f6; color: #3b82f6; }
+
+        .process-info {
+            background: #dbeafe; border-radius: 10px; padding: 15px;
+            margin-top: 15px; border-left: 4px solid #3b82f6; display: none;
         }
-        
-        .footer {
-            text-align: center;
-            margin-top: 20px;
-            color: white;
-            opacity: 0.8;
-            font-size: 0.9rem;
+        .process-info.show { display: block; }
+
+        /* Manual Upload Form */
+        .form-group { margin-bottom: 18px; }
+        .form-group label {
+            display: block; font-weight: 600; color: #374151;
+            margin-bottom: 6px; font-size: 0.9rem;
         }
-        
-        @media (max-width: 768px) {
-            .actions {
-                grid-template-columns: 1fr;
-            }
+        .form-group input[type="file"],
+        .form-group select {
+            width: 100%; padding: 10px; border: 2px solid #e5e7eb;
+            border-radius: 8px; font-size: 0.95rem; transition: border-color 0.3s;
         }
+        .form-group input[type="file"]:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none; border-color: #3b82f6;
+        }
+        .form-group textarea {
+            width: 100%; padding: 10px; border: 2px solid #e5e7eb;
+            border-radius: 8px; font-size: 0.95rem; resize: vertical;
+            min-height: 120px; font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        .form-hint { font-size: 0.8rem; color: #9ca3af; margin-top: 4px; }
+
+        /* Title candidates */
+        .title-list { list-style: none; margin: 10px 0; }
+        .title-list li {
+            padding: 10px 12px; margin-bottom: 6px;
+            border: 2px solid #e5e7eb; border-radius: 8px;
+            font-size: 0.9rem; position: relative;
+        }
+        .title-list li.best {
+            border-color: #f59e0b; background: #fffbeb;
+        }
+        .title-list li .badge {
+            display: inline-block; background: #f59e0b; color: white;
+            font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;
+            margin-left: 6px; font-weight: 700;
+        }
+
+        /* Description editor */
+        .desc-editor {
+            width: 100%; min-height: 200px; padding: 12px;
+            border: 2px solid #e5e7eb; border-radius: 8px;
+            font-size: 0.9rem; font-family: inherit; resize: vertical;
+            line-height: 1.6;
+        }
+        .desc-editor:focus { outline: none; border-color: #3b82f6; }
+
+        /* Progress */
+        .progress-steps { margin: 15px 0; }
+        .progress-step {
+            padding: 8px 12px; margin-bottom: 4px;
+            border-radius: 6px; font-size: 0.85rem;
+            background: #f8fafc; color: #64748b;
+        }
+        .progress-step.active { background: #dbeafe; color: #1e40af; font-weight: 600; }
+        .progress-step.done { background: #dcfce7; color: #166534; }
+        .progress-step.error { background: #fee2e2; color: #991b1b; }
+
+        .log-box {
+            background: #1e293b; color: #e2e8f0; border-radius: 8px;
+            padding: 12px; max-height: 200px; overflow-y: auto;
+            font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem;
+            line-height: 1.5; margin-top: 10px;
+        }
+        .log-box .log-line { margin-bottom: 2px; }
+
+        .result-box {
+            background: #dcfce7; border-radius: 10px; padding: 18px;
+            margin-top: 15px; text-align: center;
+        }
+        .result-box a { color: #059669; font-weight: 600; }
+
+        .section-title {
+            font-size: 1rem; font-weight: 700; color: #1f2937;
+            margin-bottom: 12px; padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        @media (max-width: 768px) { .actions { grid-template-columns: 1fr; } }
+
+        .footer { text-align: center; margin-top: 15px; color: white; opacity: 0.8; font-size: 0.85rem; }
+
+        .hidden { display: none !important; }
+
+        .loading-spinner {
+            display: inline-block; width: 18px; height: 18px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%; border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎙️ AI懶人報控制台</h1>
-            <p>Web版本 - 遠程觸發系統</p>
+            <h1>AI懶人報控制台</h1>
+            <p>Podcast 自動化上傳系統</p>
         </div>
-        
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('airtable')">Airtable 流程</button>
+            <button class="tab-btn" onclick="switchTab('manual')">手動上傳</button>
+        </div>
+
         <div class="dashboard">
-            <div class="status-bar">
-                <div class="status-item">
-                    <span class="status-label">📊 系統狀態</span>
-                    <span class="status-value" id="system-status">載入中...</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">📅 下一集</span>
-                    <span class="status-value">EP12 (自動檢測)</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">🕒 最後更新</span>
-                    <span class="status-value" id="last-update">--</span>
-                </div>
-            </div>
-            
-            <div class="main-content">
-                <button class="upload-button" id="upload-btn" onclick="startUpload()">
-                    ▶️ 開始上傳 Podcast
-                </button>
-                
-                <div style="text-align: center;">
-                    <button class="stop-button" id="stop-btn" onclick="stopUpload()" style="display: none;">
-                        ⏹️ 停止流程
-                    </button>
-                </div>
-                
-                <div class="process-info" id="process-info">
-                    <div style="font-weight: 600; margin-bottom: 10px;">🚀 流程執行中...</div>
-                    <div>
-                        ✅ 系統將執行以下步驟：<br>
-                        1. 🔍 檢測下一集編號<br>
-                        2. 🤖 AI生成10個候選標題<br>
-                        3. 📧 發送選擇郵件到您的Gmail<br>
-                        4. ⏰ 等待您在Email中選擇標題<br>
-                        5. 📥 下載檔案並上傳到SoundOn
+            <!-- ═══ Tab 1: Airtable 流程 ═══ -->
+            <div id="tab-airtable" class="tab-content active">
+                <div class="status-bar">
+                    <div class="status-item">
+                        <span class="status-label">系統狀態</span>
+                        <span class="status-value" id="system-status">載入中...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">最後更新</span>
+                        <span class="status-value" id="last-update">--</span>
                     </div>
                 </div>
-                
+
+                <button class="btn-primary" id="upload-btn" onclick="startUpload()">
+                    開始上傳 Podcast
+                </button>
+
+                <div style="text-align: center; margin-top: 10px;">
+                    <button class="btn-danger hidden" id="stop-btn" onclick="stopUpload()">
+                        停止流程
+                    </button>
+                </div>
+
+                <div class="process-info" id="process-info">
+                    <div style="font-weight: 600; margin-bottom: 8px;">流程執行中...</div>
+                    <div style="font-size: 0.9rem;">
+                        1. 檢測下一集編號<br>
+                        2. AI生成10個候選標題<br>
+                        3. 發送選擇郵件到 Gmail<br>
+                        4. 等待選擇標題<br>
+                        5. 下載檔案並上傳到 SoundOn + YouTube
+                    </div>
+                </div>
+
                 <div class="actions">
-                    <a href="#" class="action-btn" onclick="refreshStatus()">🔄 重新整理</a>
-                    <a href="#" class="action-btn" onclick="openOriginal()">💻 原版流程</a>
+                    <button class="btn-secondary" onclick="refreshStatus()">重新整理</button>
+                    <button class="btn-secondary" onclick="openOriginal()">原版流程說明</button>
+                </div>
+            </div>
+
+            <!-- ═══ Tab 2: 手動上傳 ═══ -->
+            <div id="tab-manual" class="tab-content">
+                <!-- Step 1: 上傳表單 -->
+                <div id="manual-step1">
+                    <div class="section-title">Step 1: 上傳檔案 & 講稿</div>
+
+                    <div class="form-group">
+                        <label>音檔</label>
+                        <input type="file" id="manual-audio" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac">
+                        <div class="form-hint">支援 MP3, WAV, M4A, AAC 等格式</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>封面圖 (IG 圖)</label>
+                        <input type="file" id="manual-cover" accept=".jpg,.jpeg,.png,.webp">
+                        <div class="form-hint">JPG/PNG 格式，超過 500KB 會自動壓縮</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>講稿 / 重點內容</label>
+                        <textarea id="manual-script" placeholder="貼上今天 Podcast 的講稿、大綱或重點內容...&#10;&#10;AI 會根據這段文字生成標題和描述"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>單元類型</label>
+                        <select id="manual-segment">
+                            <option value="">一般（每日 AI 懶人報）</option>
+                            <option value="robot">機器人觀察週報</option>
+                            <option value="weekly">AI懶人精選週報</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-primary" id="manual-generate-btn" onclick="manualGenerate()">
+                        生成 AI 標題 & 描述
+                    </button>
+                </div>
+
+                <!-- Step 2: 編輯描述 & 確認 -->
+                <div id="manual-step2" class="hidden">
+                    <div class="section-title">Step 2: 確認內容</div>
+
+                    <div class="status-bar">
+                        <div class="status-item">
+                            <span class="status-label">集數</span>
+                            <span class="status-value" id="manual-ep-number">--</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>AI 生成的候選標題（實際選擇將透過 Email）</label>
+                        <ul class="title-list" id="manual-title-list"></ul>
+                    </div>
+
+                    <div class="form-group">
+                        <label>描述（可編輯）</label>
+                        <textarea class="desc-editor" id="manual-description"></textarea>
+                        <div class="form-hint">可自由編輯描述內容，包含業配文字和 AI 生成的內容</div>
+                    </div>
+
+                    <button class="btn-primary" onclick="manualConfirm()">
+                        確認並開始上傳
+                    </button>
+                    <div style="margin-top: 10px;">
+                        <button class="btn-secondary" style="width: 100%;" onclick="manualReset()">
+                            返回重新上傳
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: 上傳進度 -->
+                <div id="manual-step3" class="hidden">
+                    <div class="section-title">Step 3: 上傳進度</div>
+
+                    <div class="progress-steps" id="manual-progress">
+                        <div class="progress-step" data-step="init">初始化服務</div>
+                        <div class="progress-step" data-step="title_selection">Email 標題選擇</div>
+                        <div class="progress-step" data-step="processing">處理音檔 & 封面</div>
+                        <div class="progress-step" data-step="soundon">上傳到 SoundOn</div>
+                        <div class="progress-step" data-step="youtube">上傳到 YouTube</div>
+                        <div class="progress-step" data-step="done">完成</div>
+                    </div>
+
+                    <div class="log-box" id="manual-logs"></div>
+
+                    <div id="manual-result" class="hidden"></div>
                 </div>
             </div>
         </div>
-        
+
         <div class="footer">
-            <p>🚀 不影響你現有的 npm start 流程</p>
-            <p>💡 可在任何地方觸發Podcast上傳</p>
+            <p>Podcast 自動化上傳系統 v2.0</p>
         </div>
     </div>
 
     <script>
         let statusCheckInterval;
-        
-        // 載入系統狀態
+        let manualSessionId = null;
+        let manualPollInterval = null;
+
+        // ═══ Tab 切換 ═══
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+
+        // ═══ Airtable 流程 ═══
         async function loadSystemStatus() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                
+
                 const statusElement = document.getElementById('system-status');
                 const uploadBtn = document.getElementById('upload-btn');
                 const stopBtn = document.getElementById('stop-btn');
                 const processInfo = document.getElementById('process-info');
-                
-                // 更新狀態顯示
+
                 switch(data.status) {
                     case 'idle':
-                        statusElement.textContent = '🟢 待命中';
+                        statusElement.textContent = '待命中';
                         uploadBtn.disabled = false;
-                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
-                        stopBtn.style.display = 'none';
+                        uploadBtn.textContent = '開始上傳 Podcast';
+                        stopBtn.classList.add('hidden');
                         processInfo.classList.remove('show');
                         break;
                     case 'running':
-                        statusElement.textContent = '🔄 執行中';
+                        statusElement.textContent = '執行中';
                         uploadBtn.disabled = true;
-                        uploadBtn.textContent = '🚀 執行中...';
-                        stopBtn.style.display = 'inline-block';
+                        uploadBtn.textContent = '執行中...';
+                        stopBtn.classList.remove('hidden');
                         processInfo.classList.add('show');
                         break;
                     case 'completed':
-                        statusElement.textContent = '✅ 已完成';
+                        statusElement.textContent = '已完成';
                         uploadBtn.disabled = false;
-                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
-                        stopBtn.style.display = 'none';
+                        uploadBtn.textContent = '開始上傳 Podcast';
+                        stopBtn.classList.add('hidden');
                         processInfo.classList.remove('show');
                         break;
                     case 'failed':
-                        statusElement.textContent = '❌ 執行失敗';
+                        statusElement.textContent = '執行失敗';
                         uploadBtn.disabled = false;
-                        uploadBtn.textContent = '🔄 重新嘗試';
-                        stopBtn.style.display = 'none';
+                        uploadBtn.textContent = '重新嘗試';
+                        stopBtn.classList.add('hidden');
                         processInfo.classList.remove('show');
                         break;
                     case 'stopped':
-                        statusElement.textContent = '⏹️ 已停止';
+                        statusElement.textContent = '已停止';
                         uploadBtn.disabled = false;
-                        uploadBtn.textContent = '▶️ 開始上傳 Podcast';
-                        stopBtn.style.display = 'none';
+                        uploadBtn.textContent = '開始上傳 Podcast';
+                        stopBtn.classList.add('hidden');
                         processInfo.classList.remove('show');
                         break;
                 }
-                
-                document.getElementById('last-update').textContent = 
-                    new Date().toLocaleTimeString();
-                    
+
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
             } catch (error) {
-                console.error('載入狀態失敗:', error);
-                document.getElementById('system-status').textContent = '❌ 連接錯誤';
+                document.getElementById('system-status').textContent = '連接錯誤';
             }
         }
-        
-        // 開始上傳
+
         async function startUpload() {
-            if (!confirm('確定要開始Podcast上傳流程嗎？\n\n系統將會：\n1. 生成AI標題\n2. 發送郵件給您選擇\n3. 自動完成上傳')) {
-                return;
-            }
-            
+            if (!confirm('確定要開始 Podcast 上傳流程嗎？\n\n系統將會：\n1. 生成AI標題\n2. 發送郵件給您選擇\n3. 自動完成上傳')) return;
+
             try {
                 const response = await fetch('/api/start-upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
-                
                 const result = await response.json();
-                
+
                 if (result.status === 'started') {
-                    alert('🚀 上傳流程已啟動！\n\n請注意：\n1. 您稍後會收到Gmail標題選擇郵件\n2. 請在郵件中點選您想要的標題\n3. 系統會自動完成後續上傳');
-                    
-                    // 開始輪詢狀態
+                    alert('上傳流程已啟動！\n\n請注意：\n1. 稍後會收到 Gmail 標題選擇郵件\n2. 在郵件中點選標題\n3. 系統會自動完成上傳');
                     startStatusPolling();
                 } else {
-                    alert('❌ 啟動失敗：' + result.message);
+                    alert('啟動失敗：' + result.message);
                 }
-                
                 loadSystemStatus();
-                
             } catch (error) {
-                console.error('啟動失敗:', error);
-                alert('❌ 啟動失敗：' + error.message);
+                alert('啟動失敗：' + error.message);
             }
         }
-        
-        // 停止上傳
+
         async function stopUpload() {
-            if (!confirm('確定要停止當前流程嗎？')) {
-                return;
-            }
-            
+            if (!confirm('確定要停止當前流程嗎？')) return;
+
             try {
-                const response = await fetch('/api/stop-upload', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
+                const response = await fetch('/api/stop-upload', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
                 const result = await response.json();
-                alert('⏹️ ' + result.message);
-                
+                alert(result.message);
                 loadSystemStatus();
                 stopStatusPolling();
-                
             } catch (error) {
-                console.error('停止失敗:', error);
-                alert('❌ 停止失敗：' + error.message);
+                alert('停止失敗：' + error.message);
             }
         }
-        
-        // 開始狀態輪詢
+
         function startStatusPolling() {
             if (statusCheckInterval) clearInterval(statusCheckInterval);
             statusCheckInterval = setInterval(loadSystemStatus, 3000);
         }
-        
-        // 停止狀態輪詢
+
         function stopStatusPolling() {
-            if (statusCheckInterval) {
-                clearInterval(statusCheckInterval);
-                statusCheckInterval = null;
+            if (statusCheckInterval) { clearInterval(statusCheckInterval); statusCheckInterval = null; }
+        }
+
+        function refreshStatus() { loadSystemStatus(); }
+
+        function openOriginal() {
+            alert('原版流程說明：\n\n在終端機執行：\nnpm start\n\n此 Web 控制台不會影響原有流程！');
+        }
+
+        // ═══ 手動上傳 ═══
+        async function manualGenerate() {
+            const audioInput = document.getElementById('manual-audio');
+            const coverInput = document.getElementById('manual-cover');
+            const scriptText = document.getElementById('manual-script').value;
+            const segment = document.getElementById('manual-segment').value;
+
+            if (!audioInput.files[0]) { alert('請選擇音檔'); return; }
+            if (!coverInput.files[0]) { alert('請選擇封面圖'); return; }
+            if (!scriptText.trim()) { alert('請輸入講稿/重點內容'); return; }
+
+            const btn = document.getElementById('manual-generate-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span>AI 生成中，請稍候...';
+
+            try {
+                const formData = new FormData();
+                formData.append('audio', audioInput.files[0]);
+                formData.append('cover', coverInput.files[0]);
+                formData.append('script', scriptText);
+                if (segment) formData.append('segment', segment);
+
+                const response = await fetch('/api/manual-upload/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'error') {
+                    alert('生成失敗：' + result.message);
+                    btn.disabled = false;
+                    btn.textContent = '生成 AI 標題 & 描述';
+                    return;
+                }
+
+                manualSessionId = result.sessionId;
+
+                // 顯示 Step 2
+                document.getElementById('manual-step1').classList.add('hidden');
+                document.getElementById('manual-step2').classList.remove('hidden');
+
+                // 集數
+                document.getElementById('manual-ep-number').textContent = 'EP' + result.episodeNumber;
+
+                // 標題列表
+                const titleList = document.getElementById('manual-title-list');
+                titleList.innerHTML = '';
+                result.candidateTitles.forEach((title, idx) => {
+                    const li = document.createElement('li');
+                    li.textContent = (idx + 1) + '. ' + title;
+                    if (idx === result.bestTitleIndex) {
+                        li.classList.add('best');
+                        li.innerHTML += '<span class="badge">AI 推薦</span>';
+                    }
+                    titleList.appendChild(li);
+                });
+
+                // 描述
+                document.getElementById('manual-description').value = result.description;
+
+            } catch (error) {
+                alert('生成失敗：' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '生成 AI 標題 & 描述';
             }
         }
-        
-        // 重新整理狀態
-        function refreshStatus() {
-            loadSystemStatus();
+
+        async function manualConfirm() {
+            if (!manualSessionId) { alert('Session 遺失，請重新操作'); return; }
+
+            if (!confirm('確認後系統會：\n1. 發送 Email 讓您選擇標題\n2. 自動上傳到 SoundOn + YouTube\n\n確定要繼續嗎？')) return;
+
+            const editedDescription = document.getElementById('manual-description').value;
+
+            try {
+                const response = await fetch('/api/manual-upload/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: manualSessionId, editedDescription })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'error') {
+                    alert('啟動失敗：' + result.message);
+                    return;
+                }
+
+                // 顯示 Step 3
+                document.getElementById('manual-step2').classList.add('hidden');
+                document.getElementById('manual-step3').classList.remove('hidden');
+
+                // 開始 polling 進度
+                startManualPolling();
+
+            } catch (error) {
+                alert('啟動失敗：' + error.message);
+            }
         }
-        
-        // 開啟原版流程說明
-        function openOriginal() {
-            alert('💻 原版流程說明：\n\n在終端機執行：\nnpm start\n\n這個Web控制台不會影響你原有的流程！');
+
+        function manualReset() {
+            manualSessionId = null;
+            document.getElementById('manual-step2').classList.add('hidden');
+            document.getElementById('manual-step3').classList.add('hidden');
+            document.getElementById('manual-step1').classList.remove('hidden');
+            document.getElementById('manual-result').classList.add('hidden');
+
+            // Reset progress steps
+            document.querySelectorAll('#manual-progress .progress-step').forEach(step => {
+                step.classList.remove('active', 'done', 'error');
+            });
+            document.getElementById('manual-logs').innerHTML = '';
         }
-        
-        // 頁面載入
+
+        function startManualPolling() {
+            if (manualPollInterval) clearInterval(manualPollInterval);
+            pollManualStatus();
+            manualPollInterval = setInterval(pollManualStatus, 2000);
+        }
+
+        async function pollManualStatus() {
+            if (!manualSessionId) return;
+
+            try {
+                const response = await fetch('/api/manual-upload/status/' + manualSessionId);
+                const data = await response.json();
+
+                // 更新 progress steps
+                const stepOrder = ['init', 'title_selection', 'processing', 'soundon', 'youtube', 'done'];
+                const currentIdx = stepOrder.indexOf(data.currentStep);
+
+                document.querySelectorAll('#manual-progress .progress-step').forEach(stepEl => {
+                    const step = stepEl.dataset.step;
+                    const idx = stepOrder.indexOf(step);
+                    stepEl.classList.remove('active', 'done', 'error');
+
+                    if (data.status === 'failed') {
+                        if (idx <= currentIdx) stepEl.classList.add(idx === currentIdx ? 'error' : 'done');
+                    } else if (data.status === 'completed') {
+                        stepEl.classList.add('done');
+                    } else {
+                        if (idx < currentIdx) stepEl.classList.add('done');
+                        else if (idx === currentIdx) stepEl.classList.add('active');
+                    }
+                });
+
+                // 更新 logs
+                const logBox = document.getElementById('manual-logs');
+                logBox.innerHTML = (data.logs || []).map(log =>
+                    '<div class="log-line">' + escapeHtml(log) + '</div>'
+                ).join('');
+                logBox.scrollTop = logBox.scrollHeight;
+
+                // 完成或失敗
+                if (data.status === 'completed' || data.status === 'failed') {
+                    clearInterval(manualPollInterval);
+                    manualPollInterval = null;
+
+                    const resultBox = document.getElementById('manual-result');
+                    resultBox.classList.remove('hidden');
+
+                    if (data.status === 'completed') {
+                        let html = '<div class="result-box"><strong>全部流程完成！</strong><br>';
+                        if (data.youtubeUrl) {
+                            html += '<br><a href="' + escapeHtml(data.youtubeUrl) + '" target="_blank">YouTube 連結</a>';
+                        }
+                        html += '<br><br><button class="btn-secondary" onclick="manualReset()">上傳下一集</button></div>';
+                        resultBox.innerHTML = html;
+                    } else {
+                        resultBox.innerHTML = '<div style="background:#fee2e2;border-radius:10px;padding:18px;margin-top:15px;text-align:center;">' +
+                            '<strong>上傳失敗</strong><br>' + escapeHtml(data.error || '未知錯誤') +
+                            '<br><br><button class="btn-secondary" onclick="manualReset()">重新嘗試</button></div>';
+                    }
+                }
+
+            } catch (error) {
+                console.error('Polling 失敗:', error);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ═══ 頁面載入 ═══
         window.addEventListener('load', () => {
             loadSystemStatus();
-            
-            // 每30秒更新一次狀態
             setInterval(loadSystemStatus, 30000);
         });
-        
-        // 頁面關閉時清理
+
         window.addEventListener('beforeunload', () => {
             stopStatusPolling();
+            if (manualPollInterval) clearInterval(manualPollInterval);
         });
     </script>
 </body>
