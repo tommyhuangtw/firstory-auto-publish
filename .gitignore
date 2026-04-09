@@ -24,6 +24,7 @@ google-token.json
 !package-lock.json
 !vercel.json
 !config/google-credentials.example.json
+!remotion/tsconfig.json
 
 # Temporary files
 temp/
@@ -76,3 +77,9 @@ jspm_packages/
 
 # Yarn Integrity file
 .yarn-integrity
+
+# Shorts pipeline: large test assets and rendered output
+remotion/assets/test-*
+remotion/assets/manifest.json
+remotion/out/
+remotion/node_modules/
