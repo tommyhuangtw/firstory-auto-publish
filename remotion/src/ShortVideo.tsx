@@ -10,6 +10,7 @@ import {
 } from 'remotion';
 import { AnimatedCaption } from './components/AnimatedCaption';
 import { SlothOverlay } from './components/SlothOverlay';
+import { BRollLayer, BRollClip } from './components/BRollLayer';
 
 /**
  * Resolve a src that may either be:
@@ -38,8 +39,8 @@ export type ShortVideoProps = {
   slothOutroVideoSrc?: string;
   hookDurationSec?: number;
   outroDurationSec?: number;
-  // Phase 3 (optional): b-roll background
-  brollClips?: { src: string; start: number; end: number }[];
+  // Phase 3: b-roll background behind the clip segment
+  brollClips?: BRollClip[];
 };
 
 /**
@@ -92,7 +93,9 @@ export const ShortVideo: React.FC<ShortVideoProps> = ({
   slothOutroVideoSrc,
   hookDurationSec = 0,
   outroDurationSec = 0,
+  brollClips = [],
 }) => {
+  const hasBroll = brollClips.length > 0;
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
   const t = frame / fps;
@@ -112,7 +115,7 @@ export const ShortVideo: React.FC<ShortVideoProps> = ({
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0a0a14', overflow: 'hidden' }}>
-      {/* Background: blurred zoomed cover */}
+      {/* Background: blurred zoomed cover — always present as a safety net */}
       <AbsoluteFill style={{ filter: 'blur(40px) brightness(0.5)' }}>
         <Img
           src={resolvedAvatar}
@@ -127,13 +130,16 @@ export const ShortVideo: React.FC<ShortVideoProps> = ({
         />
       </AbsoluteFill>
 
-      {/* Foreground: three segments — hook sloth, cover, outro sloth */}
+      {/* B-roll layer sits above the blurred cover, below the foreground */}
+      {hasBroll && <BRollLayer clips={brollClips} />}
+
+      {/* Foreground: three segments — hook sloth, (cover if no B-roll), outro sloth */}
       {hookFrames > 0 && (
         <Sequence from={0} durationInFrames={hookFrames}>
           <SlothOverlay videoSrc={slothHookVideoSrc} fallbackImg={avatarImageSrc} />
         </Sequence>
       )}
-      {clipFrames > 0 && (
+      {clipFrames > 0 && !hasBroll && (
         <Sequence from={hookFrames} durationInFrames={clipFrames}>
           <CoverCenter imgSrc={resolvedAvatar} totalDurationSec={totalDurationSec} />
         </Sequence>

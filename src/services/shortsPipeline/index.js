@@ -130,17 +130,31 @@ async function runShortsPipeline({
   const stagedAvatar = await stageAsset(avatarImagePath, stageDir, 'avatar' + path.extname(avatarImagePath));
   const stagedSlothHook = await stageAsset(slothHookVid, stageDir, 'sloth_hook.mp4');
   const stagedSlothOutro = await stageAsset(slothOutroVid, stageDir, 'sloth_outro.mp4');
+
+  // Distribute B-roll clips evenly across the clip segment of the master timeline.
+  // The master audio is [hook | clips | outro]; B-roll plays behind the clips
+  // segment only (hook/outro have the sloth overlay as hero).
+  const clipDurations = await Promise.all(clipPaths.map(getDuration));
+  const clipSegmentStart = hook.durationSec;
+  const clipSegmentDuration = clipDurations.reduce((a, b) => a + b, 0);
   const stagedBroll = [];
-  for (let i = 0; i < brollResults.length; i++) {
-    const dest = await stageAsset(brollResults[i].path, stageDir, `broll_${i}.mp4`);
-    stagedBroll.push({ src: rel(dest) });
+  if (brollResults.length > 0 && clipSegmentDuration > 0) {
+    const slotDur = clipSegmentDuration / brollResults.length;
+    for (let i = 0; i < brollResults.length; i++) {
+      const dest = await stageAsset(brollResults[i].path, stageDir, `broll_${i}.mp4`);
+      stagedBroll.push({
+        src: rel(dest),
+        start: clipSegmentStart + i * slotDur,
+        end: clipSegmentStart + (i + 1) * slotDur,
+      });
+    }
   }
 
   const captions = buildCaptionsFromPlan({
     plan,
     transcription,
     hookDuration: hook.durationSec,
-    clipDurations: await Promise.all(clipPaths.map(getDuration)),
+    clipDurations,
     outroDuration: outro.durationSec,
   });
   // Paths in props are RELATIVE to remotion/public/ so staticFile() can resolve them
