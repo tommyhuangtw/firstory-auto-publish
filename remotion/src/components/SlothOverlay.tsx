@@ -42,36 +42,23 @@ export const SlothOverlay: React.FC<Props> = ({ videoSrc, fallbackImg }) => {
   return (
     <AbsoluteFill
       style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingTop: 200,
+        transform: `scale(${enter})`,
+        background: '#0a0a14',
       }}
     >
-      <div
-        style={{
-          width: 820,
-          height: 820,
-          borderRadius: 60,
-          overflow: 'hidden',
-          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
-          transform: `scale(${enter})`,
-          background: '#0a0a14',
-        }}
-      >
-        {videoSrc ? (
-          <OffthreadVideo
-            src={resolveSrc(videoSrc)}
-            muted
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            playbackRate={1}
-          />
-        ) : (
-          <Img
-            src={resolveSrc(fallbackImg)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        )}
-      </div>
+      {videoSrc ? (
+        <OffthreadVideo
+          src={resolveSrc(videoSrc)}
+          muted
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          playbackRate={1}
+        />
+      ) : (
+        <Img
+          src={resolveSrc(fallbackImg)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </AbsoluteFill>
   );
 };

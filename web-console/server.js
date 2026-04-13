@@ -53,6 +53,8 @@ const upload = multer({
 // 中間件
 app.use(express.json());
 app.use(express.static('public'));
+// Serve rendered shorts MP4s for inline preview / download
+app.use('/shorts-output', express.static(path.join(__dirname, '..', 'remotion', 'out')));
 
 // 狀態追蹤
 let currentProcess = null;
@@ -61,11 +63,17 @@ let processStatus = 'idle';
 // 手動上傳 session 管理
 const manualSessions = new Map();
 
+// 短影音 pipeline session 管理
+const shortsSessions = new Map();
+
 // 檢查是否有任何流程在執行中
 function isAnyProcessRunning() {
   if (currentProcess) return true;
   for (const [, session] of manualSessions) {
     if (session.status === 'generating' || session.status === 'uploading') return true;
+  }
+  for (const [, session] of shortsSessions) {
+    if (session.status === 'running') return true;
   }
   return false;
 }
@@ -367,6 +375,123 @@ function cleanupSession(sessionId) {
 
   manualSessions.delete(sessionId);
   console.log(`🗑️ Session ${sessionId} 已清理`);
+}
+
+// ═══════════════════════════════════════════════════
+// 短影音 Shorts Pipeline API
+// ═══════════════════════════════════════════════════
+
+// 啟動短影音 pipeline：上傳 audio + cover，背景執行 runShortsPipeline
+app.post('/api/shorts/generate',
+  upload.fields([
+    { name: 'audio', maxCount: 1 },
+    { name: 'cover', maxCount: 1 }
+  ]),
+  (req, res) => {
+    if (isAnyProcessRunning()) {
+      return res.status(400).json({
+        status: 'error',
+        message: '已有流程在執行中，請等待完成後再試'
+      });
+    }
+
+    const audioFile = req.files?.audio?.[0];
+    const coverFile = req.files?.cover?.[0];
+    const episodeTitle = (req.body?.episodeTitle || '').trim();
+
+    if (!audioFile) {
+      return res.status(400).json({ status: 'error', message: '請上傳音檔' });
+    }
+    if (!coverFile) {
+      return res.status(400).json({ status: 'error', message: '請上傳封面/角色圖' });
+    }
+
+    const sessionId = 'shorts-' + Date.now();
+    shortsSessions.set(sessionId, {
+      status: 'running',
+      audioPath: audioFile.path,
+      coverPath: coverFile.path,
+      episodeTitle,
+      logs: ['📤 檔案上傳完成，啟動短影音 pipeline...'],
+      outputPath: null,
+      outputFilename: null,
+      error: null,
+      createdAt: new Date()
+    });
+
+    console.log(`🎬 短影音 session ${sessionId} 啟動 (title="${episodeTitle}")`);
+
+    // 立即回應，在背景跑 pipeline
+    res.json({ status: 'started', sessionId });
+
+    // 背景執行 pipeline，把 console.log 擷取到 session.logs
+    (async () => {
+      const session = shortsSessions.get(sessionId);
+      const origLog = console.log;
+      const origErr = console.error;
+      const tee = (orig) => (...args) => {
+        orig.apply(console, args);
+        try {
+          const line = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+          session.logs.push(line);
+        } catch (_) { /* ignore */ }
+      };
+      console.log = tee(origLog);
+      console.error = tee(origErr);
+
+      try {
+        const { runShortsPipeline } = require('../src/services/shortsPipeline');
+        const { outputPath } = await runShortsPipeline({
+          audioPath: audioFile.path,
+          avatarImagePath: coverFile.path,
+          episodeTitle
+        });
+        session.outputPath = outputPath;
+        session.outputFilename = path.basename(outputPath);
+        session.status = 'completed';
+        session.logs.push(`🎉 Pipeline 完成：${session.outputFilename}`);
+      } catch (error) {
+        session.status = 'failed';
+        session.error = error.message;
+        session.logs.push(`❌ Pipeline 失敗: ${error.message}`);
+      } finally {
+        console.log = origLog;
+        console.error = origErr;
+        // 15 分鐘後清理臨時上傳檔案
+        setTimeout(() => cleanupShortsSession(sessionId), 15 * 60 * 1000);
+      }
+    })();
+  }
+);
+
+// 查詢短影音 pipeline 進度
+app.get('/api/shorts/status/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = shortsSessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ status: 'error', message: 'Session 不存在' });
+  }
+  res.json({
+    status: session.status,
+    logs: session.logs,
+    outputFilename: session.outputFilename,
+    outputUrl: session.outputFilename ? `/shorts-output/${session.outputFilename}` : null,
+    error: session.error
+  });
+});
+
+// 清理短影音 session 的上傳檔案（rendered mp4 保留在 remotion/out/）
+function cleanupShortsSession(sessionId) {
+  const session = shortsSessions.get(sessionId);
+  if (!session) return;
+  try {
+    if (session.audioPath && fs.existsSync(session.audioPath)) fs.unlinkSync(session.audioPath);
+    if (session.coverPath && fs.existsSync(session.coverPath)) fs.unlinkSync(session.coverPath);
+  } catch (e) {
+    console.log(`⚠️ 清理 shorts session ${sessionId} 上傳檔案失敗:`, e.message);
+  }
+  shortsSessions.delete(sessionId);
+  console.log(`🗑️ Shorts session ${sessionId} 已清理`);
 }
 
 // ═══════════════════════════════════════════════════

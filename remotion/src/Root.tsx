@@ -1,6 +1,7 @@
 import React from 'react';
-import { Composition } from 'remotion';
+import { Composition, Still } from 'remotion';
 import { ShortVideo, ShortVideoProps } from './ShortVideo';
+import { ReelsCover, ReelsCoverProps } from './ReelsCover';
 
 const FPS = 30;
 const WIDTH = 1080;
@@ -37,6 +38,16 @@ export const RemotionRoot: React.FC = () => {
         calculateMetadata={({ props }) => ({
           durationInFrames: Math.max(1, Math.round(props.totalDurationSec * FPS)),
         })}
+      />
+      <Still
+        id="ReelsCover"
+        component={ReelsCover}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{
+          headline: 'AI駭客太狂了',
+          backgroundImageSrc: 'sloth_studio_01.png',
+        } as ReelsCoverProps}
       />
     </>
   );

@@ -1,16 +1,17 @@
 /**
  * shortsPipeline/index.js — orchestration for the 40–60s podcast highlight pipeline.
  *
+ * All-TTS approach: the entire Shorts is narrated by the sloth character via VoAI.
+ * No original podcast audio is used — only the Airtable script + selected beat.
+ *
  * Phases (each stage gracefully degrades to a stub when its API key is absent):
- *   1. transcribe        — OpenAI Whisper → transcript with word timestamps
- *   2. extractHighlight  — Gemini picks the best 40–60s + writes hook/outro scripts
- *   3. cutClips          — FFmpeg slices the original audio
- *   4. ttsHookOutro      — VoAI synthesises hook + outro narration
- *   5. animateAvatar     — Hedra Character-3 lip-syncs the sloth image to (4)
- *   6. fetchBroll        — Pexels downloads B-roll matching keywords
- *   7. concatMasterAudio — hook(VoAI) → clip(s) → outro(VoAI), one master track
- *   8. buildRemotionProps — assemble props.json for the Remotion composition
- *   9. renderRemotion     — call `remotion render` to produce the final 9:16 MP4
+ *   1. extractHighlight  — Gemini writes narration script from selected beat
+ *   2. ttsNarration      — VoAI synthesises hook + narration + outro
+ *   3. whisperTTS        — Whisper on TTS audio for word-level caption timestamps
+ *   4. slothVideo        — Kling 2.6 I2V from pre-generated sloth images
+ *   5. fetchBroll        — Pexels downloads B-roll matching keywords
+ *   6. concatMasterAudio — hook + narration + outro, one master track
+ *   7. buildRemotionProps + render — assemble props & produce final 9:16 MP4
  *
  * Returns the final output path + a manifest describing every intermediate.
  */
@@ -22,34 +23,55 @@ const { promisify } = require('util');
 
 const { transcribe } = require('./transcribe');
 const { extractHighlight } = require('./highlightExtractor');
-const { extractClips, concatAudio, getDuration } = require('./audioCutter');
+const { concatAudio, getDuration } = require('./audioCutter');
 const { synthesize } = require('./voai');
-const { animate } = require('./hedra');
 const { fetchAll: fetchBrollAll } = require('./pexels');
+const { generateHeroBroll, generateSlothVideo, SLOTH_HOOK_PROMPT, SLOTH_OUTRO_PROMPT } = require('./kieai');
+const glob = require('glob');
 
 const execAsync = promisify(exec);
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
 const REMOTION_DIR = path.join(PROJECT_ROOT, 'remotion');
+const SLOTH_IMAGES_DIR = path.join(REMOTION_DIR, 'public');
+
+/** Concatenate multiple video files using FFmpeg concat demuxer. */
+async function concatVideo(inputPaths, outPath) {
+  const listFile = outPath + '.txt';
+  const content = inputPaths.map(p => `file '${p}'`).join('\n');
+  await fs.writeFile(listFile, content);
+  await execAsync(`ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${outPath}"`);
+  await fs.remove(listFile);
+}
+
+/** Pick a random pre-generated sloth studio image. */
+function pickRandomSlothImage() {
+  const pattern = path.join(SLOTH_IMAGES_DIR, 'sloth_studio_*.png');
+  const images = glob.sync(pattern);
+  if (images.length === 0) {
+    throw new Error(`No sloth images found matching ${pattern}`);
+  }
+  const picked = images[Math.floor(Math.random() * images.length)];
+  return picked;
+}
 
 /**
  * @param {object} args
- * @param {string} args.audioPath        - source podcast audio
- * @param {string} args.avatarImagePath  - sloth/character image
  * @param {string} [args.episodeTitle]
  * @param {string} [args.outputPath]     - final mp4 path; default remotion/out/short_<ts>.mp4
  * @param {string} [args.workDir]        - intermediate scratch dir
+ * @param {string} [args.podcastScript]  - full podcast script from Airtable
+ * @param {object} [args.selectedBeat]   - user-selected beat from previewTopics
  * @returns {Promise<{ outputPath: string, manifest: object }>}
  */
 async function runShortsPipeline({
-  audioPath,
-  avatarImagePath,
   episodeTitle = '',
   outputPath,
   workDir,
+  podcastScript: externalScript,
+  selectedBeat,
+  coverHeadline,
 }) {
-  if (!fs.existsSync(audioPath)) throw new Error(`audio not found: ${audioPath}`);
-  if (!fs.existsSync(avatarImagePath)) throw new Error(`avatar image not found: ${avatarImagePath}`);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   workDir = workDir || path.join(PROJECT_ROOT, 'temp', `shorts_${ts}`);
@@ -57,128 +79,213 @@ async function runShortsPipeline({
   await fs.ensureDir(workDir);
   await fs.ensureDir(path.dirname(outputPath));
 
+  // Pick a random pre-generated sloth image for this run
+  const avatarImagePath = pickRandomSlothImage();
+  console.log(`\n🦥 Avatar: ${path.basename(avatarImagePath)}`);
+
   const manifest = {
     startedAt: new Date().toISOString(),
-    inputs: { audioPath, avatarImagePath, episodeTitle },
+    inputs: { avatarImagePath, episodeTitle },
     workDir,
     stages: {},
   };
 
-  // ── Stage 1: Transcribe ──────────────────────────────────────────────────
-  console.log('\n━━━ Stage 1/9: Transcribe ━━━');
-  const transcription = await transcribe(audioPath);
-  await fs.writeJSON(path.join(workDir, '01_transcript.json'), transcription, { spaces: 2 });
-  manifest.stages.transcribe = {
-    stub: !!transcription._stub,
-    durationSec: transcription.duration,
-    segmentCount: transcription.segments.length,
-    wordCount: transcription.words.length,
-  };
-  console.log(`   transcript: ${transcription.segments.length} segments, ${transcription.duration.toFixed(1)}s`);
+  // Ground-truth podcast script from Airtable (if available).
+  let podcastScript = externalScript || null;
+  if (podcastScript) {
+    console.log(`   [script] using externally provided podcast script (${podcastScript.length} chars)`);
+  } else if (process.env.AIRTABLE_API_KEY) {
+    try {
+      const { AirtableService } = require('../airtable');
+      const at = new AirtableService();
+      const row = await at.getLatestPodcastScript();
+      if (row?.script) {
+        podcastScript = row.script;
+        console.log(`   [airtable] fetched podcast_script (${row.date}, ${podcastScript.length} chars)`);
+      } else {
+        console.warn('   [airtable] no podcast_script row found');
+      }
+    } catch (err) {
+      console.warn(`   [airtable] failed to fetch script: ${err.message}`);
+    }
+  }
 
-  // ── Stage 2: Highlight extraction ────────────────────────────────────────
-  console.log('\n━━━ Stage 2/9: Highlight extraction ━━━');
-  const plan = await extractHighlight({ transcription, episodeTitle });
-  await fs.writeJSON(path.join(workDir, '02_plan.json'), plan, { spaces: 2 });
+  // ── Stage 1: Highlight extraction (narration script) ────────────────────
+  console.log('\n━━━ Stage 1/7: Generate narration script ━━━');
+  const plan = await extractHighlight({ episodeTitle, podcastScript, selectedBeat });
+  await fs.writeJSON(path.join(workDir, '01_plan.json'), plan, { spaces: 2 });
   manifest.stages.highlight = { stub: !!plan._stub, ...plan };
   console.log(`   hook: ${plan.hook_script}`);
-  console.log(`   clips: ${plan.clips.map(c => `${c.start.toFixed(1)}–${c.end.toFixed(1)}`).join(', ')}`);
+  console.log(`   narration: ${plan.narration_script.slice(0, 80)}...`);
   console.log(`   outro: ${plan.outro_script}`);
 
-  // ── Stage 3: Cut original-audio clips ────────────────────────────────────
-  console.log('\n━━━ Stage 3/9: Cut original audio clips ━━━');
-  const clipPaths = await extractClips(audioPath, plan.clips, path.join(workDir, 'clips'));
-  manifest.stages.cutClips = { paths: clipPaths };
-
-  // ── Stage 4: VoAI hook + outro ───────────────────────────────────────────
-  console.log('\n━━━ Stage 4/9: VoAI hook + outro ━━━');
-  const hookAudioPath = path.join(workDir, '04_hook.m4a');
-  const outroAudioPath = path.join(workDir, '04_outro.m4a');
+  // ── Stage 2: VoAI TTS — synthesize all three segments ──────────────────
+  console.log('\n━━━ Stage 2/7: VoAI TTS (hook + narration + outro) ━━━');
+  const hookAudioPath = path.join(workDir, '02_hook.m4a');
+  const narrationAudioPath = path.join(workDir, '02_narration.m4a');
+  const outroAudioPath = path.join(workDir, '02_outro.m4a');
   const hook = await synthesize({ text: plan.hook_script, outPath: hookAudioPath });
+  const narration = await synthesize({ text: plan.narration_script, outPath: narrationAudioPath });
   const outro = await synthesize({ text: plan.outro_script, outPath: outroAudioPath });
-  manifest.stages.voai = { hook, outro };
+  manifest.stages.voai = { hook, narration, outro };
+  console.log(`   hook: ${hook.durationSec.toFixed(1)}s | narration: ${narration.durationSec.toFixed(1)}s | outro: ${outro.durationSec.toFixed(1)}s`);
 
-  // ── Stage 5: Hedra avatar animation ──────────────────────────────────────
-  console.log('\n━━━ Stage 5/9: Hedra avatar animation (hook + outro) ━━━');
-  const slothHookVid = path.join(workDir, '05_sloth_hook.mp4');
-  const slothOutroVid = path.join(workDir, '05_sloth_outro.mp4');
-  await animate({ imagePath: avatarImagePath, audioPath: hook.path, outPath: slothHookVid });
-  await animate({ imagePath: avatarImagePath, audioPath: outro.path, outPath: slothOutroVid });
-  manifest.stages.hedra = { hookVideo: slothHookVid, outroVideo: slothOutroVid };
+  // ── Stage 3: Whisper on TTS audio for word-level caption timestamps ────
+  console.log('\n━━━ Stage 3/7: Whisper on TTS for caption sync ━━━');
+  const [hookTranscription, narrationTranscription, outroTranscription] = await Promise.all([
+    transcribe(hook.path).catch(err => { console.warn(`   [caption-sync] hook transcription failed: ${err.message}`); return null; }),
+    transcribe(narration.path).catch(err => { console.warn(`   [caption-sync] narration transcription failed: ${err.message}`); return null; }),
+    transcribe(outro.path).catch(err => { console.warn(`   [caption-sync] outro transcription failed: ${err.message}`); return null; }),
+  ]);
+  if (hookTranscription) console.log(`   hook: ${hookTranscription.words.length} words`);
+  if (narrationTranscription) console.log(`   narration: ${narrationTranscription.words.length} words`);
+  if (outroTranscription) console.log(`   outro: ${outroTranscription.words.length} words`);
 
-  // ── Stage 6: Pexels B-roll ───────────────────────────────────────────────
-  console.log('\n━━━ Stage 6/9: Pexels B-roll ━━━');
-  const brollResults = await fetchBrollAll(plan.broll_keywords, path.join(workDir, 'broll'));
+  // ── Stage 4: Sloth videos (Kling 2.6 I2V) ─────────────────────────────
+  // Generate 2 x 10s clips in parallel: hook (talking) + outro (CTA)
+  console.log('\n━━━ Stage 4/7: Sloth videos (Kling 2.6) ━━━');
+  const slothHookVideoPath = path.join(workDir, '04_sloth_hook.mp4');
+  const slothOutroVideoPath = path.join(workDir, '04_sloth_outro.mp4');
+  try {
+    console.log('   generating 2 clips in parallel (hook + outro)...');
+    await Promise.all([
+      generateSlothVideo({ outPath: slothHookVideoPath, avatarImagePath, prompt: SLOTH_HOOK_PROMPT }),
+      generateSlothVideo({ outPath: slothOutroVideoPath, avatarImagePath, prompt: SLOTH_OUTRO_PROMPT }),
+    ]);
+    console.log(`   ✅ hook:  ${path.basename(slothHookVideoPath)}`);
+    console.log(`   ✅ outro: ${path.basename(slothOutroVideoPath)}`);
+    manifest.stages.slothVideo = { hookPath: slothHookVideoPath, outroPath: slothOutroVideoPath, avatar: path.basename(avatarImagePath) };
+  } catch (err) {
+    console.error(`   [sloth-kling] failed: ${err.message}`);
+    throw err;
+  }
+
+  // ── Stage 5: B-roll (Pexels + optional kie.ai Veo hero clip) ──────────
+  console.log('\n━━━ Stage 5/7: B-roll ━━━');
+  const brollDir = path.join(workDir, 'broll');
+  const pexelsResults = await fetchBrollAll(plan.broll_keywords, brollDir);
+
+  let brollResults = pexelsResults;
+  if (process.env.ENABLE_KIE_HERO_BROLL === 'true' && plan.broll_keywords.length > 0) {
+    try {
+      const heroPath = path.join(brollDir, 'hero_veo.mp4');
+      const heroKeyword = plan.broll_keywords[0];
+      const hero = await generateHeroBroll({ keyword: heroKeyword, outPath: heroPath });
+      brollResults = [hero, ...pexelsResults];
+      console.log(`   [broll] Veo hero clip prepended — ${brollResults.length} clips total`);
+    } catch (err) {
+      console.warn(`   [broll] Veo hero generation failed, falling back to Pexels only: ${err.message}`);
+    }
+  }
   manifest.stages.broll = brollResults;
 
-  // ── Stage 7: Concat master audio: hook → clips → outro ───────────────────
-  console.log('\n━━━ Stage 7/9: Concat master audio ━━━');
-  const masterAudioPath = path.join(workDir, '07_master.m4a');
-  await concatAudio([hook.path, ...clipPaths, outro.path], masterAudioPath);
+  // ── Stage 6: Concat master audio: hook → narration → outro ─────────────
+  console.log('\n━━━ Stage 6/7: Concat master audio ━━━');
+  const masterAudioPath = path.join(workDir, '06_master.m4a');
+  await concatAudio([hook.path, narration.path, outro.path], masterAudioPath);
   const masterDuration = await getDuration(masterAudioPath);
   console.log(`   master audio: ${masterDuration.toFixed(1)}s`);
   manifest.stages.masterAudio = { path: masterAudioPath, durationSec: masterDuration };
 
-  // ── Stage 8: Build Remotion props (stage assets into a temp public dir) ──
-  console.log('\n━━━ Stage 8/9: Stage assets + build Remotion props ━━━');
-  // Remotion serves assets via its dev HTTP server, so absolute file paths
-  // outside its --public-dir return 404. We copy every referenced file into a
-  // run-scoped staging dir and pass relative names that resolve via staticFile().
+  // ── Stage 7: Stage assets + build Remotion props + render ──────────────
+  console.log('\n━━━ Stage 7/7: Stage assets + build Remotion props + render ━━━');
   const stageDir = path.join(REMOTION_DIR, 'public', `run_${ts}`);
   await fs.ensureDir(stageDir);
   const stagedAudio = await stageAsset(masterAudioPath, stageDir, 'master.m4a');
   const stagedAvatar = await stageAsset(avatarImagePath, stageDir, 'avatar' + path.extname(avatarImagePath));
-  const stagedSlothHook = await stageAsset(slothHookVid, stageDir, 'sloth_hook.mp4');
-  const stagedSlothOutro = await stageAsset(slothOutroVid, stageDir, 'sloth_outro.mp4');
 
-  // Distribute B-roll clips evenly across the clip segment of the master timeline.
-  // The master audio is [hook | clips | outro]; B-roll plays behind the clips
-  // segment only (hook/outro have the sloth overlay as hero).
-  const clipDurations = await Promise.all(clipPaths.map(getDuration));
-  const clipSegmentStart = hook.durationSec;
-  const clipSegmentDuration = clipDurations.reduce((a, b) => a + b, 0);
+  // Stage sloth videos — hook video for opening + interstitials, outro video for CTA ending
+  const stagedSlothHook = await stageAsset(slothHookVideoPath, stageDir, 'sloth_hook.mp4');
+  const stagedSlothOutro = await stageAsset(slothOutroVideoPath, stageDir, 'sloth_outro.mp4');
+  const slothHookSrc = rel(stagedSlothHook);
+  const slothOutroSrc = rel(stagedSlothOutro);
+
+  // Distribute B-roll across the narration segment, interleaving sloth
+  const SLOTH_INTERLEAVE_EVERY = 2; // every 2 B-roll clips (same video, don't overuse)
+  const SLOTH_SLOT_SEC = 3.5;
+
+  const narrationDuration = narration.durationSec;
+  const narrationSegmentStart = hook.durationSec;
   const stagedBroll = [];
-  if (brollResults.length > 0 && clipSegmentDuration > 0) {
-    const slotDur = clipSegmentDuration / brollResults.length;
-    for (let i = 0; i < brollResults.length; i++) {
+  const slothClipSlots = [];
+
+  if (brollResults.length > 0 && narrationDuration > 0) {
+    const numBroll = brollResults.length;
+    const numSlothSlots = (numBroll > 2 && narrationDuration >= 15)
+      ? Math.floor((numBroll - 1) / SLOTH_INTERLEAVE_EVERY)
+      : 0;
+    const totalSlothTime = numSlothSlots * SLOTH_SLOT_SEC;
+    const brollTime = narrationDuration - totalSlothTime;
+    const brollSlotDur = brollTime / numBroll;
+
+    let cursor = narrationSegmentStart;
+    for (let i = 0; i < numBroll; i++) {
       const dest = await stageAsset(brollResults[i].path, stageDir, `broll_${i}.mp4`);
       stagedBroll.push({
         src: rel(dest),
-        start: clipSegmentStart + i * slotDur,
-        end: clipSegmentStart + (i + 1) * slotDur,
+        start: cursor,
+        end: cursor + brollSlotDur,
       });
+      cursor += brollSlotDur;
+
+      if (numSlothSlots > 0 && (i + 1) % SLOTH_INTERLEAVE_EVERY === 0 && i < numBroll - 1) {
+        slothClipSlots.push({ start: cursor, end: cursor + SLOTH_SLOT_SEC });
+        cursor += SLOTH_SLOT_SEC;
+      }
+    }
+    if (slothClipSlots.length > 0) {
+      console.log(`   interleaved ${slothClipSlots.length} sloth reaction shot(s) among ${numBroll} B-roll clips`);
     }
   }
 
   const captions = buildCaptionsFromPlan({
     plan,
-    transcription,
     hookDuration: hook.durationSec,
-    clipDurations,
+    narrationDuration: narration.durationSec,
     outroDuration: outro.durationSec,
+    hookTranscription,
+    narrationTranscription,
+    outroTranscription,
   });
-  // Paths in props are RELATIVE to remotion/public/ so staticFile() can resolve them
+
   const props = {
     audioSrc: rel(stagedAudio),
     avatarImageSrc: rel(stagedAvatar),
     headline: plan.headline,
     captions,
     totalDurationSec: masterDuration,
-    slothHookVideoSrc: rel(stagedSlothHook),
-    slothOutroVideoSrc: rel(stagedSlothOutro),
+    slothHookVideoSrc: slothHookSrc,
+    slothOutroVideoSrc: slothOutroSrc,
     hookDurationSec: hook.durationSec,
     outroDurationSec: outro.durationSec,
     brollClips: stagedBroll,
+    slothClipSlots,
+    slothClipVideoSrc: slothClipSlots.length > 0 ? slothHookSrc : undefined,
   };
-  const propsPath = path.join(workDir, '08_props.json');
+  const propsPath = path.join(workDir, '07_props.json');
   await fs.writeJSON(propsPath, props, { spaces: 2 });
 
-  // ── Stage 9: Render with Remotion ────────────────────────────────────────
-  console.log('\n━━━ Stage 9/9: Render with Remotion ━━━');
+  // Render with Remotion
+  console.log('\n   Rendering with Remotion...');
+  let coverPath = null;
   try {
     await renderRemotion({ propsPath, outputPath });
+
+    // Render Reels cover image if headline provided
+    if (coverHeadline) {
+      console.log('\n   Rendering Reels cover image...');
+      coverPath = path.join(path.dirname(outputPath), `cover_${ts}.png`);
+      const coverProps = {
+        headline: coverHeadline,
+        backgroundImageSrc: rel(stagedAvatar),
+      };
+      const coverPropsPath = path.join(workDir, '08_cover_props.json');
+      await fs.writeJSON(coverPropsPath, coverProps, { spaces: 2 });
+      await renderRemotionStill({ propsPath: coverPropsPath, outputPath: coverPath });
+      console.log(`   ✅ Cover: ${coverPath}`);
+      manifest.stages.cover = { coverPath, headline: coverHeadline };
+    }
   } finally {
-    // Clean up the staged copies (the originals live in workDir)
     await fs.remove(stageDir).catch(() => {});
   }
   manifest.stages.render = { outputPath };
@@ -186,69 +293,241 @@ async function runShortsPipeline({
 
   await fs.writeJSON(path.join(workDir, '99_manifest.json'), manifest, { spaces: 2 });
   console.log(`\n✅ Done. Output: ${outputPath}`);
-  return { outputPath, manifest };
+  if (coverPath) console.log(`   Cover: ${coverPath}`);
+  return { outputPath, coverPath, manifest };
 }
 
 /**
- * Map highlight plan + audio durations into a flat list of caption blocks
- * timed against the *master* audio (which is hook + clips + outro back-to-back).
+ * Build captions from the all-TTS plan. Three segments: hook, narration, outro.
+ * Each uses Whisper word-level timestamps from the TTS audio for accurate sync.
  */
-function buildCaptionsFromPlan({ plan, transcription, hookDuration, clipDurations, outroDuration }) {
+function buildCaptionsFromPlan({ plan, hookDuration, narrationDuration, outroDuration, hookTranscription, narrationTranscription, outroTranscription }) {
   const captions = [];
 
-  // 1. Hook caption: split the hook script into ~3-word chunks
-  pushChunked(captions, plan.hook_script, 0, hookDuration);
+  // 1. Hook caption
+  if (hookTranscription && hookTranscription.words && hookTranscription.words.length > 0) {
+    pushWhisperCaptions(captions, plan.hook_script, hookTranscription.words, 0);
+  } else {
+    pushFabricatedCaptions(captions, plan.hook_script, 0, hookDuration);
+  }
   let cursor = hookDuration;
 
-  // 2. Clip captions: pull from transcription.segments overlapping each clip
-  plan.clips.forEach((clip, i) => {
-    const clipDur = clipDurations[i];
-    const clipStartInOriginal = clip.start;
-    const clipEndInOriginal = clip.end;
-    const overlapping = transcription.segments.filter(
-      s => s.end > clipStartInOriginal && s.start < clipEndInOriginal
-    );
-    if (overlapping.length === 0) {
-      pushChunked(captions, '...', cursor, cursor + clipDur);
-    } else {
-      overlapping.forEach(seg => {
-        const localStart = Math.max(0, seg.start - clipStartInOriginal);
-        const localEnd = Math.min(clipDur, seg.end - clipStartInOriginal);
-        if (localEnd > localStart) {
-          captions.push({
-            text: seg.text.trim(),
-            start: cursor + localStart,
-            end: cursor + localEnd,
-          });
-        }
-      });
-    }
-    cursor += clipDur;
-  });
+  // 2. Narration caption
+  if (narrationTranscription && narrationTranscription.words && narrationTranscription.words.length > 0) {
+    pushWhisperCaptions(captions, plan.narration_script, narrationTranscription.words, cursor);
+  } else {
+    pushFabricatedCaptions(captions, plan.narration_script, cursor, cursor + narrationDuration);
+  }
+  cursor += narrationDuration;
 
   // 3. Outro caption
-  pushChunked(captions, plan.outro_script, cursor, cursor + outroDuration);
+  if (outroTranscription && outroTranscription.words && outroTranscription.words.length > 0) {
+    pushWhisperCaptions(captions, plan.outro_script, outroTranscription.words, cursor);
+  } else {
+    pushFabricatedCaptions(captions, plan.outro_script, cursor, cursor + outroDuration);
+  }
 
   return captions;
 }
 
 /**
- * Split a long string into ~12-char chunks, distribute evenly across [t0, t1].
+ * Build a caption with fabricated even-spaced word timings.
+ * Tokenizes into atomic units:
+ *   - ASCII word/number runs stay whole ("Code", "AI", "ChatGPT", "2025")
+ *   - CJK is grouped into 2-char beats
+ *   - Punctuation stays as single-char tokens
  */
-function pushChunked(captions, text, t0, t1) {
-  const chunks = chunkChinese(text, 14);
+const CAPTION_TOKEN_RE = /[A-Za-z0-9]+(?:[''][A-Za-z0-9]+)?|[\u4e00-\u9fff]{1,2}|[^\s]/g;
+
+function makeFabricatedCaption(text, startSec, endSec) {
+  const cleaned = (text || '').replace(/\s+/g, '');
+  if (!cleaned) return null;
+  const tokens = cleaned.match(CAPTION_TOKEN_RE) || [];
+  if (tokens.length === 0) return null;
+  const span = Math.max(0.05, endSec - startSec);
+  const each = span / tokens.length;
+  const words = tokens.map((tok, i) => ({
+    word: tok,
+    start: startSec + i * each,
+    end: startSec + (i + 1) * each,
+  }));
+  return { text: cleaned, start: startSec, end: endSec, words };
+}
+
+/**
+ * Visible-length-aware phrase chunker that never splits English words.
+ */
+const CAPTION_BREAK_RE = /([，。！？、；：,.!?;:])/;
+const CAPTION_CHUNK_MAX = 16;
+
+function splitIntoCaptionChunks(cleaned) {
+  if (!cleaned) return [];
+  const rawParts = cleaned.split(CAPTION_BREAK_RE).filter(Boolean);
+  const segments = [];
+  for (let i = 0; i < rawParts.length; i++) {
+    const part = rawParts[i];
+    if (CAPTION_BREAK_RE.test(part) && segments.length > 0) {
+      segments[segments.length - 1] += part;
+    } else if (part) {
+      segments.push(part);
+    }
+  }
+  if (segments.length === 0) segments.push(cleaned);
+
+  const expanded = [];
+  for (const seg of segments) {
+    if (seg.length <= CAPTION_CHUNK_MAX) {
+      expanded.push(seg);
+      continue;
+    }
+    const toks = seg.match(CAPTION_TOKEN_RE) || [seg];
+    let buf = '';
+    for (const t of toks) {
+      if (buf.length + t.length > CAPTION_CHUNK_MAX && buf) {
+        expanded.push(buf);
+        buf = t;
+      } else {
+        buf += t;
+      }
+    }
+    if (buf) expanded.push(buf);
+  }
+
+  const chunks = [];
+  let buf = '';
+  for (const seg of expanded) {
+    if (!buf) {
+      buf = seg;
+    } else if (buf.length + seg.length <= CAPTION_CHUNK_MAX) {
+      buf += seg;
+    } else {
+      chunks.push(buf);
+      buf = seg;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+function pushFabricatedCaptions(captions, text, t0, t1) {
+  const cleaned = (text || '').replace(/\s+/g, '');
+  if (!cleaned) return;
+  const chunks = splitIntoCaptionChunks(cleaned);
   if (chunks.length === 0) return;
-  const each = (t1 - t0) / chunks.length;
+  const totalLen = chunks.reduce((n, c) => n + c.length, 0) || 1;
+  const span = Math.max(0.05, t1 - t0);
+  let acc = t0;
   chunks.forEach((c, i) => {
-    captions.push({ text: c, start: t0 + i * each, end: t0 + (i + 1) * each });
+    const share = i === chunks.length - 1
+      ? t1 - acc
+      : (span * c.length) / totalLen;
+    const start = acc;
+    const end = Math.min(t1, acc + share);
+    acc = end;
+    const cap = makeFabricatedCaption(c, start, end);
+    if (cap) captions.push(cap);
   });
 }
 
-function chunkChinese(text, size) {
-  const out = [];
-  const cleaned = text.replace(/\s+/g, '');
-  for (let i = 0; i < cleaned.length; i += size) out.push(cleaned.slice(i, i + size));
-  return out;
+/**
+ * Map a text string onto an array of word timing slots proportionally by
+ * character count, then fix splits that land in the middle of English words.
+ */
+
+/**
+ * Group mapped word objects into display chunks (≤ CAPTION_CHUNK_MAX chars)
+ * and push them as captions with real timings.
+ */
+function buildCaptionsFromMappedWords(captions, mappedWords) {
+  const chunks = groupWordsIntoChunks(mappedWords, CAPTION_CHUNK_MAX);
+  for (const chunk of chunks) {
+    const tokens = chunk.text.match(CAPTION_TOKEN_RE) || [];
+    if (tokens.length === 0) continue;
+    const totalLen = tokens.reduce((n, t) => n + t.length, 0) || 1;
+    const span = chunk.end - chunk.start;
+    let acc = chunk.start;
+    const words = tokens.map((tok, j) => {
+      const share = j === tokens.length - 1
+        ? chunk.end - acc
+        : (span * tok.length) / totalLen;
+      const w = { word: tok, start: acc, end: acc + share };
+      acc += share;
+      return w;
+    });
+    captions.push({ text: chunk.text, start: chunk.start, end: chunk.end, words });
+  }
+}
+
+/**
+ * Greedy-pack mapped word objects into display chunks ≤ maxLen chars,
+ * preferring to break at punctuation so captions feel natural.
+ */
+const PUNCT_RE = /[，。！？、；：,.!?;:」）]/;
+const PUNCT_BREAK_RE = /[，。！？、；：,.!?;:」）]$/;
+
+function groupWordsIntoChunks(mappedWords, maxLen) {
+  const chunks = [];
+  let buf = null;
+  for (let i = 0; i < mappedWords.length; i++) {
+    const w = mappedWords[i];
+    const isPunct = PUNCT_RE.test(w.text) && w.text.length <= 2;
+
+    if (!buf) {
+      // Don't start a new chunk with lone punctuation — attach to previous chunk
+      if (isPunct && chunks.length > 0) {
+        chunks[chunks.length - 1].text += w.text;
+        chunks[chunks.length - 1].end = w.end;
+      } else {
+        buf = { text: w.text, start: w.start, end: w.end };
+      }
+    } else if (buf.text.length + w.text.length <= maxLen) {
+      buf.text += w.text;
+      buf.end = w.end;
+      if (PUNCT_BREAK_RE.test(buf.text) && buf.text.length >= 4) {
+        chunks.push(buf);
+        buf = null;
+      }
+    } else {
+      // About to overflow — absorb punctuation even if it exceeds maxLen
+      if (isPunct) {
+        buf.text += w.text;
+        buf.end = w.end;
+        chunks.push(buf);
+        buf = null;
+      } else {
+        // Don't split English words across chunks: if buf ends with ASCII
+        // and w starts with ASCII, they're the same word — keep together
+        const ASCII_TRAIL = /[A-Za-z0-9]$/;
+        const ASCII_LEAD = /^[A-Za-z0-9]/;
+        if (ASCII_TRAIL.test(buf.text) && ASCII_LEAD.test(w.text)) {
+          buf.text += w.text;
+          buf.end = w.end;
+        } else {
+          chunks.push(buf);
+          buf = { text: w.text, start: w.start, end: w.end };
+        }
+      }
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+/**
+ * Build captions from Whisper word-level transcription of TTS audio.
+ * Uses Whisper's own words and timings directly (TTS → Whisper is a closed loop,
+ * so Whisper's recognized text matches the script and its timestamps are accurate).
+ */
+function pushWhisperCaptions(captions, scriptText, whisperWords, offset) {
+  if (!whisperWords || whisperWords.length === 0) return;
+
+  const mapped = whisperWords.map(w => ({
+    text: w.word,
+    start: w.start + offset,
+    end: w.end + offset,
+  }));
+
+  buildCaptionsFromMappedWords(captions, mapped);
 }
 
 /**
@@ -269,9 +548,19 @@ function rel(absPath) {
   return path.relative(publicDir, absPath).split(path.sep).join('/');
 }
 
+async function renderRemotionStill({ propsPath, outputPath }) {
+  const propsArg = `--props=${propsPath}`;
+  const cmd =
+    `cd "${REMOTION_DIR}" && npx remotion still src/index.ts ReelsCover ` +
+    `"${outputPath}" ${propsArg}`;
+  console.log(`   $ ${cmd}`);
+  const { stdout, stderr } = await execAsync(cmd, { maxBuffer: 50 * 1024 * 1024 });
+  if (stdout) console.log(stdout);
+  if (stderr) console.error(stderr);
+}
+
 async function renderRemotion({ propsPath, outputPath }) {
   const propsArg = `--props=${propsPath}`;
-  // Using npx so this works whether or not Remotion is installed at the top level.
   const cmd =
     `cd "${REMOTION_DIR}" && npx remotion render src/index.ts ShortVideo ` +
     `"${outputPath}" ${propsArg}`;
@@ -281,4 +570,33 @@ async function renderRemotion({ propsPath, outputPath }) {
   if (stderr) console.error(stderr);
 }
 
-module.exports = { runShortsPipeline };
+/**
+ * Preview phase: extract essence beats for user review.
+ * Returns 3-5 candidate topics so the user can choose which one to make a short from.
+ */
+async function previewTopics({ podcastScript, episodeTitle = '' }) {
+  console.log('\n━━━ Preview: Extract essence beats ━━━');
+
+  const { OpenRouterService } = require('../openRouterService');
+  const openRouter = new OpenRouterService();
+  const { extractEssence } = require('./highlightExtractor');
+  const beats = await extractEssence({ podcastScript: podcastScript || null, episodeTitle, openRouter });
+
+  console.log(`\n📋 ${beats.length} candidate topic(s):`);
+  beats.forEach((b, i) => {
+    console.log(`  [${i + 1}] ${b.text.slice(0, 60)}...`);
+    if (b.reason) console.log(`      → ${b.reason}`);
+  });
+
+  return { beats, episodeTitle };
+}
+
+module.exports = {
+  runShortsPipeline,
+  previewTopics,
+  pickRandomSlothImage,
+  renderRemotionStill,
+  stageAsset,
+  rel,
+  REMOTION_DIR,
+};

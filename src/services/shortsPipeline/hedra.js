@@ -1,14 +1,20 @@
 /**
  * hedra.js — Hedra Character-3 API client.
  *
- * Workflow (Hedra "characters" / "audio-driven video" endpoints):
- *   1. Upload character image → returns character_id (or pass image URL)
- *   2. Upload audio → returns audio_id
- *   3. POST /v1/characters/generate { character_id, audio_id } → returns job_id
- *   4. Poll /v1/projects/{job_id} until status == "complete", then download .mp4
- *
- * Hedra's API surface evolves quickly — verify exact paths against
- * https://docs.hedra.com/ when you provision HEDRA_API_KEY.
+ * Real flow (matches hedra-labs/hedra-api-starter main.py):
+ *   1. POST /assets  JSON {name, type:"image"}          → { id }
+ *   2. POST /assets/{id}/upload  multipart file field   → uploads binary
+ *   3. Repeat 1–2 for audio (type:"audio")
+ *   4. POST /generations JSON {
+ *        type: "video",
+ *        ai_model_id: "<Character-3 UUID>",
+ *        start_keyframe_id: <imageAssetId>,
+ *        audio_id: <audioAssetId>,
+ *        generated_video_inputs: { text_prompt, resolution, aspect_ratio }
+ *      } → { id }
+ *   5. Poll /generations/{id}/status until status == "complete"
+ *      → { download_url }
+ *   6. GET download_url → mp4 bytes
  *
  * Until HEDRA_API_KEY is set, returns a STUB MP4 (the static avatar image
  * looped) so the Remotion composition has something to overlay.
@@ -23,6 +29,9 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const HEDRA_API_BASE = process.env.HEDRA_API_BASE || 'https://api.hedra.com/web-app/public';
+// Character-3 model UUID (hardcoded in hedra-labs/hedra-api-starter).
+// Can be overridden via HEDRA_MODEL_ID env var if Hedra ever rotates the id.
+const HEDRA_MODEL_ID = process.env.HEDRA_MODEL_ID || 'd1dd37a3-e39a-4854-a298-6510289f9cf2';
 
 /**
  * Animate a still character image to lip-sync a piece of audio.
@@ -44,11 +53,11 @@ async function animate({ imagePath, audioPath, outPath }) {
 
   console.log(`🦥 [hedra] Submitting ${path.basename(imagePath)} + ${path.basename(audioPath)} ...`);
 
-  // Step 1: upload assets (Hedra uses multipart upload to /assets endpoints)
-  const characterAssetId = await uploadAsset(apiKey, imagePath, 'image');
-  const audioAssetId = await uploadAsset(apiKey, audioPath, 'audio');
+  // Step 1+2: create asset record + upload binary for image and audio
+  const characterAssetId = await createAndUploadAsset(apiKey, imagePath, 'image');
+  const audioAssetId = await createAndUploadAsset(apiKey, audioPath, 'audio');
 
-  // Step 2: kick off generation
+  // Step 3: kick off generation
   const startResp = await fetch(`${HEDRA_API_BASE}/generations`, {
     method: 'POST',
     headers: {
@@ -56,10 +65,15 @@ async function animate({ imagePath, audioPath, outPath }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      ai_model_id: 'character-3', // Hedra Character-3
+      type: 'video',
+      ai_model_id: HEDRA_MODEL_ID,
       start_keyframe_id: characterAssetId,
       audio_id: audioAssetId,
-      generated_video_inputs: { aspect_ratio: '9:16', duration_ms: undefined },
+      generated_video_inputs: {
+        text_prompt: 'Animated cartoon sloth walking and talking energetically, body bouncing with each step, head nodding, expressive hand gestures while speaking, walk-and-talk vlog style, lively movement, vertical mobile video',
+        resolution: '720p',
+        aspect_ratio: '9:16',
+      },
     }),
   });
 
@@ -69,48 +83,92 @@ async function animate({ imagePath, audioPath, outPath }) {
   const { id: jobId } = await startResp.json();
   console.log(`   ⏳ job ${jobId} submitted, polling...`);
 
-  // Step 3: poll
+  // Step 4: poll
   const downloadUrl = await pollUntilComplete(apiKey, jobId);
 
-  // Step 4: download
+  // Step 5: download (presigned URL, no auth header)
   const dlResp = await fetch(downloadUrl);
+  if (!dlResp.ok) {
+    throw new Error(`Hedra download ${dlResp.status} from ${downloadUrl}`);
+  }
   const buf = Buffer.from(await dlResp.arrayBuffer());
   await fs.writeFile(outPath, buf);
-  console.log(`   ✅ ${outPath}`);
+  console.log(`   ✅ ${outPath} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`);
   return { path: outPath };
 }
 
-async function uploadAsset(apiKey, filePath, kind) {
+/**
+ * Hedra asset upload is a 2-step flow:
+ *   1) POST /assets          JSON {name, type}         → {id}
+ *   2) POST /assets/{id}/upload  multipart file field  → binary upload
+ */
+async function createAndUploadAsset(apiKey, filePath, kind) {
+  const name = path.basename(filePath);
+
+  // Step 1: create asset record
+  const createResp = await fetch(`${HEDRA_API_BASE}/assets`, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name, type: kind }),
+  });
+  if (!createResp.ok) {
+    throw new Error(`Hedra create ${kind} asset failed: ${await createResp.text()}`);
+  }
+  const created = await createResp.json();
+  const assetId = created.id;
+  if (!assetId) {
+    throw new Error(`Hedra create ${kind} asset: missing id in response: ${JSON.stringify(created).slice(0, 300)}`);
+  }
+
+  // Step 2: upload binary
   const buf = fs.readFileSync(filePath);
   const blob = new Blob([buf]);
   const form = new FormData();
-  form.append('file', blob, path.basename(filePath));
-  form.append('type', kind);
+  form.append('file', blob, name);
 
-  const resp = await fetch(`${HEDRA_API_BASE}/assets`, {
+  const uploadResp = await fetch(`${HEDRA_API_BASE}/assets/${assetId}/upload`, {
     method: 'POST',
     headers: { 'X-API-Key': apiKey },
     body: form,
   });
-  if (!resp.ok) throw new Error(`Hedra upload ${kind} failed: ${await resp.text()}`);
-  const data = await resp.json();
-  return data.id;
+  if (!uploadResp.ok) {
+    throw new Error(`Hedra upload ${kind} binary failed: ${await uploadResp.text()}`);
+  }
+
+  console.log(`   📎 uploaded ${kind}: ${assetId}`);
+  return assetId;
 }
 
-async function pollUntilComplete(apiKey, jobId, timeoutMs = 5 * 60 * 1000) {
+async function pollUntilComplete(apiKey, jobId, timeoutMs = 10 * 60 * 1000) {
   const start = Date.now();
+  let lastStatus = '';
   while (Date.now() - start < timeoutMs) {
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 5000));
     const resp = await fetch(`${HEDRA_API_BASE}/generations/${jobId}/status`, {
       headers: { 'X-API-Key': apiKey },
     });
     if (!resp.ok) continue;
     const body = await resp.json();
-    if (body.status === 'complete' && body.url) return body.url;
-    if (body.status === 'error' || body.status === 'failed') {
+    const status = body.status;
+    if (status === 'complete') {
+      const url = body.download_url || body.url;
+      if (!url) {
+        throw new Error(`Hedra job ${jobId} complete but no download_url: ${JSON.stringify(body).slice(0, 300)}`);
+      }
+      return url;
+    }
+    if (status === 'error' || status === 'failed') {
       throw new Error(`Hedra job ${jobId} failed: ${JSON.stringify(body)}`);
     }
-    process.stdout.write('.');
+    if (status !== lastStatus) {
+      console.log(`   [hedra] status: ${status}`);
+      lastStatus = status;
+    } else {
+      process.stdout.write('.');
+    }
   }
   throw new Error(`Hedra job ${jobId} timed out after ${timeoutMs}ms`);
 }

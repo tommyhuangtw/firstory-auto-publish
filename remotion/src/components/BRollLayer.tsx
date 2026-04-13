@@ -3,7 +3,6 @@ import {
   AbsoluteFill,
   OffthreadVideo,
   Sequence,
-  interpolate,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
@@ -25,16 +24,16 @@ const resolveSrc = (src: string): string => {
 };
 
 /**
- * One B-roll clip wrapped in a Ken Burns zoom + subtle darken overlay so the
- * center foreground (cover or sloth) and bottom captions stay legible.
+ * One B-roll clip with a **very subtle** center-anchored zoom and no horizontal
+ * pan. User feedback: the previous Ken Burns pan read as camera shake on phone
+ * screens. This keeps a hint of life (2–6% zoom per clip) without wobbling.
  */
 const BRollItem: React.FC<{ src: string; durationSec: number }> = ({ src, durationSec }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
   const progress = Math.min(1, Math.max(0, t / Math.max(0.1, durationSec)));
-  const zoom = 1.05 + progress * 0.1; // 1.05 → 1.15
-  const panX = interpolate(progress, [0, 1], [-2, 2]); // %
+  const zoom = 1.02 + progress * 0.04; // 1.02 → 1.06, gentle and steady
   return (
     <AbsoluteFill>
       <OffthreadVideo
@@ -42,12 +41,11 @@ const BRollItem: React.FC<{ src: string; durationSec: number }> = ({ src, durati
         muted
         playbackRate={1}
         style={{
-          width: '110%',
-          height: '110%',
+          width: '100%',
+          height: '100%',
           objectFit: 'cover',
-          transform: `scale(${zoom}) translate(${panX}%, 0)`,
-          marginLeft: '-5%',
-          marginTop: '-5%',
+          transform: `scale(${zoom})`,
+          transformOrigin: 'center center',
         }}
       />
       {/* Dark gradient overlay so captions + foreground elements remain readable */}

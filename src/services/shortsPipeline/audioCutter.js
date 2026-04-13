@@ -22,13 +22,14 @@ const execAsync = promisify(exec);
  * @param {number} endSec
  * @param {string} outPath
  */
-async function extractSegment(inputPath, startSec, endSec, outPath) {
+async function extractSegment(inputPath, startSec, endSec, outPath, { speed = 1.0 } = {}) {
   await fs.ensureDir(path.dirname(outPath));
   const dur = (endSec - startSec).toFixed(3);
   // Use -ss before -i for fast seek, then re-encode to AAC for stable Remotion playback
+  const atempoFilter = speed !== 1.0 ? `-filter:a "atempo=${speed}" ` : '';
   const cmd =
     `ffmpeg -y -nostdin -ss ${startSec.toFixed(3)} -t ${dur} -i "${inputPath}" ` +
-    `-c:a aac -b:a 192k -ar 44100 "${outPath}"`;
+    `${atempoFilter}-c:a aac -b:a 192k -ar 44100 "${outPath}"`;
   await execAsync(cmd);
   return outPath;
 }
@@ -40,19 +41,31 @@ async function extractSegment(inputPath, startSec, endSec, outPath) {
  * @param {string} outDir
  * @returns {Promise<string[]>}
  */
-async function extractClips(inputPath, ranges, outDir) {
+async function extractClips(inputPath, ranges, outDir, { speed = 1.0 } = {}) {
   await fs.ensureDir(outDir);
   const out = [];
   for (let i = 0; i < ranges.length; i++) {
     const dest = path.join(outDir, `clip_${i + 1}.m4a`);
-    await extractSegment(inputPath, ranges[i].start, ranges[i].end, dest);
+    await extractSegment(inputPath, ranges[i].start, ranges[i].end, dest, { speed });
     out.push(dest);
   }
   return out;
 }
 
 /**
- * Concatenate multiple audio files into one (uses concat demuxer for speed).
+ * Concatenate multiple audio files into one using the FFmpeg **concat filter**
+ * (not the concat demuxer).
+ *
+ * Why the filter: our hook/outro come from VoAI as **mono** AAC while the clip
+ * segments are extracted from the original podcast as **stereo** AAC. The
+ * concat demuxer silently drops packets when channel layouts mismatch — the
+ * output container has the right duration but only the first source's audio
+ * actually plays. The concat filter resamples/remixes heterogeneous inputs
+ * into one consistent output stream, which is exactly what we need.
+ *
+ * Force output to stereo (`-ac 2`) so downstream players/Remotion see a
+ * uniform channel layout.
+ *
  * @param {string[]} audioPaths
  * @param {string} outPath
  */
@@ -66,17 +79,16 @@ async function concatAudio(audioPaths, outPath) {
   }
 
   await fs.ensureDir(path.dirname(outPath));
-  const listFile = outPath + '.txt';
-  const listContent = audioPaths.map(p => `file '${path.resolve(p)}'`).join('\n');
-  await fs.writeFile(listFile, listContent);
 
-  // Re-encode to a single consistent AAC track to avoid concat demuxer issues
-  // when sources have different codecs / sample rates.
+  const inputArgs = audioPaths.map((p) => `-i "${p}"`).join(' ');
+  const filterInputs = audioPaths.map((_, i) => `[${i}:a]`).join('');
+  const filterComplex = `${filterInputs}concat=n=${audioPaths.length}:v=0:a=1[out]`;
+
   const cmd =
-    `ffmpeg -y -nostdin -f concat -safe 0 -i "${listFile}" ` +
-    `-c:a aac -b:a 192k -ar 44100 "${outPath}"`;
+    `ffmpeg -y -nostdin ${inputArgs} ` +
+    `-filter_complex "${filterComplex}" -map "[out]" ` +
+    `-c:a aac -b:a 192k -ar 44100 -ac 2 "${outPath}"`;
   await execAsync(cmd);
-  await fs.remove(listFile);
   return outPath;
 }
 
