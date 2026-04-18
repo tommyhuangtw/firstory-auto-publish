@@ -16,24 +16,33 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
   backgroundImageSrc,
 }) => {
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      {/* Darkened sloth background */}
+    <AbsoluteFill style={{ backgroundColor: '#FFF9F0' }}>
+      {/* Bright sloth background */}
       <Img
         src={resolveSrc(backgroundImageSrc)}
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          filter: 'brightness(0.35)',
+          filter: 'brightness(0.85)',
+        }}
+      />
+
+      {/* Bottom gradient overlay for text contrast */}
+      <AbsoluteFill
+        style={{
+          background:
+            'linear-gradient(transparent 30%, rgba(50, 30, 15, 0.7) 100%)',
         }}
       />
 
       {/* Headline */}
       <AbsoluteFill
         style={{
-          justifyContent: 'center',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           padding: '60px 80px',
+          paddingBottom: 180,
         }}
       >
         <div
@@ -44,8 +53,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
             color: '#FFFFFF',
             textAlign: 'center',
             lineHeight: 1.3,
-            textShadow:
-              '0 0 40px rgba(255,255,255,0.4), 0 0 80px rgba(255,255,255,0.2), 0 4px 12px rgba(0,0,0,0.8)',
+            textShadow: '0 2px 8px rgba(0,0,0,0.6)',
             letterSpacing: '0.02em',
           }}
         >
