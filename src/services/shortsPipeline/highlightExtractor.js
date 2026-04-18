@@ -295,7 +295,7 @@ async function generateCoverHeadlines({ selectedBeat, narrationScript }) {
   const openRouter = new OpenRouterService();
 
   const prompt = `
-你是一位專業的 IG Reels 封面標題設計師。根據下面的 podcast highlight 主題，幫我生成 5 個適合放在 IG Reels 封面圖上的中文標題。
+你是一位百萬粉絲 IG Reels 創作者，擅長用短短幾個字讓人停下滑動。根據下面的 podcast highlight 主題，幫我生成 5 個 IG Reels 封面標題。
 
 【主題段落】
 ${selectedBeat.text}
@@ -303,19 +303,33 @@ ${selectedBeat.reason ? `\n【主題摘要】\n${selectedBeat.reason}` : ''}
 ${narrationScript ? `\n【旁白腳本（參考用）】\n${narrationScript}` : ''}
 
 【步驟】
-先從主題段落中找出**最核心的產品名、工具名、或模型名**（例如：Mythos、Claude Code、Vibe Coding、GPT-5 等）。
-這個名稱就是 core_keyword，每個標題都必須包含它。
+先找出主題中**最核心的產品名/工具名/模型名**（例如 Mythos、Claude Code、GPT-5）作為 core_keyword。
+
+【標題風格指南 — 重要！】
+想像觀眾正在高速滑 IG，你的標題要讓他們「停下來」。好的標題會製造**情緒反應**或**好奇心缺口**：
+
+✅ 好的範例（參考這種風格）：
+- 「Claude Code 嚇死我了」（情緒衝擊）
+- 「GPT-5 要搶你飯碗？」（恐懼 + 好奇）
+- 「這 AI 工具免費太扯」（驚訝 + 具體）
+- 「Cursor 讓我廢掉了」（自嘲 + 好奇）
+- 「3 分鐘做完一天的工作」（數字 + 反差）
+
+❌ 不要這種（太正經、像新聞稿）：
+- 「Claude Design：你的專屬設計師」
+- 「AI 美感進化論」
+- 「○○○神助攻」
 
 【嚴格規則】
-1. 每個標題 4–12 個字（中文字 1 字算 1，英文單字算字母數。例如「Mythos太危險了」= 9 字）
-2. 每個標題**必須包含 core_keyword 的原文**（英文產品名保留英文拼法，不要翻譯）
-3. 要吸睛、有衝擊力，適合在 IG 滑到時一秒抓住注意力
-4. 不要用「你知道嗎」「必看」「震驚」這種太通用的詞，要跟主題內容直接相關
-5. 不要只放公司名（如 Anthropic、Google），要放具體的產品/模型名（如 Mythos、Gemini）
-6. 5 個標題風格要有變化（例如：驚嘆型、疑問型、數字型、行動型、描述型）
+1. 每個標題 4–12 字（中文 1 字 = 1，英文算字母數）
+2. 每個標題**必須包含 core_keyword 原文**（英文不翻譯）
+3. 語氣要像跟朋友聊天，不要像廣告文案或新聞標題
+4. 要有**情緒**（驚訝、害怕、興奮、自嘲、好奇）而不只是「介紹」
+5. 禁止用「你知道嗎」「必看」「震驚」「神助攻」「救星」「進化論」這些老套詞
+6. 5 個標題情緒要不同（驚嘆、疑問、自嘲、恐懼、興奮等）
 
 輸出嚴格 JSON（不要 markdown code fence、不要說明）：
-{ "core_keyword": "從段落中提取的核心產品/工具名", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5"] }
+{ "core_keyword": "核心產品名", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5"] }
 `.trim();
 
   try {
