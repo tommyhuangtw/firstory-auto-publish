@@ -169,6 +169,29 @@ class AirtableService {
     }
   }
 
+  /**
+   * Fetch the latest `podcast script` from Daily Podcast Summary. This is the
+   * ground-truth text that was fed to VoAI to synthesize the episode audio, so
+   * it's character-for-character what is actually spoken. The shorts pipeline
+   * uses this as the source for clip captions instead of Whisper's lossy
+   * transcription.
+   */
+  async getLatestPodcastScript() {
+    const records = await this.base(this.tableName).select({
+      sort: [{ field: 'Date', direction: 'desc' }],
+      maxRecords: 1,
+      filterByFormula: `NOT({podcast script} = '')`,
+    }).firstPage();
+    if (records.length === 0) return null;
+    const r = records[0];
+    return {
+      recordId: r.id,
+      date: r.get('Date'),
+      script: r.get('podcast script') || '',
+      title: r.get('Youtube Title1') || r.get('Title') || '',
+    };
+  }
+
   // AI 生成邏輯已移至 ContentGenerator (src/services/contentGenerator.js)
 }
 

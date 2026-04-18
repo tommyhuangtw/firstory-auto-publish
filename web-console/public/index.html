@@ -205,6 +205,7 @@
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('airtable')">Airtable 流程</button>
             <button class="tab-btn" onclick="switchTab('manual')">手動上傳</button>
+            <button class="tab-btn" onclick="switchTab('shorts')">短影音生成</button>
         </div>
 
         <div class="dashboard">
@@ -335,6 +336,51 @@
                     <div id="manual-result" class="hidden"></div>
                 </div>
             </div>
+
+            <!-- ═══ Tab 3: 短影音生成 ═══ -->
+            <div id="tab-shorts" class="tab-content">
+                <!-- Form -->
+                <div id="shorts-form">
+                    <div class="section-title">短影音 Highlight 生成 (40–60s)</div>
+                    <div class="form-hint" style="margin-bottom: 16px;">
+                        上傳 podcast 音檔 + 角色/封面圖，系統會自動抓出精華段、
+                        配上樹懶開場/結尾 (Hedra)、加字幕與 B-roll，輸出 9:16 直式 MP4。
+                    </div>
+
+                    <div class="form-group">
+                        <label>Podcast 音檔</label>
+                        <input type="file" id="shorts-audio" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac">
+                        <div class="form-hint">建議 &lt; 30 分鐘以加速 Whisper 轉錄</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>封面 / 樹懶角色圖</label>
+                        <input type="file" id="shorts-cover" accept=".jpg,.jpeg,.png,.webp">
+                        <div class="form-hint">JPG/PNG，會餵給 Hedra Character-3 做 lip-sync</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>本集標題（選填，給 Gemini 參考）</label>
+                        <input type="text" id="shorts-title" placeholder="例：ChatGPT 又進化了一大步">
+                    </div>
+
+                    <button class="btn-primary" id="shorts-generate-btn" onclick="shortsGenerate()">
+                        開始生成短影音
+                    </button>
+                </div>
+
+                <!-- Progress + Result -->
+                <div id="shorts-progress-section" class="hidden">
+                    <div class="section-title">Pipeline 進度</div>
+                    <div class="log-box" id="shorts-logs" style="max-height: 360px;"></div>
+                    <div id="shorts-result" class="hidden" style="margin-top: 20px;"></div>
+                    <div style="margin-top: 16px;">
+                        <button class="btn-secondary" style="width: 100%;" onclick="shortsReset()">
+                            返回重新生成
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="footer">
@@ -346,6 +392,8 @@
         let statusCheckInterval;
         let manualSessionId = null;
         let manualPollInterval = null;
+        let shortsSessionId = null;
+        let shortsPollInterval = null;
 
         // ═══ Tab 切換 ═══
         function switchTab(tab) {
@@ -650,6 +698,117 @@
             return div.innerHTML;
         }
 
+        // ═══ 短影音生成 ═══
+        async function shortsGenerate() {
+            const audioInput = document.getElementById('shorts-audio');
+            const coverInput = document.getElementById('shorts-cover');
+            const titleInput = document.getElementById('shorts-title');
+            const genBtn = document.getElementById('shorts-generate-btn');
+
+            if (!audioInput.files[0]) { alert('請上傳音檔'); return; }
+            if (!coverInput.files[0]) { alert('請上傳封面/角色圖'); return; }
+
+            const formData = new FormData();
+            formData.append('audio', audioInput.files[0]);
+            formData.append('cover', coverInput.files[0]);
+            formData.append('episodeTitle', titleInput.value || '');
+
+            genBtn.disabled = true;
+            genBtn.textContent = '上傳中...';
+
+            try {
+                const response = await fetch('/api/shorts/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok && data.sessionId) {
+                    shortsSessionId = data.sessionId;
+                    document.getElementById('shorts-form').classList.add('hidden');
+                    document.getElementById('shorts-progress-section').classList.remove('hidden');
+                    document.getElementById('shorts-logs').innerHTML = '';
+                    document.getElementById('shorts-result').classList.add('hidden');
+                    startShortsPolling();
+                } else {
+                    alert('啟動失敗: ' + (data.message || '未知錯誤'));
+                    genBtn.disabled = false;
+                    genBtn.textContent = '開始生成短影音';
+                }
+            } catch (error) {
+                alert('網路錯誤: ' + error.message);
+                genBtn.disabled = false;
+                genBtn.textContent = '開始生成短影音';
+            }
+        }
+
+        function startShortsPolling() {
+            if (shortsPollInterval) clearInterval(shortsPollInterval);
+            pollShortsStatus();
+            shortsPollInterval = setInterval(pollShortsStatus, 2000);
+        }
+
+        async function pollShortsStatus() {
+            if (!shortsSessionId) return;
+            try {
+                const response = await fetch('/api/shorts/status/' + shortsSessionId);
+                if (!response.ok) return;
+                const data = await response.json();
+
+                // Update logs
+                const logBox = document.getElementById('shorts-logs');
+                logBox.innerHTML = (data.logs || []).map(log =>
+                    '<div class="log-line">' + escapeHtml(log) + '</div>'
+                ).join('');
+                logBox.scrollTop = logBox.scrollHeight;
+
+                // Terminal states
+                if (data.status === 'completed' || data.status === 'failed') {
+                    clearInterval(shortsPollInterval);
+                    shortsPollInterval = null;
+                    const resultBox = document.getElementById('shorts-result');
+                    resultBox.classList.remove('hidden');
+
+                    if (data.status === 'completed' && data.outputUrl) {
+                        resultBox.innerHTML =
+                            '<div style="background:#d1fae5;border-radius:10px;padding:18px;">' +
+                            '<strong>生成完成！</strong><br>' +
+                            '<div style="margin-top:12px;">' +
+                            '<video src="' + data.outputUrl + '" controls ' +
+                            'style="width:100%;max-width:360px;border-radius:10px;background:#000;"></video>' +
+                            '</div>' +
+                            '<div style="margin-top:12px;">' +
+                            '<a href="' + data.outputUrl + '" download class="btn-primary" ' +
+                            'style="display:inline-block;text-decoration:none;">下載 MP4</a>' +
+                            '</div>' +
+                            '<div class="form-hint" style="margin-top:8px;">' +
+                            escapeHtml(data.outputFilename || '') + '</div>' +
+                            '</div>';
+                    } else {
+                        resultBox.innerHTML =
+                            '<div style="background:#fee2e2;border-radius:10px;padding:18px;">' +
+                            '<strong>Pipeline 失敗</strong><br>' +
+                            escapeHtml(data.error || '未知錯誤') + '</div>';
+                    }
+                }
+            } catch (error) {
+                console.error('Shorts polling 失敗:', error);
+            }
+        }
+
+        function shortsReset() {
+            if (shortsPollInterval) { clearInterval(shortsPollInterval); shortsPollInterval = null; }
+            shortsSessionId = null;
+            document.getElementById('shorts-form').classList.remove('hidden');
+            document.getElementById('shorts-progress-section').classList.add('hidden');
+            document.getElementById('shorts-audio').value = '';
+            document.getElementById('shorts-cover').value = '';
+            document.getElementById('shorts-title').value = '';
+            const genBtn = document.getElementById('shorts-generate-btn');
+            genBtn.disabled = false;
+            genBtn.textContent = '開始生成短影音';
+        }
+
         // ═══ 頁面載入 ═══
         window.addEventListener('load', () => {
             loadSystemStatus();
@@ -659,6 +818,7 @@
         window.addEventListener('beforeunload', () => {
             stopStatusPolling();
             if (manualPollInterval) clearInterval(manualPollInterval);
+            if (shortsPollInterval) clearInterval(shortsPollInterval);
         });
     </script>
 </body>

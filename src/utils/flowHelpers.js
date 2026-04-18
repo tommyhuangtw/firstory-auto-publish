@@ -360,23 +360,42 @@ async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs)
 //
 // `;
 
+// // 業配文字 (BuildMoat)
+// const APPENDED_TEXT = `🚀【懶人報專屬好康】現代系統設計實戰營：矽谷大咖帶你突破職涯瓶頸！
+// 在 AI 時代，寫 Code 漂亮不再是唯一指標，「系統架構能力」才是面試大廠（Google、Meta、OpenAI）勝出的關鍵護城河！
+//
+// 這門課由兩位矽谷老將親自帶領：
+// 🤖 Terry Chen（10 年矽谷經驗、50 萬訂閱 YouTuber）
+// 🤖 Bohr Wang（曾任職於 OpenAI、Google、Meta 的主任工程師）
+//
+// 💡 你將學會：
+// 👉 大廠實戰架構： 拆解 Spotify 排行榜、Tesla RoboTaxi、YouTube 等千萬級流量系統。
+// 👉 不可替代性： 掌握 AI 無法代勞的決策力（資料庫選擇、高併發處理、架構省錢術）。
+// 👉 最新 AI 應用： 實戰 RAG 智能系統與 MCP 協議 Agent 架構。
+//
+// 🔥懶人報聽眾限定：超過 5 折超狂優惠！
+// 現在點擊下方連結結帳，直接享有專屬「半價以上」折扣，投資自己職涯的最高槓桿：
+// 👉 專屬優惠連結：
+// https://www.buildmoat.org/?promo_code=promo_1TIqotIXmUwiEgU6tciLjSiI
+//
+// `;
+
+// // 業配文字 (AI Podcast 自動化流程)
+// const APPENDED_TEXT = `🚀 【限時優惠】從每集 6 小時縮短至 20 分鐘的播客祕訣！
+// 想做到一週五更、衝上科技榜前三名嗎？這套「AI Podcast 自動化流程 V2.0」幫我創造了 20 萬次下載，現在正式公開！從自動選題、在地化講稿到語音生成，讓你告別重複勞動。
+// 🔥 原價 NT$5,990 ➡️ 限時優惠只要 NT$3,290
+// 點擊加入自動化行列：https://portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK
+//
+// `;
+
 // 業配文字
-const APPENDED_TEXT = `🚀【懶人報專屬好康】現代系統設計實戰營：矽谷大咖帶你突破職涯瓶頸！
-在 AI 時代，寫 Code 漂亮不再是唯一指標，「系統架構能力」才是面試大廠（Google、Meta、OpenAI）勝出的關鍵護城河！
+const APPENDED_TEXT = `【 🚀 企業 AI 落地計畫：讓 AI 從玩具變成工具 】
 
-這門課由兩位矽谷老將親自帶領：
-🤖 Terry Chen（10 年矽谷經驗、50 萬訂閱 YouTuber）
-🤖 Bohr Wang（曾任職於 OpenAI、Google、Meta 的主任工程師）
+當大家還在跟 AI 聊天，真正領先的企業已經將 AI 系統化落地。憑藉前美國 Tesla 軟體品質工程背景，我要幫你客製一套「穩健、精準」的 AI 系統，解決法律比對、單據入庫或診所餐廳預約等流程痛點。
 
-💡 你將學會：
-👉 大廠實戰架構： 拆解 Spotify 排行榜、Tesla RoboTaxi、YouTube 等千萬級流量系統。
-👉 不可替代性： 掌握 AI 無法代勞的決策力（資料庫選擇、高併發處理、架構省錢術）。
-👉 最新 AI 應用： 實戰 RAG 智能系統與 MCP 協議 Agent 架構。
+🎯 限額 2 名：提供 50% 費用減免，打造 Tesla 等級的ＡＩ自動化大腦。
 
-🔥懶人報聽眾限定：超過 5 折超狂優惠！
-現在點擊下方連結結帳，直接享有專屬「半價以上」折扣，投資自己職涯的最高槓桿：
-👉 專屬優惠連結：
-https://www.buildmoat.org/?promo_code=promo_1TIqotIXmUwiEgU6tciLjSiI
+👉 立即填表申請： https://forms.gle/uDi4GV8arqJJkuXt9
 
 `;
 
