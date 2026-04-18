@@ -169,8 +169,8 @@ async function generateSlothVideo({ outPath, avatarImagePath, prompt }) {
   await fs.ensureDir(path.dirname(outPath));
 
   // Upload reference image as first frame
-  console.log(`🦥 [kie.ai] Uploading reference image to tmpfiles.org...`);
-  const publicUrl = await uploadToTmpFiles(avatarImagePath);
+  console.log(`🦥 [kie.ai] Uploading reference image to Cloudinary...`);
+  const publicUrl = await uploadToTmpHost(avatarImagePath);
   console.log(`   referenceImage: ${publicUrl}`);
 
   console.log(`🦥 [kie.ai] Submitting Kling 2.6 I2V job (${SLOTH_VIDEO_DURATION}s)`);
@@ -288,30 +288,43 @@ const DEFAULT_EDIT_PROMPT =
   'Keep the exact same sloth character design, art style, clothing, and color palette. ' +
   'Vertical 9:16 framing, full body visible head to toe, sloth centered. No text anywhere.';
 
+const crypto = require('crypto');
+
 /**
- * Upload a local image to tmpfiles.org and return a public URL (~1h lifetime).
- * kie.ai's nano-banana-edit requires `image_urls` (public URLs), not base64.
+ * Upload a local image to Cloudinary and return a public URL.
+ * Requires CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET in .env.
  */
-async function uploadToTmpFiles(imagePath) {
+async function uploadToTmpHost(imagePath) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    throw new Error('Cloudinary credentials not set (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)');
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const folder = 'shorts_tmp';
+  const paramsToSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const signature = crypto.createHash('sha1').update(paramsToSign).digest('hex');
+
   const buf = await fs.readFile(imagePath);
   const form = new FormData();
-  const blob = new Blob([buf]);
-  form.append('file', blob, path.basename(imagePath));
-  const resp = await fetch('https://tmpfiles.org/api/v1/upload', {
-    method: 'POST',
-    body: form,
-  });
+  form.append('file', new Blob([buf]), path.basename(imagePath));
+  form.append('api_key', apiKey);
+  form.append('timestamp', timestamp);
+  form.append('signature', signature);
+  form.append('folder', folder);
+
+  const resp = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    { method: 'POST', body: form },
+  );
   if (!resp.ok) {
-    throw new Error(`tmpfiles.org upload ${resp.status}: ${await resp.text().catch(() => '')}`);
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`Cloudinary upload ${resp.status}: ${errText}`);
   }
   const json = await resp.json();
-  // Response: { status: "success", data: { url: "https://tmpfiles.org/1234/name.jpg" } }
-  const viewUrl = json?.data?.url;
-  if (!viewUrl) {
-    throw new Error(`tmpfiles.org unexpected response: ${JSON.stringify(json).slice(0, 200)}`);
-  }
-  // Convert viewer URL → direct-download URL so kie.ai receives image bytes
-  return viewUrl.replace('://tmpfiles.org/', '://tmpfiles.org/dl/');
+  return json.secure_url;
 }
 
 /**
@@ -327,8 +340,8 @@ async function editCoverImage({ inputImagePath, outPath, prompt }) {
   }
   await fs.ensureDir(path.dirname(outPath));
 
-  console.log(`🖼️  [kie.ai] uploading cover to tmpfiles.org ...`);
-  const publicUrl = await uploadToTmpFiles(inputImagePath);
+  console.log(`🖼️  [kie.ai] uploading cover to Cloudinary...`);
+  const publicUrl = await uploadToTmpHost(inputImagePath);
   console.log(`   publicUrl: ${publicUrl}`);
 
   const editPrompt = prompt || DEFAULT_EDIT_PROMPT;
