@@ -56,7 +56,7 @@ ${essenceBeats.map((b, i) => `\n[候選 ${i + 1}] ${b.text}${b.reason ? `\n  （
 3. hook_script 不要劇透精華內容，要製造好奇。
 4. outro_script 結尾必須出現「完整集數連結在資訊欄」這類引導。
 5. broll_keywords 用英文（Pexels stock 影片搜尋用），每個關鍵字必須是 **具體的視覺場景**（2-4 個英文字的短語），而且必須跟精華片段的「具體內容」直接相關。❌ 禁止使用抽象詞彙如 "AI"、"technology"、"innovation"、"cybersecurity"、"data"，這些搜不到有意義的畫面。✅ 好的例子：「person typing code」「server room lights」「robot arm assembly」「smartphone screen close up」「brain neural network 3D」。
-6. ⚠️ narration_script **不可以包含廣告內容**（例如「贊助」「折扣」「課程連結」「限時優惠」「自動化流程」「加入自動化行列」「使用我的折扣碼」之類的品牌推廣段落）。
+6. ⚠️ narration_script **不可以包含廣告內容**（例如「贊助」「折扣」「課程連結」「限時優惠」「自動化流程」「加入自動化行列」「使用我的折扣碼」「企業 AI 落地」「費用減免」「填表申請」之類的品牌推廣段落）。
 7. hook_script 和 outro_script 要像 YouTuber/Podcaster 跟朋友聊天的語氣，自然地穿插驚嘆、反問、語助詞（例如「沒想到」「這真的太狂了」「真的很酷」「你相信嗎？」「我真的覺得太屌了」「天啊」「扯到不行」），讓觀眾感受到你的興奮，但不要每句都加，要自然不做作。
 8. 只輸出 JSON，不要任何前後說明。
 `.trim();
@@ -80,7 +80,7 @@ async function extractEssence({ podcastScript, episodeTitle, openRouter }) {
 - 必須是「有資訊量、有洞見、有戲劇轉折，或有具體品牌/產品/數字」的段落
 - ❌ 不可以是開場白（「哈囉大家」「歡迎回到」「今天我們要聊」「今天主題」之類）
 - ❌ 不可以是結尾 CTA（「記得訂閱」「點資訊欄」「下次見」之類）
-- ❌ 不可以是廣告段落（「贊助」「折扣」「課程連結」「限時優惠」「自動化流程」「加入自動化行列」「使用我的折扣碼」之類）
+- ❌ 不可以是廣告段落（「贊助」「折扣」「課程連結」「限時優惠」「自動化流程」「加入自動化行列」「使用我的折扣碼」「企業 AI 落地」「費用減免」「填表申請」之類）
 - ❌ 不可以是「接下來我會介紹」「先講第一個」這種只是段落標題、沒有實質內容的過場句
 
 輸出**嚴格 JSON**（不要加 markdown code fence、不要任何前後說明文字）：

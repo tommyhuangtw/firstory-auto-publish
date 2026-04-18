@@ -1,6 +1,6 @@
 # AI懶人報 Podcast 自動化系統
 
-智能化 Podcast 上傳系統，支援 SoundOn 與 YouTube 平台，整合 Google Drive、Airtable、Gmail、OpenRouter AI 和 Web 控制台。
+智能化 Podcast 上傳系統，支援 SoundOn 與 YouTube 平台，整合 Google Drive、Airtable、Gmail、OpenRouter AI 和 Web 控制台。內建 40–60 秒 Podcast 精華 Shorts 自動生成 pipeline，結合 TTS 配音、樹懶角色動畫與 Remotion 影片算繪。
 
 ## 🚀 功能特色
 
@@ -17,6 +17,18 @@
 - ✅ **AI 縮圖生成**: 透過 Kie.ai (Ideogram/Qwen) 生成 YouTube 縮圖
 - ✅ **特別單元支援**: 支援「機器人觀察週報」和「AI懶人精選週報」等特別單元，自動切換標題/描述 Prompt
 - ✅ **智能日誌**: 詳細的操作記錄和進度追蹤
+
+### Shorts 精華影片 Pipeline (NEW)
+- ✅ **Podcast Shorts 自動生成**: 從完整集數自動擷取 40–60 秒精華，生成 9:16 直式影片
+- ✅ **Whisper 語音轉錄**: OpenAI Whisper word-level timestamps
+- ✅ **Gemini 精華擷取**: AI 自動從講稿中挑選最有資訊量的片段
+- ✅ **VoAI TTS 配音**: 台灣口音全 TTS 旁白（hook → 精華 → outro）
+- ✅ **Hedra 樹懶動畫**: Character-3 口型同步動畫角色
+- ✅ **B-roll 背景影片**: Pexels 免費素材 + Kie.ai Veo 3 客製影片
+- ✅ **CapCut 風格字幕**: Word-level 逐字高亮動畫
+- ✅ **Remotion 影片算繪**: 1080×1920 高品質直式影片輸出
+- ✅ **16 種樹懶頭像**: 預生成多種主題背景（太空、水底、電影院等）
+- ✅ **API 優雅降級**: 每個 API 階段皆可 fallback，可無付費 API 執行
 
 ## 🎯 快速開始
 
@@ -49,6 +61,25 @@ cd web-console && node server.js
 # 開啟 http://localhost:8888
 ```
 
+### Shorts 精華影片生成
+
+從最新一集 Podcast 自動擷取精華片段，生成 40–60 秒直式影片：
+```bash
+# 互動式選擇主題
+node scripts/generate-short.js
+
+# 自動選擇第一個主題
+node scripts/generate-short.js --auto
+
+# 指定輸出路徑
+node scripts/generate-short.js --output=remotion/out/short.mp4
+
+# 只生成封面圖（不生成影片）
+node scripts/generate-cover.js
+```
+
+> Shorts pipeline 需先在 `remotion/` 下安裝依賴：`cd remotion && npm install`
+
 ### 特別單元模式
 
 週四和週日有特別單元，使用 `--segment` 參數指定：
@@ -80,6 +111,13 @@ npm start -- --segment weekly
 - SoundOn 帳號
 - YouTube 頻道 (需完成 OAuth 驗證)
 
+**Shorts Pipeline 額外需求** (皆為選用，缺少會自動降級)：
+- OpenAI API Key (Whisper 轉錄)
+- VoAI API Key (台灣口音 TTS)
+- Hedra API Key (口型動畫)
+- Pexels API Key (B-roll 素材)
+- Kie.ai API Key (Veo 3 影片 / 圖片編輯)
+
 ## ⚙️ 安裝設定
 
 ### 1. 安裝依賴
@@ -108,6 +146,16 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 
 # Playwright 設定
 PLAYWRIGHT_HEADLESS=false
+
+# ── Shorts Pipeline (皆為選用) ──
+OPENAI_API_KEY=               # Whisper 轉錄
+VOAI_API_KEY=                 # VoAI TTS
+VOAI_VOICE_ID=                # VoAI 聲音 ID
+HEDRA_API_KEY=                # Hedra 口型動畫
+PEXELS_API_KEY=               # Pexels B-roll
+KIE_AI_API_KEY=               # Kie.ai Veo 3 / 圖片編輯
+ENABLE_KIE_HERO_BROLL=false   # 啟用 Veo 3 客製 B-roll
+ENABLE_KIE_IMAGE_EDIT=false   # 啟用封面圖片清理
 ```
 
 ### 3. Google API 設定
@@ -204,6 +252,23 @@ npm run test-studio
    - 合成影片 (音檔 + 封面圖 → MP4)
    - 上傳到 YouTube (含標題、描述、Tags、縮圖)
 
+## 🎬 Shorts 精華影片 Pipeline
+
+9 階段自動化流程，從完整 Podcast 集數生成 40–60 秒直式精華影片：
+
+1. **📝 Whisper 轉錄** — Word-level timestamps
+2. **🎯 Gemini 精華擷取** — AI 挑選最佳 40–60 秒片段
+3. **✂️ 音檔切割** — FFmpeg 精準切音
+4. **🗣️ VoAI TTS** — 台灣口音配音（hook + outro 旁白）
+5. **🦥 Hedra 動畫** — 樹懶角色口型同步動畫
+6. **🎥 B-roll 素材** — Pexels 免費素材 + Kie.ai Veo 3 客製影片
+7. **🔊 音檔串接** — hook → 精華片段 → outro
+8. **📦 Props 組裝** — Remotion 算繪參數
+9. **🎞️ Remotion 算繪** — 1080×1920 最終影片輸出
+
+> 每個 API 階段皆有 stub fallback，可在無 API key 的情況下以模擬資料完成整個流程。
+> 詳細技術文件：`docs/shorts-pipeline-plan.md` 和 `src/services/shortsPipeline/PIPELINE_DOC.md`
+
 ## 📁 專案結構
 
 ```
@@ -223,15 +288,34 @@ firstory-podcast-automation/
 │   │   ├── titleSelectionServer.js   # 標題選擇服務器
 │   │   ├── youtube.js                # YouTube 上傳服務
 │   │   ├── thumbnailGenerator.js     # 縮圖生成器
-│   │   └── videoCreator.js           # 影片合成器 (音檔+圖片→MP4)
+│   │   ├── videoCreator.js           # 影片合成器 (音檔+圖片→MP4)
+│   │   └── shortsPipeline/           # 🎬 Shorts 精華影片 Pipeline
+│   │       ├── index.js              #    Pipeline 主流程 (9 階段)
+│   │       ├── highlightExtractor.js #    Gemini 精華擷取
+│   │       ├── transcribe.js         #    Whisper 語音轉錄
+│   │       ├── voai.js               #    VoAI TTS 台灣口音配音
+│   │       ├── hedra.js              #    Hedra 口型同步動畫
+│   │       ├── pexels.js             #    Pexels B-roll 素材
+│   │       ├── kieai.js              #    Kie.ai Veo 3 / 圖片編輯
+│   │       └── audioCutter.js        #    FFmpeg 音檔切割
 │   └── utils/
 │       └── flowHelpers.js            # 共用工具 (音檔轉換/圖片壓縮/描述組裝)
+├── remotion/                          # 🎬 Shorts 影片算繪 (Remotion)
+│   ├── src/
+│   │   ├── ShortVideo.tsx            # 主要影片組件 (1080×1920)
+│   │   ├── ReelsCover.tsx            # 封面圖算繪
+│   │   └── components/               # 字幕動畫、B-roll、樹懶頭像
+│   └── public/                        # 16 種預生成樹懶頭像
+├── scripts/
+│   ├── generate-short.js             # 🎬 Shorts 生成 CLI
+│   ├── generate-cover.js             # 🎨 封面生成 CLI
+│   └── ...                            # 部署與工具腳本
 ├── web-console/
 │   ├── server.js                     # Web 控制台伺服器 (port 8888)
 │   └── public/index.html             # Web 介面
+├── docs/
+│   └── shorts-pipeline-plan.md       # Shorts Pipeline 技術規劃文件
 ├── temp/                             # 暫存目錄
-│   ├── downloads/                    # 檔案下載
-│   └── browser-data/                 # 瀏覽器資料
 └── credentials.json                  # Google OAuth 憑證
 ```
 
@@ -285,7 +369,15 @@ Google Drive/
 
 ## 📈 版本歷史
 
-- **v4.0**: 手動上傳流程 + Web 控制台 (目前版本)
+- **v5.0**: Podcast Shorts 精華影片 Pipeline (目前版本)
+  - 40–60 秒精華 Shorts 自動生成（9 階段 pipeline）
+  - Remotion 1080×1920 直式影片算繪
+  - 全 TTS 配音 + Hedra 樹懶角色口型動畫
+  - B-roll 背景影片（Pexels + Kie.ai Veo 3）
+  - CapCut 風格逐字高亮字幕
+  - 16 種樹懶主播頭像（太空、水底、電影院等主題）
+  - 所有 API 階段皆支援優雅降級
+- **v4.0**: 手動上傳流程 + Web 控制台
   - 新增手動上傳流程 (`manual-upload-flow.js`)，無需 Airtable/Google Drive
   - Web 控制台介面，透過瀏覽器操作上傳
   - 重構內容生成為獨立 `ContentGenerator` 模組
