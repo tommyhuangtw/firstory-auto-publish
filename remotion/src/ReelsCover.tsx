@@ -32,7 +32,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
       <AbsoluteFill
         style={{
           background:
-            'linear-gradient(transparent 30%, rgba(50, 30, 15, 0.7) 100%)',
+            'linear-gradient(transparent 20%, rgba(50, 30, 15, 0.7) 100%)',
         }}
       />
 
@@ -42,7 +42,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
           justifyContent: 'flex-end',
           alignItems: 'center',
           padding: '60px 80px',
-          paddingBottom: 180,
+          paddingBottom: 400,
         }}
       >
         <div
@@ -66,7 +66,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
         style={{
           justifyContent: 'flex-end',
           alignItems: 'center',
-          paddingBottom: 80,
+          paddingBottom: 200,
         }}
       >
         <div
