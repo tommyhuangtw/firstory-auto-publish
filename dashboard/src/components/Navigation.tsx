@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const navItems = [
   { href: '/', label: 'Dashboard', icon: '◉' },
   { href: '/episodes', label: 'Episodes', icon: '▶' },
+  { href: '/memory', label: 'Memory', icon: '◈' },
 ];
 
 export default function Navigation() {

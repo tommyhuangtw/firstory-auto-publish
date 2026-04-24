@@ -1,8 +1,8 @@
 /**
  * LangGraph Content Pipeline — StateGraph definition.
  *
- * Replaces n8n workflow. 7 stages (linear) + publish triggered after review:
- * fetch → classify → script → translate → quality → meta → tts → END
+ * Replaces n8n workflow. 9 stages (linear) + publish triggered after review:
+ * fetch → classify → script → extractTools → translate → enrichMemory → quality → meta → tts → END
  * (pipeline pauses at 'pending_review'; publish is triggered via /api/episodes/:id/approve)
  */
 
@@ -17,12 +17,15 @@ import {
   type QualityScore,
   createInitialState,
 } from './state';
+import type { ExtractedTool } from '@/services/memory/toolExtractor';
 
 // Node implementations
 import { fetchYoutube } from './nodes/fetchYoutube';
 import { classify } from './nodes/classify';
 import { scriptEnglish } from './nodes/scriptEnglish';
+import { extractTools } from './nodes/extractTools';
 import { translate } from './nodes/translate';
+import { enrichMemory } from './nodes/enrichMemory';
 import { qualityScore } from './nodes/qualityScore';
 import { generateMeta } from './nodes/generateMeta';
 import { tts } from './nodes/tts';
@@ -42,7 +45,9 @@ const PipelineAnnotation = Annotation.Root({
   selectedVideos: Annotation<VideoSource[]>,
   scriptEn: Annotation<string>,
   scriptWordCount: Annotation<number>,
+  extractedTools: Annotation<ExtractedTool[]>,
   scriptZh: Annotation<string>,
+  memoryEnrichments: Annotation<string[]>,
   qualityScore: Annotation<QualityScore | null>,
   qualityIterations: Annotation<number>,
   candidateTitles: Annotation<string[]>,
@@ -70,15 +75,19 @@ function buildGraph() {
     .addNode('fetchYoutube', wrapNode('fetchYoutube', fetchYoutube))
     .addNode('classify', wrapNode('classify', classify))
     .addNode('scriptEnglish', wrapNode('scriptEnglish', scriptEnglish))
+    .addNode('extractTools', wrapNode('extractTools', extractTools))
     .addNode('translate', wrapNode('translate', translate))
+    .addNode('enrichMemory', wrapNode('enrichMemory', enrichMemory))
     .addNode('scoreQuality', wrapNode('scoreQuality', qualityScore))
     .addNode('generateMeta', wrapNode('generateMeta', generateMeta))
     .addNode('synthesizeTts', wrapNode('synthesizeTts', tts))
     .addEdge(START, 'fetchYoutube')
     .addEdge('fetchYoutube', 'classify')
     .addEdge('classify', 'scriptEnglish')
-    .addEdge('scriptEnglish', 'translate')
-    .addEdge('translate', 'scoreQuality')
+    .addEdge('scriptEnglish', 'extractTools')
+    .addEdge('extractTools', 'translate')
+    .addEdge('translate', 'enrichMemory')
+    .addEdge('enrichMemory', 'scoreQuality')
     .addEdge('scoreQuality', 'generateMeta')
     .addEdge('generateMeta', 'synthesizeTts')
     .addEdge('synthesizeTts', END);
@@ -197,7 +206,9 @@ export async function publishEpisode(episodeNumber: number): Promise<Partial<Pip
     selectedVideos: [],
     scriptEn: (episode.script_en as string) || '',
     scriptWordCount: (episode.script_word_count as number) || 0,
+    extractedTools: [],
     scriptZh: (episode.script_zh as string) || '',
+    memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,
     candidateTitles: JSON.parse((episode.candidate_titles as string) || '[]'),

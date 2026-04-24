@@ -88,3 +88,17 @@
 - 安裝 `playwright` dependency
 - **驗證通過**: build 成功，13 個 routes，完整 approve/reject flow 測試通過
 - **Phase 3 完成** — Review UI + Publisher 全部到位
+
+### Phase 4: Memory System
+
+#### 2026-04-25 — Tool Extraction + Memory UI 實作
+- 建立 Tool Extraction Service (`dashboard/src/services/memory/toolExtractor.ts`) — 用 Gemini Flash Lite 從英文講稿擷取 AI 工具名稱、分類、上下文
+- 建立 Memory Service (`dashboard/src/services/memory/memoryService.ts`) — tools/episode_tool_mentions DB 操作，回顧語句生成
+- 新增 Pipeline Node `extractTools` — 在 scriptEnglish 之後執行，擷取工具 → 存入 DB
+- 新增 Pipeline Node `enrichMemory` — 在 translate 之後執行，注入回顧語句到中文講稿
+- 更新 Pipeline Graph: 9 nodes（新增 extractTools + enrichMemory），flow: script → extractTools → translate → enrichMemory → quality
+- 建立 Memory 瀏覽 UI (`/memory`) — 工具列表（category filter, search），卡片式排版
+- 建立 Tool 詳情頁 (`/memory/[name]`) — 出現次數、首次/最近 episode、evolving summary、episode timeline
+- Navigation 加入 Memory 連結
+- **驗證通過**: build 成功，15 個 routes，Memory UI category filter + search + 404 全部正常
+- **Phase 4 完成** — Tool Memory System 全部到位

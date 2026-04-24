@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getDb } from '@/db';
+import NewEpisodeForm from './NewEpisodeForm';
 
 interface Episode {
   id: number;
@@ -11,6 +12,12 @@ interface Episode {
   total_cost_usd: number | null;
   created_at: string;
 }
+
+const segmentLabels: Record<string, string> = {
+  daily: 'AI懶人報',
+  weekly: 'AI精選週報',
+  robot: '機器人週報',
+};
 
 const statusColors: Record<string, string> = {
   generating: 'bg-yellow-900/50 text-yellow-300',
@@ -31,8 +38,13 @@ export default function EpisodesPage() {
   return (
     <div className="p-6 md:p-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Episodes</h1>
-        <p className="text-zinc-400 text-sm mt-1">{episodes.length} episodes total</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Episodes</h1>
+            <p className="text-zinc-400 text-sm mt-1">{episodes.length} episodes total</p>
+          </div>
+          <NewEpisodeForm />
+        </div>
       </header>
 
       {episodes.length === 0 ? (
@@ -55,7 +67,7 @@ export default function EpisodesPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs ${statusColors[ep.status] || 'bg-zinc-800 text-zinc-400'}`}>
                     {ep.status}
                   </span>
-                  <span className="text-xs text-zinc-500 uppercase">{ep.segment_type}</span>
+                  <span className="text-xs text-zinc-500">{segmentLabels[ep.segment_type] || ep.segment_type}</span>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-zinc-500">
                   {ep.quality_score != null && (

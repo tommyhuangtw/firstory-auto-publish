@@ -1,0 +1,115 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getToolByName, getToolMentions } from '@/services/memory/memoryService';
+
+export default async function ToolDetailPage({ params }: { params: Promise<{ name: string }> }) {
+  const { name } = await params;
+  const decodedName = decodeURIComponent(name);
+  const tool = getToolByName(decodedName);
+  if (!tool) notFound();
+
+  const mentions = getToolMentions(tool.id);
+  const aliases: string[] = tool.aliases ? JSON.parse(tool.aliases) : [];
+
+  return (
+    <div className="p-6 md:p-8 max-w-3xl mx-auto">
+      <Link href="/memory" className="text-sm text-zinc-500 hover:text-zinc-300 mb-4 inline-block">
+        ← Back to tools
+      </Link>
+
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold">{tool.canonical_name}</h1>
+        <div className="flex items-center gap-3 mt-2">
+          {tool.category && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-zinc-800 text-zinc-400">
+              {tool.category}
+            </span>
+          )}
+          <span className="text-sm text-zinc-500">{tool.mention_count}x mentioned</span>
+        </div>
+        {aliases.length > 0 && (
+          <p className="text-xs text-zinc-600 mt-1">
+            Also known as: {aliases.join(', ')}
+          </p>
+        )}
+      </header>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
+          <p className="text-2xl font-bold">{tool.mention_count}</p>
+          <p className="text-xs text-zinc-500">Mentions</p>
+        </div>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
+          <p className="text-2xl font-bold">{tool.first_episode ?? '-'}</p>
+          <p className="text-xs text-zinc-500">First EP</p>
+        </div>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
+          <p className="text-2xl font-bold">{tool.latest_episode ?? '-'}</p>
+          <p className="text-xs text-zinc-500">Latest EP</p>
+        </div>
+      </div>
+
+      {/* Evolving Summary */}
+      {tool.evolving_summary && (
+        <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">
+            Summary
+          </h2>
+          <p className="text-sm text-zinc-300 whitespace-pre-wrap">{tool.evolving_summary}</p>
+        </section>
+      )}
+
+      {/* Episode Timeline */}
+      <section>
+        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">
+          Episode History ({mentions.length})
+        </h2>
+        {mentions.length === 0 ? (
+          <p className="text-zinc-500 text-sm">No mention records yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {mentions.map((m) => (
+              <div
+                key={m.id}
+                className="bg-zinc-900 rounded-lg border border-zinc-800 p-3"
+              >
+                <div className="flex items-center gap-3 mb-1">
+                  <Link
+                    href={`/episodes/${m.episode_number}/review`}
+                    className="font-mono text-sm text-blue-400 hover:underline"
+                  >
+                    EP#{m.episode_number}
+                  </Link>
+                  {m.mention_type && (
+                    <MentionTypeBadge type={m.mention_type} />
+                  )}
+                  {m.segment_type && (
+                    <span className="text-xs text-zinc-600">{m.segment_type}</span>
+                  )}
+                </div>
+                {m.context_snippet && (
+                  <p className="text-xs text-zinc-400">{m.context_snippet}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function MentionTypeBadge({ type }: { type: string }) {
+  const colors: Record<string, string> = {
+    new: 'bg-green-900/50 text-green-300',
+    update: 'bg-blue-900/50 text-blue-300',
+    deep_dive: 'bg-purple-900/50 text-purple-300',
+    brief: 'bg-zinc-800 text-zinc-400',
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs ${colors[type] || colors.brief}`}>
+      {type}
+    </span>
+  );
+}
