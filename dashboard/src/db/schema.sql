@@ -1,0 +1,125 @@
+-- AI Podcast Automation Platform — SQLite Schema
+-- Source of truth for episodes, tools memory, LLM tracking, and analytics
+
+CREATE TABLE IF NOT EXISTS episodes (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER UNIQUE,
+  segment_type TEXT NOT NULL,        -- 'daily' | 'weekly' | 'robot'
+  status TEXT NOT NULL DEFAULT 'generating',
+  -- Status flow: generating → pending_review → approved → publishing → published | rejected
+
+  -- Content
+  script_en TEXT,
+  script_zh TEXT,
+  candidate_titles TEXT,              -- JSON array of 10 titles
+  selected_title TEXT,
+  description TEXT,
+  tags TEXT,                          -- JSON array
+
+  -- Media
+  audio_path TEXT,
+  cover_path TEXT,
+
+  -- Source videos
+  source_videos TEXT,                 -- JSON: [{videoId, title, views, ...}]
+
+  -- Quality & Cost
+  quality_score REAL,
+  total_cost_usd REAL,
+  script_word_count INTEGER,
+
+  -- Publish results
+  soundon_url TEXT,
+  youtube_url TEXT,
+  ig_post_id TEXT,
+
+  -- Timestamps
+  created_at TEXT DEFAULT (datetime('now')),
+  approved_at TEXT,
+  published_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tools (
+  id INTEGER PRIMARY KEY,
+  canonical_name TEXT UNIQUE NOT NULL,
+  aliases TEXT,                       -- JSON array
+  category TEXT,                      -- 'LLM' | 'DevTool' | 'Image' | 'Audio' | ...
+  first_episode INTEGER REFERENCES episodes(episode_number),
+  latest_episode INTEGER,
+  mention_count INTEGER DEFAULT 0,
+  evolving_summary TEXT
+);
+
+CREATE TABLE IF NOT EXISTS episode_tool_mentions (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER NOT NULL,
+  tool_id INTEGER REFERENCES tools(id),
+  mention_type TEXT,                  -- 'new' | 'update' | 'deep_dive' | 'brief'
+  context_snippet TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS llm_calls (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER,
+  stage TEXT NOT NULL,                -- 'classify' | 'script_en' | 'script_zh' | 'scoring' | 'title_gen'
+  model TEXT NOT NULL,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cost_usd REAL,
+  latency_ms INTEGER,
+  quality_score REAL,
+  success INTEGER DEFAULT 1,
+  error_message TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER,
+  segment_type TEXT,
+  status TEXT,                        -- 'running' | 'completed' | 'failed' | 'paused'
+  current_stage TEXT,
+  checkpoint_data TEXT,               -- JSON: LangGraph checkpoint
+  started_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT,
+  error_log TEXT
+);
+
+CREATE TABLE IF NOT EXISTS youtube_sources (
+  id INTEGER PRIMARY KEY,
+  video_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  channel_name TEXT,
+  published_at TEXT,
+  view_count INTEGER,
+  like_count INTEGER,
+  comment_count INTEGER,
+  duration_seconds INTEGER,
+  transcript TEXT,
+  classification TEXT,                -- 'is_tool' | 'not_tool' | 'is_robotics'
+  used_in_episode INTEGER,
+  fetched_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS platform_analytics (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER,
+  platform TEXT,                      -- 'youtube' | 'soundon' | 'spotify' | 'apple'
+  date TEXT,
+  views INTEGER,
+  listens INTEGER,
+  likes INTEGER,
+  comments INTEGER,
+  avg_listen_duration_sec INTEGER,
+  fetched_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
+CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_episode ON llm_calls(episode_number);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_stage ON llm_calls(stage);
+CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_youtube_sources_video ON youtube_sources(video_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_episode ON platform_analytics(episode_number);
