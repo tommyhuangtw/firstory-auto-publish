@@ -389,13 +389,11 @@ async function waitForSelectionWithTimeout(titleServer, defaultIndex, timeoutMs)
 // `;
 
 // 業配文字
-const APPENDED_TEXT = `【 🚀 企業 AI 落地計畫：讓 AI 從玩具變成工具 】
+const APPENDED_TEXT = `【 🎙️ AI 懶人報自動化流程 】
 
-當大家還在跟 AI 聊天，真正領先的企業已經將 AI 系統化落地。憑藉前美國 Tesla 軟體品質工程背景，我要幫你客製一套「穩健、精準」的 AI 系統，解決法律比對、單據入庫或診所餐廳預約等流程痛點。
+好奇這個節目是怎麼用 AI 自動化做到一週五更的嗎？我把完整的自動化流程公開了——包含 104 個 n8n 節點、完整 Prompts 與系統架構（自動選題、台灣口音校對、多平台發布），有興趣的朋友歡迎參考！
 
-🎯 限額 2 名：提供 50% 費用減免，打造 Tesla 等級的ＡＩ自動化大腦。
-
-👉 立即填表申請： https://forms.gle/uDi4GV8arqJJkuXt9
+👉 了解更多：https://portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK
 
 `;
 
