@@ -102,3 +102,13 @@
 - Navigation 加入 Memory 連結
 - **驗證通過**: build 成功，15 個 routes，Memory UI category filter + search + 404 全部正常
 - **Phase 4 完成** — Tool Memory System 全部到位
+
+### Phase 5: Evaluation Dashboard
+
+#### 2026-04-25 — LLM Metrics Dashboard 實作
+- 安裝 `recharts` 視覺化套件
+- 建立 Metrics API (`/api/metrics`) — 彙整 costPerEpisode, costByStage, qualityTrend, pipelineRuns, summary
+- 建立 Metrics 頁面 (`/metrics`) — Recharts 圖表：Cost per Episode (BarChart), Quality Score Trend (LineChart), Cost by Stage 表格, Pipeline Runs 列表
+- Navigation 加入 Metrics 連結
+- **驗證通過**: build 成功，16 個 routes，API 回傳正確資料結構，metrics 頁面 200 OK
+- **Phase 5 完成** — Evaluation Dashboard 到位

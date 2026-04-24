@@ -7,6 +7,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: '◉' },
   { href: '/episodes', label: 'Episodes', icon: '▶' },
   { href: '/memory', label: 'Memory', icon: '◈' },
+  { href: '/metrics', label: 'Metrics', icon: '◎' },
 ];
 
 export default function Navigation() {
