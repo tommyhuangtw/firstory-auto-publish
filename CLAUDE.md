@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## Coding Guidelines (Karpathy Skills)
+開發時必須遵守以下 4 原則（來自 andrej-karpathy-skills）：
+
+1. **Think Before Coding** — 不假設、不隱藏困惑、明確列出 assumptions。多種做法時先呈現選項，不要默默選一個。
+2. **Simplicity First** — 最少程式碼解決問題。不加未要求的功能、不為單次使用建 abstraction、不處理不可能的 error scenarios。
+3. **Surgical Changes** — 只改必要的部分。不「順便改善」旁邊的 code/comments/formatting。只清理自己造成的 orphans。
+4. **Goal-Driven Execution** — 把模糊需求轉成可驗證的 success criteria，loop 直到驗證通過。
+
 ## Git Commit 偏好
 - **不要**在 commit message 中加入 `Co-Authored-By` 行
 
@@ -61,3 +69,22 @@
   - `POST /api/episodes/:id/approve` — 人工審核通過後觸發發布
 - **驗證通過**: build 成功，8 個 routes 正常
 - **Phase 2 核心完成** — LangGraph pipeline 取代 n8n workflow
+
+### Phase 3: Review Flow + Publisher
+
+#### 2026-04-24 — Review UI + Publisher 實作
+- ��立 Navigation component (`dashboard/src/components/Navigation.tsx`) — desktop sidebar + mobile bottom bar
+- 更新 layout.tsx — 套用 Navigation，metadata 改為 "AI Podcast Dashboard"
+- 建立 Audio Streaming API (`/api/audio/[...path]`) — HTTP Range requests 支援 mobile Safari
+- 建立 Episodes 列表頁 (`/episodes`) — status badges, quality scores, cost 顯示
+- 建立 Review 頁面 (`/episodes/[id]/review`) — audio player, title picker, description editor, approve/reject 按鈕
+- 建立 ReviewClient 互動元件 — client-side state management for title/description editing
+- 新增 API routes:
+  - `POST /api/episodes/:id/reject` — 拒絕 episode，記錄 rejection reason
+  - `GET /api/episodes/:id/status` — 查詢 episode 狀態 + publish URLs
+- Port SoundOn uploader → `dashboard/src/services/soundon.ts` — Playwright 自動化（login → new episode → upload → fill → publish）
+- 建立 Video Creator (`dashboard/src/services/videoCreator.ts`) — FFmpeg audio + image → MP4
+- 更新 publish node — 接入 SoundOn publisher + YouTube upload（lazy import, graceful fallback）
+- 安裝 `playwright` dependency
+- **驗證通過**: build 成功，13 個 routes，完整 approve/reject flow 測試通過
+- **Phase 3 完成** — Review UI + Publisher 全部到位

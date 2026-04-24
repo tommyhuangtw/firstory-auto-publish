@@ -1,8 +1,9 @@
 /**
- * Stage 8: Publish to SoundOn + YouTube + Instagram.
+ * Stage 8: Publish to SoundOn + YouTube.
  *
  * This node is triggered after human review approval.
- * SoundOn uses Playwright, YouTube uses API, IG uses Graph API.
+ * SoundOn uses Playwright, YouTube uses API (via video creator + upload).
+ * Each platform is independent — one failure doesn't block the other.
  */
 
 import { getDb } from '@/db';
@@ -16,18 +17,18 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
 
   const results: Partial<PipelineState> = { status: 'completed' };
 
-  // SoundOn (Playwright — will be implemented in Phase 3)
+  // SoundOn (Playwright)
   try {
-    const soundonUrl = await publishToSoundOn(state);
+    const soundonUrl = await publishToSoundOnPlatform(state);
     results.soundonUrl = soundonUrl;
     log.info({ soundonUrl }, 'SoundOn published');
   } catch (error) {
     log.error({ error: (error as Error).message }, 'SoundOn publish failed');
   }
 
-  // YouTube (API — will be implemented in Phase 3)
+  // YouTube (video creator + API upload)
   try {
-    const youtubeUrl = await publishToYouTube(state);
+    const youtubeUrl = await publishToYouTubePlatform(state);
     results.youtubeUrl = youtubeUrl;
     log.info({ youtubeUrl }, 'YouTube published');
   } catch (error) {
@@ -48,30 +49,38 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
   return results;
 }
 
-/**
- * SoundOn publisher — Playwright automation.
- * Full implementation will be added in Phase 3 (Review Flow + Publisher).
- */
-async function publishToSoundOn(state: PipelineState): Promise<string> {
-  // Phase 3: Port src/soundon-uploader.js here with Playwright
-  log.info('SoundOn publish: will be implemented in Phase 3');
-
+async function publishToSoundOnPlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
 
-  // Placeholder — returns empty string until Playwright integration
-  return '';
+  // Lazy import to avoid crash if playwright not installed
+  const { publishToSoundOn } = await import('@/services/soundon');
+  return publishToSoundOn({
+    title: state.selectedTitle,
+    description: state.description,
+    audioPath: state.audioPath,
+  });
 }
 
-/**
- * YouTube publisher — uses YouTube Data API.
- * Full implementation will be added in Phase 3.
- */
-async function publishToYouTube(state: PipelineState): Promise<string> {
-  // Phase 3: Use YouTubeService.uploadVideo() here
-  log.info('YouTube publish: will be implemented in Phase 3');
-
+async function publishToYouTubePlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
 
-  // Placeholder — returns empty string until YouTube integration
-  return '';
+  // Step 1: Create video from audio + cover
+  const { createVideoFromAudio } = await import('@/services/videoCreator');
+  const videoPath = await createVideoFromAudio({
+    audioPath: state.audioPath,
+  });
+
+  // Step 2: Upload to YouTube
+  const { YouTubeService } = await import('@/services/youtube');
+  const yt = new YouTubeService();
+  await yt.initialize();
+  const result = await yt.uploadVideo({
+    videoPath,
+    title: state.selectedTitle,
+    description: state.description,
+    tags: state.tags,
+    privacyStatus: 'public',
+  });
+
+  return result.videoUrl;
 }
