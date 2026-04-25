@@ -21,12 +21,20 @@ export interface VideoSource {
 export interface QualityScore {
   overall: number;
   dimensions: {
-    accuracy: number;
-    engagement: number;
-    structure: number;
-    naturalness: number;
+    chat_feel: number;
+    eng_mix: number;
+    tw_localization: number;
+    clarity: number;
+    word_count: number;
   };
-  feedback: string;
+  comments: {
+    chat_feel: string;
+    eng_mix: string;
+    tw_localization: string;
+    clarity: string;
+    word_count: string;
+    summary: string;
+  };
 }
 
 export type SegmentType = 'daily' | 'weekly' | 'robot';
@@ -36,9 +44,13 @@ export type PipelineStatus =
   | 'classifying'
   | 'scripting'
   | 'translating'
+  | 'inserting_content'
   | 'scoring'
   | 'generating_meta'
+  | 'generating_cover'
   | 'tts'
+  | 'uploading_assets'
+  | 'notifying'
   | 'pending_review'
   | 'publishing'
   | 'completed'
@@ -67,6 +79,9 @@ export interface PipelineState {
   // ── Stage 4: Translate ──
   scriptZh: string;
 
+  // ── Stage 4.5b: Custom Content Insertion ──
+  customContentInserted: boolean;
+
   // ── Stage 4.5: Memory Enrichment ──
   memoryEnrichments: string[];
 
@@ -80,18 +95,31 @@ export interface PipelineState {
   description: string;
   tags: string[];
 
-  // ── Stage 7: TTS ──
+  // ── Stage 7: Cover Image ──
+  coverPath: string;
+  coverUrl: string;
+
+  // ── Stage 8: TTS ──
   audioPath: string;
   audioDurationSec: number;
 
-  // ── Stage 8: Review (pipeline pauses here) ──
+  // ── Stage 9: Upload Assets ──
+  driveAudioUrl: string;
+  driveImageUrl: string;
+
+  // ── Stage 10: Notify ──
+  igScenario: string;
+  igCaption: string;
+  emailHtml: string;
+  igPostId: string;
+
+  // ── Stage 11: Review (pipeline pauses here) ──
   status: PipelineStatus;
   approvedAt: string;
 
-  // ── Stage 9: Publish ──
+  // ── Stage 12: Publish ──
   soundonUrl: string;
   youtubeUrl: string;
-  igPostId: string;
 
   // ── Cost tracking ──
   totalCostUsd: number;
@@ -119,6 +147,7 @@ export function createInitialState(
     scriptWordCount: 0,
     extractedTools: [],
     scriptZh: '',
+    customContentInserted: false,
     memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,
@@ -126,13 +155,20 @@ export function createInitialState(
     selectedTitle: '',
     description: '',
     tags: [],
+    coverPath: '',
+    coverUrl: '',
     audioPath: '',
     audioDurationSec: 0,
+    driveAudioUrl: '',
+    driveImageUrl: '',
+    igScenario: '',
+    igCaption: '',
+    emailHtml: '',
+    igPostId: '',
     status: 'fetching',
     approvedAt: '',
     soundonUrl: '',
     youtubeUrl: '',
-    igPostId: '',
     totalCostUsd: 0,
     error: '',
   };

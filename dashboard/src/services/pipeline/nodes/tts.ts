@@ -2,7 +2,7 @@
  * Stage 7: TTS — VoAI Text-to-Speech synthesis.
  *
  * Ported from src/services/shortsPipeline/voai.js.
- * Splits Chinese script → chunks ≤300 chars → batch-5 synthesis → FFmpeg concat.
+ * Splits Chinese script → chunks ≤190 chars → batch-5 synthesis → FFmpeg concat.
  */
 
 import fs from 'fs-extra';
@@ -18,25 +18,46 @@ const execAsync = promisify(exec);
 // Constants (from n8n flow)
 const VOAI_URL = 'https://connect.voai.ai/TTS/generate-dialogue';
 const DEFAULT_VOICE = { name: '昱翔', style: '預設', version: 'Neo' };
-const DEFAULT_AUDIO_CONFIG = {
-  speed: 1.35,
+const DAILY_AUDIO_CONFIG = {
+  speed: 1.09,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
-const CHUNK_MAX_LEN = 300;
+const WEEKLY_AUDIO_CONFIG = {
+  speed: 1.1,
+  pitch_shift: 1.9,
+  style_weight: 0.8,
+  breath_pause: 0.15,
+};
+const CHUNK_MAX_LEN = 190;
 const BATCH_SIZE = 5;
 const BATCH_WAIT_MS = 1500;
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
+function getAudioConfig(segmentType: string) {
+  return segmentType === 'weekly' ? WEEKLY_AUDIO_CONFIG : DAILY_AUDIO_CONFIG;
+}
+
 export async function tts(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeNumber: state.episodeNumber }, 'Starting TTS synthesis');
 
-  const text = state.scriptZh || '';
-  if (!text) {
+  const audioConfig = getAudioConfig(state.segmentType);
+  const rawText = state.scriptZh || '';
+  if (!rawText) {
     return { audioPath: '', audioDurationSec: 0, status: 'pending_review', error: 'No script for TTS' };
   }
+
+  // Text cleaning for TTS (matches n8n 清理文字供TTS使用)
+  const text = rawText
+    .replace(/`/g, '')
+    .replace(/(\\\n)+/g, ' ')
+    .replace(/(\n)+/g, ' ')
+    .replace(/(\\\t)+/g, ' ')
+    .replace(/(\t)+/g, ' ')
+    .trim();
+  log.info({ rawLength: rawText.length, cleanLength: text.length }, 'Text cleaned for TTS');
 
   const apiKey = process.env.VOAI_API_KEY;
   await fs.ensureDir(OUTPUT_DIR);
@@ -53,7 +74,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
 
   // Single chunk: direct synthesis
   if (chunks.length === 1) {
-    await synthesizeChunk(chunks[0], outPath, apiKey);
+    await synthesizeChunk(chunks[0], outPath, apiKey, audioConfig);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1) }, 'TTS complete (single chunk)');
     return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
@@ -75,7 +96,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
       const paths = await Promise.all(
         batch.map(async (chunk, i) => {
           const chunkPath = path.join(chunkDir, `chunk_${String(batchStart + i).padStart(3, '0')}.mp3`);
-          await synthesizeChunk(chunk, chunkPath, apiKey);
+          await synthesizeChunk(chunk, chunkPath, apiKey, audioConfig);
           return chunkPath;
         })
       );
@@ -147,7 +168,7 @@ function buildChunks(text: string, maxLen: number = CHUNK_MAX_LEN): string[] {
 
 // ── Synthesis ──
 
-async function synthesizeChunk(chunk: string, outPath: string, apiKey: string): Promise<void> {
+async function synthesizeChunk(chunk: string, outPath: string, apiKey: string, audioConfig = DAILY_AUDIO_CONFIG): Promise<void> {
   const sanitized = chunk.replace(/"/g, '');
 
   const resp = await fetch(VOAI_URL, {
@@ -162,7 +183,7 @@ async function synthesizeChunk(chunk: string, outPath: string, apiKey: string): 
         dialogue: [{
           voai_script_text: sanitized,
           voice: DEFAULT_VOICE,
-          audio_config: DEFAULT_AUDIO_CONFIG,
+          audio_config: audioConfig,
         }],
       },
     }),

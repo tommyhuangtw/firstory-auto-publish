@@ -192,6 +192,69 @@ export class GmailService {
       </div>
     </body></html>`;
   }
+
+  /**
+   * Send a raw HTML email (used by notify node with LLM-generated content).
+   */
+  async sendRawHtml(params: { to: string; subject: string; html: string }): Promise<void> {
+    const gmail = this.ensureGmail();
+    await this.sendEmail(gmail, params.to, params.subject, params.html);
+    log.info({ to: params.to }, 'Raw HTML email sent');
+  }
+
+  /**
+   * Send a daily podcast report email with episode summary.
+   */
+  async sendDailyReport(params: {
+    episodeNumber: number;
+    segmentType: string;
+    title: string;
+    description: string;
+    topVideos: { title: string; channelName: string; viewCount: number }[];
+    driveAudioUrl?: string;
+  }): Promise<void> {
+    const gmail = this.ensureGmail();
+    const recipientEmail = process.env.RECIPIENT_EMAIL;
+    if (!recipientEmail) {
+      log.warn('RECIPIENT_EMAIL not set, skipping daily report');
+      return;
+    }
+
+    const { episodeNumber, segmentType, title, description, topVideos, driveAudioUrl } = params;
+    const today = new Date();
+    const dateStr = `${today.getMonth() + 1}/${today.getDate()}`;
+
+    const segmentLabels: Record<string, string> = { daily: 'AI懶人報', weekly: 'AI精選週報', robot: '機器人週報' };
+    const segmentLabel = segmentLabels[segmentType] || segmentType;
+
+    const videoList = topVideos
+      .map((v) => `<li style="margin:8px 0"><strong>${v.title}</strong><br/><span style="color:#666;font-size:13px">${v.channelName} · ${v.viewCount.toLocaleString()} views</span></li>`)
+      .join('');
+
+    const audioLink = driveAudioUrl
+      ? `<p style="margin:20px 0"><a href="${driveAudioUrl}" style="display:inline-block;background:#3b82f6;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">收聽 Podcast</a></p>`
+      : '';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc">
+      <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08)">
+        <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:32px;color:white">
+          <h1 style="margin:0 0 8px;font-size:24px">${segmentLabel} EP#${episodeNumber}</h1>
+          <p style="margin:0;opacity:0.8;font-size:14px">${dateStr}</p>
+        </div>
+        <div style="padding:32px">
+          <h2 style="font-size:18px;margin:0 0 12px;color:#1e293b">${title}</h2>
+          <p style="color:#475569;font-size:14px;line-height:1.7">${description}</p>
+          ${audioLink}
+          ${topVideos.length > 0 ? `<h3 style="font-size:15px;color:#64748b;margin:24px 0 12px">今日來源影片</h3><ul style="padding-left:20px;color:#334155;font-size:14px">${videoList}</ul>` : ''}
+        </div>
+      </div>
+    </body></html>`;
+
+    const subject = `[${segmentLabel}] EP${episodeNumber} - ${dateStr} ${title}`;
+    await this.sendEmail(gmail, recipientEmail, subject, html);
+    log.info({ recipientEmail, episodeNumber }, 'Daily report email sent');
+  }
 }
 
 // Singleton

@@ -9,6 +9,11 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'google/gemini-2.5-flash-lite': { input: 0.02, output: 0.10 },
   'google/gemini-2.5-pro': { input: 1.25, output: 10.00 },
   'anthropic/claude-3.7-sonnet': { input: 3.00, output: 15.00 },
+  'google/gemini-3.1-pro-preview': { input: 1.25, output: 10.00 },
+  'google/gemini-3.1-flash-lite-preview': { input: 0.02, output: 0.10 },
+  'google/gemini-3-flash-preview': { input: 0.15, output: 0.60 },
+  'openai/gpt-5.4': { input: 2.50, output: 10.00 },
+  'anthropic/claude-sonnet-4.6': { input: 3.00, output: 15.00 },
 };
 
 interface LLMMessage {

@@ -1,0 +1,372 @@
+/**
+ * Stage 10: Notify — IG Caption Agent + Email Newsletter Agent + post/send.
+ *
+ * Matches n8n IG貼文文案撰寫Agent and Email週報內容產生Agent + HTML郵件格式化Agent.
+ * Each notification channel is independent — one failure doesn't block the other.
+ */
+
+import { getLLMService } from '@/services/llmService';
+import { createChildLogger } from '@/lib/logger';
+import type { PipelineState } from '../state';
+
+const log = createChildLogger('pipeline:notify');
+
+const FLASH_MODEL = 'google/gemini-3-flash-preview';
+
+export async function notify(state: PipelineState): Promise<Partial<PipelineState>> {
+  log.info({ episodeNumber: state.episodeNumber }, 'Sending notifications');
+
+  const results: Partial<PipelineState> = { status: 'pending_review' };
+
+  // ── Instagram: Agent-generated caption + post ──
+  try {
+    if (state.coverUrl && process.env.INSTAGRAM_ACCESS_TOKEN) {
+      const caption = await generateIgCaption(state);
+      results.igCaption = caption;
+
+      const { postToInstagram } = await import('@/services/instagram');
+      const postId = await postToInstagram(state.coverUrl, caption);
+      results.igPostId = postId;
+      log.info({ postId }, 'Instagram posted');
+    } else {
+      log.info('Skipping Instagram (no cover URL or token)');
+    }
+  } catch (error) {
+    log.error({ error: (error as Error).message }, 'Instagram post failed');
+  }
+
+  // ── Email: Newsletter Agent + HTML Formatter Agent + send ──
+  try {
+    if (process.env.RECIPIENT_EMAIL) {
+      const emailHtml = await generateEmailHtml(state);
+      results.emailHtml = emailHtml;
+
+      const { getGmailService } = await import('@/services/gmail');
+      const gmail = getGmailService();
+      await gmail.initialize();
+
+      const today = new Date().toISOString().split('T')[0];
+      const isRobot = state.segmentType === 'robot';
+      const isWeekly = state.segmentType === 'weekly';
+      const subject = isRobot
+        ? `[${today}] AI懶人報：機器人觀察週報`
+        : isWeekly
+        ? `[${today}] AI懶人精選週報`
+        : `[${today}] AI懶人報精選`;
+
+      await gmail.sendRawHtml({
+        to: process.env.RECIPIENT_EMAIL,
+        subject,
+        html: emailHtml,
+      });
+      log.info('Email newsletter sent');
+    } else {
+      log.info('Skipping Gmail (RECIPIENT_EMAIL not set)');
+    }
+  } catch (error) {
+    log.error({ error: (error as Error).message }, 'Gmail report failed');
+  }
+
+  return results;
+}
+
+// n8n exact prompt for IG貼文文案撰寫Agent
+async function generateIgCaption(state: PipelineState): Promise<string> {
+  const llm = getLLMService();
+  const isRobot = state.segmentType === 'robot';
+  const scenario = state.igScenario || '湯懶懶躺在沙發上用 AI 自動處理所有工作';
+
+  // Build podcast summary from selected videos
+  const summary = (state.selectedVideos || [])
+    .map((v) => `${v.title} (${v.viewCount.toLocaleString()} views)`)
+    .join('\n');
+
+  const userPrompt = `湯懶懶情境： ${scenario}
+Podcast總結（IG貼文要用中文輸出 可保留重點公司或是工具名稱為英文）:
+${summary}`;
+
+  const systemPrompt = isRobot
+    ? `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
+
+🎯 任務目標
+根據提供的 5 則 YouTube 影片摘要（每則包含標題與重點內容），生成一則以影片重點為主軸的貼文，適合吸引 AI 工具愛好者在 IG 上閱讀、收藏與互動。
+
+📥 輸入素材包含：
+• 湯懶懶當日一句"生活情境"
+• 5 則 Robotics 相關影片摘要
+• Podcast 標題與連結
+
+📝 貼文結構請遵守以下格式：
+
+1. 開場 murmur（限 1～2 句）
+簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」或「剛滑完這幾支影片，我的偷懶大腦瞬間升級 🧠✨」
+⛔ 請避免超過 3 句、不需描述過多生活細節、不要成為主軸。
+
+2. 🎥 今日機器人更新整理（每則影片三行重點描述，禁止加入湯懶懶 murmur 或評語）
+請以 emoji 開頭，每則重點包含：
+一行：影片標題（不加 # 或編號）（注意要用中文！！！）
+兩行：機器人產業的主要更新與亮點、用途場景，為什麼需要知道，務必清楚、實用、有感（注意要用中文！！！）
+✅ 重點應簡單、明確、有條理、每個重點之間要有空行
+⛔ 禁止使用湯懶懶口吻、廢話、轉場語或任何非資訊性內容
+
+3. 🎧 Podcast 導流句（1～2 句）
+請自然銜接語氣，推薦讀者到 IG 主頁點連結聽完整 Podcast。語氣像朋友聊天，不要寫成廣告。
+
+範例：
+「懶人秘笈都在 Podcast 裡了，點主頁Link就能聽 🦥👉」
+
+4. Call-To-Action（互動引導）
+請加入一段輕鬆互動句，引導留言。
+
+5. Hashtag（請壓縮成一整段，禁止換行）
+需要從影片重點hashtag重點關鍵字 關鍵公司 或是關鍵工具
+此外請從下列分類混合挑選 8~12 個，使用空格分隔：
+
+#AI工具 #生成式AI #ChatGPT #Claude #GoogleAI #AI懶人報 #懶人創業 #自動化工作術 #免費工具 #SlothVibes #湯懶懶日記 #AI機器人 #無人機 #自動駕駛
+
+注意！！
+只需要輸出IG貼文內容，不需要其他不必要的文字`
+    : `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
+
+🎯 任務目標
+根據提供的 5 則 YouTube 影片摘要（每則包含標題與重點內容），生成一則以影片重點為主軸的貼文，適合吸引 AI 工具愛好者在 IG 上閱讀、收藏與互動。
+
+📥 輸入素材包含：
+• 湯懶懶當日一句"生活情境"
+• 5 則 AI 工具影片摘要
+• Podcast 標題與連結
+
+📝 貼文結構請遵守以下格式：
+
+1. 開場 murmur（限 1～2 句）
+簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」或「剛滑完這幾支影片，我的偷懶大腦瞬間升級 🧠✨」
+⛔ 請避免超過 3 句、不需描述過多生活細節、不要成為主軸。
+
+2. 🎥 今日AI工具整理（每則影片三行重點描述，禁止加入湯懶懶 murmur 或評語）
+請以 emoji 開頭，每則重點包含：
+一行：影片標題（不加 # 或編號）（注意要用中文！！！）
+兩行：工具的主要功能與亮點、用途場景或使用後的效果，務必清楚、實用、有感（注意要用中文！！！）
+✅ 重點應簡單、明確、有條理、每個重點之間要有空行
+⛔ 禁止使用湯懶懶口吻、廢話、轉場語或任何非資訊性內容
+
+3. 🎧 Podcast 導流句（1～2 句）
+請自然銜接語氣，推薦讀者到 IG 主頁點連結聽完整 Podcast。語氣像朋友聊天，不要寫成廣告。
+
+4. Call-To-Action（互動引導）
+請加入一段輕鬆互動句，引導留言。
+
+5. Hashtag（請壓縮成一整段，禁止換行）
+需要從影片重點hashtag重點關鍵字 關鍵公司 或是關鍵工具
+請從下列分類混合挑選 8~12 個，使用空格分隔：
+
+#AI工具 #生成式AI #ChatGPT #Claude #GoogleAI #AI懶人報 #懶人創業 #自動化工作術 #免費工具 #SlothVibes #湯懶懶日記
+
+注意！！
+只需要輸出IG貼文內容，不需要其他不必要的文字`;
+
+  const result = await llm.call({
+    stage: 'ig_caption',
+    episodeNumber: state.episodeNumber,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    options: {
+      preferredModel: FLASH_MODEL,
+      maxTokens: 2048,
+      temperature: 0.7,
+    },
+  });
+
+  if (result.success && result.content) {
+    return result.content;
+  }
+
+  // Fallback simple caption
+  return `AI懶人報 EP#${state.episodeNumber}\n\n${state.selectedTitle || ''}\n\n#AI懶人報 #Podcast #AI工具`;
+}
+
+// n8n exact prompts for Email週報內容產生Agent + HTML郵件格式化Agent
+async function generateEmailHtml(state: PipelineState): Promise<string> {
+  const llm = getLLMService();
+  const today = new Date().toISOString().split('T')[0];
+  const isRobot = state.segmentType === 'robot';
+  const isWeekly = state.segmentType === 'weekly';
+
+  // Build video summary for email
+  const summary = (state.selectedVideos || [])
+    .map((v) => JSON.stringify({
+      title: v.title,
+      channelName: v.channelName,
+      viewCount: v.viewCount,
+      likeCount: v.likeCount,
+      commentCount: v.commentCount,
+      publishedAt: v.publishedAt,
+      videoId: v.videoId,
+    }))
+    .join('\n');
+
+  const podcastUrl = state.driveAudioUrl || '';
+
+  // Step 1: Email content agent
+  const contentSystemPrompt = isRobot
+    ? `你是一位專業的中英雙語內容翻譯與在地化專家，專門處理 Robotics、AI 機器人與自動化技術相關內容，擅長將英文影片資訊轉換為自然、口語化且適合台灣讀者閱讀的繁體中文摘要。在本任務中，你的角色是《Robotics Power Plays：每週精選》的 Email 週報編輯助理。
+
+🎯 任務目標：
+請根據輸入的 JSON 格式內容（包含五部影片的摘要資料），撰寫一段結構清晰、有趣易讀的繁體中文週報內容，統整過去一週內最具話題性的機器人產業與技術更新影片。
+
+**⚠️ 請務必注意：即使影片主題相近，也「不可合併」、「不可刪除」任何一部影片，**請依據提供的五筆資料，完整輸出五條影片摘要。
+
+📤 請使用以下格式輸出週報：
+
+開場白段落：以勾起好奇心的語氣開場，介紹近期機器人產業的趨勢與熱度
+
+🎧Podcast 連結: ${podcastUrl}
+
+🤖 Robotics Power Plays of the Week 🔧✨
+
+影片列表段落（總共五則，請逐一列出）：
+每則影片以 - 開頭，格式如下：
+💡 [一句創意摘要]
+📅 發佈日: [YYYY-MM-DD]
+📊 Views: [觀看數] 👍 Likes: [按讚數] 💬 Comments: [留言數]
+[YouTube 原始網址]
+
+✨ 口吻與語氣要求：語氣自然、觀察型，像一位機器人產業的朋友在幫你推薦值得關注的最新動態`
+    : isWeekly
+    ? `你是一位專業的中英雙語內容翻譯與在地化專家，專門處理 AI、科技工具與自動化影片相關內容，擅長將英文影片資訊轉換為自然、口語化且適合台灣讀者閱讀的繁體中文摘要。在本任務中，你的角色是《AI懶人精選週報》的 Email 週報編輯助理。
+
+🎯 任務目標：
+請根據輸入的 JSON 格式內容（包含五部影片的摘要資料），撰寫一段結構清晰、有趣易讀的繁體中文週報內容，統整過去一週內最具實用性與話題性的 AI 工具影片。
+
+**⚠️ 請務必注意：即使影片主題相近，也「不可合併」、「不可刪除」任何一部影片，**請依據提供的五筆資料，完整輸出五條影片摘要。
+
+📤 請使用以下格式輸出週報：
+
+開場白段落：以勾起好奇心的語氣開場，介紹近期 AI 工具熱度
+
+🎧Podcast 連結: ${podcastUrl}
+
+🛠️ AI Trends of the Week 🔧✨
+
+影片列表段落（總共五則，請逐一列出）：
+每則影片以 - 開頭，格式如下：
+💡 [一句創意摘要]
+📅 發佈日: [YYYY-MM-DD]
+📊 Views: [觀看數] 👍 Likes: [按讚數] 💬 Comments: [留言數]
+[YouTube 原始網址]
+
+✨ 口吻與語氣要求：語氣自然、觀察型，像一位 AI 熟人朋友在幫你推薦實用好影片`
+    : `你是一位專業的中英雙語內容翻譯與在地化專家，專門處理 AI、科技工具與自動化影片相關內容，擅長將英文影片資訊轉換為自然、口語化且適合台灣讀者閱讀的繁體中文摘要。在本任務中，你的角色是《AI Power Plays：每週精選》的 Email 週報編輯助理。
+
+🎯 任務目標：
+請根據輸入的 JSON 格式內容（包含五部影片的摘要資料），撰寫一段結構清晰、有趣易讀的繁體中文週報內容，統整過去三週內最具實用性與話題性的 AI 工具影片。
+
+**⚠️ 請務必注意：即使影片主題相近，也「不可合併」、「不可刪除」任何一部影片，**請依據提供的五筆資料，完整輸出五條影片摘要。
+
+📤 請使用以下格式輸出週報：
+
+開場白段落：以勾起好奇心的語氣開場，介紹近期 AI 工具熱度
+
+🎧Podcast 連結: ${podcastUrl}
+
+🛠️ AI Power Plays of the Week 🔧✨
+
+影片列表段落（總共五則，請逐一列出）：
+每則影片以 - 開頭，格式如下：
+💡 [一句創意摘要]
+📅 發佈日: [YYYY-MM-DD]
+📊 Views: [觀看數] 👍 Likes: [按讚數] 💬 Comments: [留言數]
+[YouTube 原始網址]
+
+✨ 口吻與語氣要求：語氣自然、觀察型，像一位 AI 熟人朋友在幫你推薦實用好影片`;
+
+  const contentUserPrompt = `今天是 ${today}
+這是本集的中文 Podcast 連結：${podcastUrl}
+以下是本週影片精選摘要：${summary}`;
+
+  const contentResult = await llm.call({
+    stage: 'email_content',
+    episodeNumber: state.episodeNumber,
+    messages: [
+      { role: 'system', content: contentSystemPrompt },
+      { role: 'user', content: contentUserPrompt },
+    ],
+    options: {
+      preferredModel: FLASH_MODEL,
+      maxTokens: 2048,
+      temperature: 0.7,
+    },
+  });
+
+  if (!contentResult.success || !contentResult.content) {
+    log.warn('Email content generation failed');
+    return buildFallbackEmailHtml(state);
+  }
+
+  // Step 2: HTML formatting agent
+  const htmlSystemPrompt = `你是一位專業的 AI 工具整合分析師與 HTML 電子報排版專家。
+
+請根據以下的每日 AI 工具摘要內容，產出一段 Gmail 可用的 HTML 內容，格式整齊、可直接貼入電子報中作為 Email 內文。請使用標準 HTML 元素排版，不要回傳 JSON、Markdown 或多餘解釋。
+
+📌 輸出格式規則：
+✅ 使用標準 HTML 標籤組成一段完整的 <div>...</div> 結構，排版清楚、可閱讀���
+
+✅ 必須包含以下內容：
+
+🪄 開場段落（出現在最上方）：
+中文開場白一段（用輕鬆語氣回顧近期 AI 趨勢）
+
+接上 Podcast 中文連結
+
+🖼️ 每支影片段落格式如下：
+影片標題（加粗 <strong>）
+一段簡介內容（不可重複影片標題）
+📅 發佈日期
+📊 觀看數、👍 喜歡數、💬 留言數
+YouTube 連結直接顯示
+
+📎 Email 結尾段補充：
+<hr>
+<p style="font-size:14px; color:#555;">🦥 感謝你今天收看 <strong>AI 懶人報</strong>，每天幫你整理最新、最實用的 AI 工具，輕鬆掌握 AI 新趨勢，我們明天見！</p>
+<p><img src="https://drive.google.com/uc?export=view&id=12hqlun6rvqAA5DGfNCNP2bQs9zumsT_l" width="100" /></p>`;
+
+  const htmlResult = await llm.call({
+    stage: 'email_html',
+    episodeNumber: state.episodeNumber,
+    messages: [
+      { role: 'system', content: htmlSystemPrompt },
+      { role: 'user', content: `請處理這段輸入：${contentResult.content}` },
+    ],
+    options: {
+      preferredModel: FLASH_MODEL,
+      maxTokens: 4096,
+      temperature: 0.5,
+    },
+  });
+
+  if (htmlResult.success && htmlResult.content) {
+    // Extract HTML div block if wrapped in markdown
+    const divMatch = htmlResult.content.match(/<div[\s\S]*<\/div>/i);
+    return divMatch ? divMatch[0] : htmlResult.content;
+  }
+
+  return buildFallbackEmailHtml(state);
+}
+
+function buildFallbackEmailHtml(state: PipelineState): string {
+  const title = state.selectedTitle || `EP${state.episodeNumber}`;
+  const desc = state.description || '';
+  const videos = (state.selectedVideos || []).slice(0, 5)
+    .map((v) => `<p><strong>${v.title}</strong><br>${v.channelName} · ${v.viewCount.toLocaleString()} views</p>`)
+    .join('');
+
+  return `<div>
+<h2>AI 懶人報 - ${title}</h2>
+<p>${desc}</p>
+${videos}
+<hr>
+<p style="font-size:14px; color:#555;">🦥 感謝你今天收看 <strong>AI 懶人報</strong>，每天幫你整理最新、最實用的 AI 工具，輕鬆掌握 AI 新趨勢，我們明天見！</p>
+<p><img src="https://drive.google.com/uc?export=view&id=12hqlun6rvqAA5DGfNCNP2bQs9zumsT_l" width="100" /></p>
+</div>`;
+}

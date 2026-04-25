@@ -21,10 +21,14 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
+  const isWeekly = state.segmentType === 'weekly';
 
   // Step 1: Generate 10 title candidates
+  const titlePrompt = isRobot ? buildRobotTitlePrompt(content)
+    : isWeekly ? buildWeeklyTitlePrompt(content)
+    : buildTitlePrompt(content);
   const titlesResult = await llm.generateJSON<{ titles: string[] }>(
-    isRobot ? buildRobotTitlePrompt(content) : buildTitlePrompt(content),
+    titlePrompt,
     'title_gen',
     { episodeNumber: state.episodeNumber, maxTokens: 2048, temperature: 0.7 }
   );
@@ -53,8 +57,11 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   log.info({ selectedTitle: selectedTitle.slice(0, 50) }, 'Title selected');
 
   // Step 3: Generate description
+  const descPrompt = isRobot ? buildRobotDescriptionPrompt(content)
+    : isWeekly ? buildWeeklyDescriptionPrompt(content)
+    : buildDescriptionPrompt(content);
   const descResult = await llm.generateJSON<{ description: string }>(
-    isRobot ? buildRobotDescriptionPrompt(content) : buildDescriptionPrompt(content),
+    descPrompt,
     'description_gen',
     { episodeNumber: state.episodeNumber, maxTokens: 1024, temperature: 0.7 }
   );
@@ -127,6 +134,27 @@ ${content.slice(0, 3000)}
 { "titles": ["標題1", ..., "標題10"] }`;
 }
 
+function buildWeeklyTitlePrompt(content: string): string {
+  return `你是一位經驗豐富的 Podcast 製作人，專門製作《AI懶人精選週報》。請根據以下本週精選內容生成10個吸引人的標題。
+
+內容摘要：
+${content.slice(0, 3000)}
+
+標題要求：
+1. 聚焦本週最重要的 AI 工具趨勢或重大更新
+2. 包含 1-2 個本週最熱門的 AI 工具名稱
+3. 標題長度 35-45 字
+4. 使用臺灣繁體中文用語
+5. 不要加 EPxx 集數編號
+6. 不要加類型標記（如【資訊型】）
+7. 標題中適合加入「週報」「本週精選」「一週回顧」等週報感關鍵字
+
+風格涵蓋：資訊型、幽默型、誇張型、對話式
+
+以 JSON 格式回傳：
+{ "titles": ["標題1", "標題2", ..., "標題10"] }`;
+}
+
 function buildTitleSelectionPrompt(titles: string[], content: string): string {
   const titleList = titles.map((t, i) => `${i + 1}. ${t}`).join('\n');
   return `從以下10個標題中選出最佳 Podcast 標題。
@@ -178,6 +206,26 @@ ${content.slice(0, 3000)}
 （重複5次）
 
 要求：200-350字、輕鬆但有科技觀點、不含外部連結
+
+以 JSON 格式回傳：
+{ "description": "完整描述" }`;
+}
+
+function buildWeeklyDescriptionPrompt(content: string): string {
+  return `根據以下《AI懶人精選週報》內容生成 Podcast 描述，包含本週5個精選 AI 工具亮點。
+
+內容摘要：
+${content.slice(0, 3000)}
+
+格式：
+開頭段落（點出本週 AI 工具圈最值得關注的趨勢）🚀
+
+💡 工具名稱：本週亮點功能或更新
+👉 應用場景和價值
+
+（重複5次）
+
+要求：200-350字、輕鬆有趣、帶有「一週回顧」的語氣、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;

@@ -1,8 +1,12 @@
 /**
- * Stage 1: Fetch YouTube videos + transcripts.
+ * Stage 1: Fetch YouTube videos (search only, snippet data).
  *
- * Uses YouTube Data API v3 to search for AI-related videos,
- * then fetches transcripts via Apify YouTube Transcript Scraper.
+ * Matches n8n flow:
+ *   25 keywords × 4 maxResults = up to 100 results
+ *   → dedup by videoId
+ *   → pass to classify stage (no stats, no transcripts yet)
+ *
+ * Stats, filtering, and transcript fetching happen in classify stage.
  */
 
 import { getDb } from '@/db';
@@ -11,14 +15,34 @@ import type { PipelineState, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:fetch');
 
-// Search keyword groups (rotated per run)
+// Search keyword groups (matches n8n exactly)
 const SEARCH_QUERIES: Record<string, string[]> = {
   daily: [
-    'new AI tools 2026',
-    'best AI apps this week',
+    'Top AI tools',
+    'AI automation',
+    'AI workflow tools',
+    'VIbe Coding',
+    'AI Assistant',
+    'Agentic AI',
+    'Claude',
+    'ChatGPT',
+    'GPT',
+    'Grok',
+    'Best Model ever',
+    'AI coding tools',
+    'AI for marketing',
+    'n8n AI integration',
+    'Google AI',
+    'Voice AI apps',
+    'AI agents 2025',
+    'Make money with AI',
+    'AI business ideas',
     'AI productivity tools',
-    'ChatGPT Claude Gemini news',
-    'AI developer tools update',
+    'AI tools for devs',
+    'Joma Tech AI',
+    'Sentdex GPT',
+    'Jordan Harrod AI',
+    'Valentin Charrier AI',
   ],
   weekly: [
     'AI tools weekly roundup',
@@ -26,39 +50,42 @@ const SEARCH_QUERIES: Record<string, string[]> = {
     'AI news this week summary',
   ],
   robot: [
-    'humanoid robot 2026',
-    'robot AI latest news',
-    'Boston Dynamics Figure Tesla Optimus',
+    'robotics',
+    'robotics technology update',
+    'robotics breakthrough',
+    'robotics news',
+    'quadruped robot',
+    'humanoid robot',
+    'robotics research',
+    'self driving',
+    'Autonomous Vehicle',
+    'nvidia robot',
+    'unitree',
+    'optimus',
+    'Figure AI',
+    'Google Robotics',
   ],
 };
-
-// Minimum thresholds for video quality
-const MIN_DURATION_SEC = 300;
-const MIN_VIEWS = 5000;
-const MIN_LIKES = 50;
-const MIN_COMMENTS = 20;
-const TOP_N = 5;
 
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeNumber: state.episodeNumber, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
-  const db = getDb();
   const apiKey = process.env.YOUTUBE_API_KEY;
-
   if (!apiKey) {
     log.warn('YOUTUBE_API_KEY not set, skipping fetch');
     return { videos: [], status: 'classifying' };
   }
 
-  const queries = SEARCH_QUERIES[state.segmentType] || SEARCH_QUERIES.daily;
+  // Weekly uses same keywords as daily but wider time window
+  const queries = state.segmentType === 'weekly'
+    ? SEARCH_QUERIES.daily
+    : (SEARCH_QUERIES[state.segmentType] || SEARCH_QUERIES.daily);
+  const searchDays = state.segmentType === 'robot' ? 8.5
+    : state.segmentType === 'weekly' ? 10
+    : 2.5;
   const allVideos: VideoSource[] = [];
 
-  // Get already-used video IDs to avoid duplicates
-  const usedIds = new Set(
-    (db.prepare('SELECT video_id FROM youtube_sources WHERE used_in_episode IS NOT NULL').all() as { video_id: string }[])
-      .map((r) => r.video_id)
-  );
-
+  // Step 1: Search with snippet only (no stats fetch yet — matches n8n)
   for (const query of queries) {
     try {
       const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
@@ -66,104 +93,51 @@ export async function fetchYoutube(state: PipelineState): Promise<Partial<Pipeli
       searchUrl.searchParams.set('q', query);
       searchUrl.searchParams.set('type', 'video');
       searchUrl.searchParams.set('order', 'viewCount');
-      searchUrl.searchParams.set('maxResults', '10');
-      searchUrl.searchParams.set('publishedAfter', getDateDaysAgo(7));
+      searchUrl.searchParams.set('maxResults', '4');
+      searchUrl.searchParams.set('regionCode', 'US');
+      searchUrl.searchParams.set('publishedAfter', getDateDaysAgo(searchDays));
       searchUrl.searchParams.set('key', apiKey);
 
       const searchResp = await fetch(searchUrl.toString());
       if (!searchResp.ok) {
-        log.warn({ query, status: searchResp.status }, 'YouTube search failed');
+        const errBody = await searchResp.text().catch(() => '');
+        log.warn({ query, status: searchResp.status, body: errBody.slice(0, 200) }, 'YouTube search failed');
         continue;
       }
 
       const searchData = await searchResp.json();
-      const videoIds = (searchData.items || [])
-        .map((item: { id: { videoId: string } }) => item.id.videoId)
-        .filter((id: string) => !usedIds.has(id));
-
-      if (videoIds.length === 0) continue;
-
-      // Get video details (duration, stats)
-      const detailUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-      detailUrl.searchParams.set('part', 'snippet,contentDetails,statistics');
-      detailUrl.searchParams.set('id', videoIds.join(','));
-      detailUrl.searchParams.set('key', apiKey);
-
-      const detailResp = await fetch(detailUrl.toString());
-      if (!detailResp.ok) continue;
-
-      const detailData = await detailResp.json();
-
-      for (const item of detailData.items || []) {
-        const durationSec = parseDuration(item.contentDetails.duration);
-        const views = parseInt(item.statistics.viewCount || '0');
-        const likes = parseInt(item.statistics.likeCount || '0');
-        const comments = parseInt(item.statistics.commentCount || '0');
-
-        if (durationSec < MIN_DURATION_SEC || views < MIN_VIEWS || likes < MIN_LIKES || comments < MIN_COMMENTS) {
-          continue;
-        }
-
+      for (const item of searchData.items || []) {
         allVideos.push({
-          videoId: item.id,
+          videoId: item.id.videoId,
           title: item.snippet.title,
           channelName: item.snippet.channelTitle,
           publishedAt: item.snippet.publishedAt,
-          viewCount: views,
-          likeCount: likes,
-          commentCount: comments,
-          durationSeconds: durationSec,
-          transcript: '', // Will be filled by transcript fetcher
+          // No stats yet — will be fetched in classify after LLM filtering
+          viewCount: 0,
+          likeCount: 0,
+          commentCount: 0,
+          durationSeconds: 0,
+          transcript: '',
         });
       }
+
+      log.info({ query, found: (searchData.items || []).length }, 'Search results');
     } catch (error) {
       log.error({ query, error: (error as Error).message }, 'Search query failed');
     }
   }
 
-  // Deduplicate and sort by views
+  // Step 2: Dedup by videoId
   const unique = deduplicateByVideoId(allVideos);
-  unique.sort((a, b) => b.viewCount - a.viewCount);
-  const topVideos = unique.slice(0, TOP_N);
+  log.info({ total: allVideos.length, unique: unique.length }, 'Videos fetched and deduped');
 
-  // Fetch transcripts (Apify or fallback)
-  for (const video of topVideos) {
-    try {
-      video.transcript = await fetchTranscript(video.videoId);
-    } catch (error) {
-      log.warn({ videoId: video.videoId, error: (error as Error).message }, 'Transcript fetch failed');
-      video.transcript = '';
-    }
-
-    // Save to youtube_sources table
-    db.prepare(
-      `INSERT OR IGNORE INTO youtube_sources (video_id, title, channel_name, published_at, view_count, like_count, comment_count, duration_seconds, transcript)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      video.videoId, video.title, video.channelName, video.publishedAt,
-      video.viewCount, video.likeCount, video.commentCount, video.durationSeconds,
-      video.transcript
-    );
-  }
-
-  log.info({ count: topVideos.length }, 'Videos fetched');
-  return { videos: topVideos, status: 'classifying' };
+  return { videos: unique, status: 'classifying' };
 }
 
 // ── Helpers ──
 
 function getDateDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
-function parseDuration(iso8601: string): number {
-  const match = iso8601.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 0;
-  return (parseInt(match[1] || '0') * 3600) +
-         (parseInt(match[2] || '0') * 60) +
-         parseInt(match[3] || '0');
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function deduplicateByVideoId(videos: VideoSource[]): VideoSource[] {
@@ -173,29 +147,4 @@ function deduplicateByVideoId(videos: VideoSource[]): VideoSource[] {
     seen.add(v.videoId);
     return true;
   });
-}
-
-/**
- * Fetch transcript using Apify YouTube Transcript Scraper.
- * Falls back to empty string if API key not available.
- */
-async function fetchTranscript(videoId: string): Promise<string> {
-  const apifyToken = process.env.APIFY_API_TOKEN;
-  if (!apifyToken) return '';
-
-  const resp = await fetch(
-    `https://api.apify.com/v2/acts/bernardo~youtube-transcript-scraper/run-sync-get-dataset-items?token=${apifyToken}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        urls: [`https://www.youtube.com/watch?v=${videoId}`],
-        outputFormat: 'text',
-      }),
-    }
-  );
-
-  if (!resp.ok) throw new Error(`Apify ${resp.status}`);
-  const data = await resp.json();
-  return data?.[0]?.text || data?.[0]?.transcript || '';
 }

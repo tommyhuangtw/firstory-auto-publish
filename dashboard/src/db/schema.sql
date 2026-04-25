@@ -102,6 +102,38 @@ CREATE TABLE IF NOT EXISTS youtube_sources (
   fetched_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS robot_youtube_sources (
+  id INTEGER PRIMARY KEY,
+  video_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  channel_name TEXT,
+  published_at TEXT,
+  view_count INTEGER,
+  like_count INTEGER,
+  comment_count INTEGER,
+  duration_seconds INTEGER,
+  transcript TEXT,
+  classification TEXT,                -- 'is_robotics' | 'non_robotics'
+  used_in_episode INTEGER,
+  fetched_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS weekly_youtube_sources (
+  id INTEGER PRIMARY KEY,
+  video_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  channel_name TEXT,
+  published_at TEXT,
+  view_count INTEGER,
+  like_count INTEGER,
+  comment_count INTEGER,
+  duration_seconds INTEGER,
+  transcript TEXT,
+  classification TEXT,                -- 'is_tool' | 'not_tool'
+  used_in_episode INTEGER,
+  fetched_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS platform_analytics (
   id INTEGER PRIMARY KEY,
   episode_number INTEGER,
@@ -115,6 +147,16 @@ CREATE TABLE IF NOT EXISTS platform_analytics (
   fetched_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS pipeline_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pipeline_run_id INTEGER NOT NULL,
+  stage TEXT NOT NULL,
+  output_data TEXT,
+  started_at TEXT DEFAULT (datetime('now')),
+  elapsed_ms INTEGER,
+  FOREIGN KEY (pipeline_run_id) REFERENCES pipeline_runs(id)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -123,3 +165,6 @@ CREATE INDEX IF NOT EXISTS idx_llm_calls_stage ON llm_calls(stage);
 CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(canonical_name);
 CREATE INDEX IF NOT EXISTS idx_youtube_sources_video ON youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_analytics_episode ON platform_analytics(episode_number);
+CREATE INDEX IF NOT EXISTS idx_snapshots_run ON pipeline_snapshots(pipeline_run_id);
+CREATE INDEX IF NOT EXISTS idx_robot_youtube_sources_video ON robot_youtube_sources(video_id);
+CREATE INDEX IF NOT EXISTS idx_weekly_youtube_sources_video ON weekly_youtube_sources(video_id);

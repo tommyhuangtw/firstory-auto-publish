@@ -25,20 +25,24 @@ export async function enrichMemory(state: PipelineState): Promise<Partial<Pipeli
     recalls = await generateRecallStatements(state.episodeNumber, toolNames);
 
     if (recalls.length > 0) {
+      const recallBlock = recalls.join('\n');
       // Inject recall statements near the beginning of the script (after first paragraph)
       const paragraphs = state.scriptZh.split('\n\n');
+      let enrichedScript: string;
       if (paragraphs.length > 1) {
-        const recallBlock = '\n\n' + recalls.join('\n') + '\n\n';
         // Insert after the first paragraph (intro)
         paragraphs.splice(1, 0, recallBlock);
-        const enrichedScript = paragraphs.join('\n\n');
-
-        log.info({ count: recalls.length }, 'Memory recall injected into script');
-        return {
-          scriptZh: enrichedScript,
-          memoryEnrichments: recalls,
-        };
+        enrichedScript = paragraphs.join('\n\n');
+      } else {
+        // Single block script — append recalls at the end to avoid disrupting intro
+        enrichedScript = state.scriptZh + '\n\n' + recallBlock;
       }
+
+      log.info({ count: recalls.length }, 'Memory recall injected into script');
+      return {
+        scriptZh: enrichedScript,
+        memoryEnrichments: recalls,
+      };
     }
 
     log.info('No recall statements generated');

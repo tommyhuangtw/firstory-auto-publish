@@ -8,7 +8,7 @@ const ALLOWED_DIRS = [
   path.resolve(process.cwd(), 'data'),
 ];
 
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.png', '.jpg', '.jpeg', '.webp'];
 
 export async function GET(
   request: NextRequest,
@@ -23,10 +23,10 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  // Security: only allow audio file extensions
+  // Security: only allow audio/image file extensions
   const ext = path.extname(filePath).toLowerCase();
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    return NextResponse.json({ error: 'Not an audio file' }, { status: 400 });
+    return NextResponse.json({ error: 'File type not allowed' }, { status: 400 });
   }
 
   if (!fs.existsSync(filePath)) {
@@ -35,12 +35,12 @@ export async function GET(
 
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
-  const mimeType = ext === '.mp3' ? 'audio/mpeg'
-    : ext === '.wav' ? 'audio/wav'
-    : ext === '.m4a' ? 'audio/mp4'
-    : ext === '.aac' ? 'audio/aac'
-    : ext === '.ogg' ? 'audio/ogg'
-    : 'application/octet-stream';
+  const MIME_TYPES: Record<string, string> = {
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac', '.ogg': 'audio/ogg',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  };
+  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
 
   const range = request.headers.get('range');
 
