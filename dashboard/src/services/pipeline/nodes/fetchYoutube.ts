@@ -11,6 +11,7 @@
 
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 import type { PipelineState, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:fetch');
@@ -98,12 +99,17 @@ export async function fetchYoutube(state: PipelineState): Promise<Partial<Pipeli
       searchUrl.searchParams.set('publishedAfter', getDateDaysAgo(searchDays));
       searchUrl.searchParams.set('key', apiKey);
 
-      const searchResp = await fetch(searchUrl.toString());
-      if (!searchResp.ok) {
-        const errBody = await searchResp.text().catch(() => '');
-        log.warn({ query, status: searchResp.status, body: errBody.slice(0, 200) }, 'YouTube search failed');
-        continue;
-      }
+      const searchResp = await withRetry(
+        async () => {
+          const r = await fetch(searchUrl.toString());
+          if (!r.ok) {
+            const errBody = await r.text().catch(() => '');
+            throw new Error(`YouTube search ${r.status}: ${errBody.slice(0, 200)}`);
+          }
+          return r;
+        },
+        { label: `youtube-search:${query}` },
+      );
 
       const searchData = await searchResp.json();
       for (const item of searchData.items || []) {

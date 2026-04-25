@@ -5,6 +5,7 @@
  */
 
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 
 const log = createChildLogger('instagram');
 const GRAPH_API = 'https://graph.facebook.com/v22.0';
@@ -22,20 +23,25 @@ export async function postToInstagram(imageUrl: string, caption: string): Promis
 
   // Step 1: Create media container
   log.info('Creating media container');
-  const containerResp = await fetch(`${GRAPH_API}/${accountId}/media`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      image_url: imageUrl,
-      caption,
-      access_token: accessToken,
-    }),
-  });
-
-  if (!containerResp.ok) {
-    const err = await containerResp.text();
-    throw new Error(`IG container creation failed: ${containerResp.status} ${err}`);
-  }
+  const containerResp = await withRetry(
+    async () => {
+      const r = await fetch(`${GRAPH_API}/${accountId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_url: imageUrl,
+          caption,
+          access_token: accessToken,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.text();
+        throw new Error(`IG container creation failed: ${r.status} ${err}`);
+      }
+      return r;
+    },
+    { label: 'ig-container' },
+  );
 
   const container = await containerResp.json();
   const containerId = container.id;
@@ -45,19 +51,24 @@ export async function postToInstagram(imageUrl: string, caption: string): Promis
   await new Promise((r) => setTimeout(r, 5000));
 
   // Step 2: Publish
-  const publishResp = await fetch(`${GRAPH_API}/${accountId}/media_publish`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      creation_id: containerId,
-      access_token: accessToken,
-    }),
-  });
-
-  if (!publishResp.ok) {
-    const err = await publishResp.text();
-    throw new Error(`IG publish failed: ${publishResp.status} ${err}`);
-  }
+  const publishResp = await withRetry(
+    async () => {
+      const r = await fetch(`${GRAPH_API}/${accountId}/media_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          creation_id: containerId,
+          access_token: accessToken,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.text();
+        throw new Error(`IG publish failed: ${r.status} ${err}`);
+      }
+      return r;
+    },
+    { label: 'ig-publish' },
+  );
 
   const published = await publishResp.json();
   log.info({ postId: published.id }, 'Posted to Instagram');

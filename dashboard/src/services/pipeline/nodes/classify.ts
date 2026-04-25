@@ -14,6 +14,7 @@
 import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 import type { PipelineState, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:classify');
@@ -104,11 +105,14 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
         detailUrl.searchParams.set('id', batch.join(','));
         detailUrl.searchParams.set('key', apiKey);
 
-        const resp = await fetch(detailUrl.toString());
-        if (!resp.ok) {
-          log.warn({ status: resp.status }, 'Video detail fetch failed');
-          continue;
-        }
+        const resp = await withRetry(
+          async () => {
+            const r = await fetch(detailUrl.toString());
+            if (!r.ok) throw new Error(`YouTube stats ${r.status}`);
+            return r;
+          },
+          { label: 'youtube-stats' },
+        );
 
         const data = await resp.json();
         const statsMap = new Map<string, { views: number; likes: number; comments: number; duration: number }>();
@@ -364,19 +368,24 @@ async function fetchTranscript(videoId: string): Promise<string> {
   const apifyToken = process.env.APIFY_API_TOKEN;
   if (!apifyToken) return '';
 
-  const resp = await fetch(
-    `https://api.apify.com/v2/acts/karamelo~youtube-transcripts/run-sync-get-dataset-items?token=${apifyToken}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        urls: [`https://www.youtube.com/watch?v=${videoId}`],
-        outputFormat: 'singleStringText',
-      }),
-    }
+  const resp = await withRetry(
+    async () => {
+      const r = await fetch(
+        `https://api.apify.com/v2/acts/karamelo~youtube-transcripts/run-sync-get-dataset-items?token=${apifyToken}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: [`https://www.youtube.com/watch?v=${videoId}`],
+            outputFormat: 'singleStringText',
+          }),
+        }
+      );
+      if (!r.ok) throw new Error(`Apify ${r.status}`);
+      return r;
+    },
+    { label: `apify-transcript:${videoId}` },
   );
-
-  if (!resp.ok) throw new Error(`Apify ${resp.status}`);
   const data = await resp.json();
   return data?.[0]?.captions || data?.[0]?.text || data?.[0]?.transcript || '';
 }

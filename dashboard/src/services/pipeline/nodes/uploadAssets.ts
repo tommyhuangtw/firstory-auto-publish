@@ -7,6 +7,7 @@
 
 import { getGoogleDriveService } from '@/services/googleDrive';
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:upload-assets');
@@ -31,7 +32,10 @@ export async function uploadAssets(state: PipelineState): Promise<Partial<Pipeli
     // Upload audio
     if (state.audioPath && audioFolderId) {
       try {
-        const audioResult = await driveService.uploadFile(state.audioPath, audioFolderId, 'audio/mpeg');
+        const audioResult = await withRetry(
+          () => driveService.uploadFile(state.audioPath, audioFolderId, 'audio/mpeg'),
+          { label: 'drive-upload-audio' },
+        );
         const streamUrl = await driveService.getStreamUrl(audioResult.fileId);
         results.driveAudioUrl = streamUrl;
         log.info({ fileId: audioResult.fileId }, 'Audio uploaded to Drive');
@@ -43,7 +47,10 @@ export async function uploadAssets(state: PipelineState): Promise<Partial<Pipeli
     // Upload cover image
     if (state.coverPath && imageFolderId) {
       try {
-        const imageResult = await driveService.uploadFile(state.coverPath, imageFolderId, 'image/png');
+        const imageResult = await withRetry(
+          () => driveService.uploadFile(state.coverPath, imageFolderId, 'image/png'),
+          { label: 'drive-upload-cover' },
+        );
         const streamUrl = await driveService.getStreamUrl(imageResult.fileId);
         results.driveImageUrl = streamUrl;
         log.info({ fileId: imageResult.fileId }, 'Cover image uploaded to Drive');

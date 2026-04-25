@@ -10,6 +10,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:tts');
@@ -171,28 +172,33 @@ function buildChunks(text: string, maxLen: number = CHUNK_MAX_LEN): string[] {
 async function synthesizeChunk(chunk: string, outPath: string, apiKey: string, audioConfig = DAILY_AUDIO_CONFIG): Promise<void> {
   const sanitized = chunk.replace(/"/g, '');
 
-  const resp = await fetch(VOAI_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'x-output-format': 'mp3',
-      'content-type': 'application/json',
+  const resp = await withRetry(
+    async () => {
+      const r = await fetch(VOAI_URL, {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'x-output-format': 'mp3',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: {
+            dialogue: [{
+              voai_script_text: sanitized,
+              voice: DEFAULT_VOICE,
+              audio_config: audioConfig,
+            }],
+          },
+        }),
+      });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '<no body>');
+        throw new Error(`VoAI ${r.status}: ${errText}`);
+      }
+      return r;
     },
-    body: JSON.stringify({
-      input: {
-        dialogue: [{
-          voai_script_text: sanitized,
-          voice: DEFAULT_VOICE,
-          audio_config: audioConfig,
-        }],
-      },
-    }),
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '<no body>');
-    throw new Error(`VoAI ${resp.status}: ${errText}`);
-  }
+    { label: 'voai-tts' },
+  );
 
   const ctype = resp.headers.get('content-type') || '';
   if (ctype.includes('application/json')) {
