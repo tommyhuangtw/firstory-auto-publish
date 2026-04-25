@@ -8,6 +8,7 @@
 
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
+import { buildMemoryContext } from '@/services/memory/memoryService';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:script-en');
@@ -152,11 +153,30 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   log.info({ videoCount: state.selectedVideos.length }, 'Generating English script');
 
   if (state.selectedVideos.length === 0) {
-    return { scriptEn: '', scriptWordCount: 0, status: 'translating', error: 'No videos selected for scripting' };
+    return { scriptEn: '', scriptWordCount: 0, memoryContext: null, status: 'translating', error: 'No videos selected for scripting' };
   }
 
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
+
+  // Build memory context from video titles + transcripts (lightweight DB scan, no LLM cost)
+  const videoTexts = state.selectedVideos.map((v) =>
+    `${v.title} ${v.transcript?.slice(0, 500) || ''}`
+  );
+  const memoryContext = buildMemoryContext(videoTexts, state.episodeNumber);
+
+  if (memoryContext.knownToolNames.length > 0) {
+    log.info(
+      { knownTools: memoryContext.knownToolNames },
+      'Memory context built — injecting audience familiarity into script prompt'
+    );
+  }
+
+  // Build system prompt with optional memory context
+  let systemPrompt = isRobot ? ROBOT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  if (memoryContext.briefForScriptGen) {
+    systemPrompt += `\n\n---\n\n${memoryContext.briefForScriptGen}`;
+  }
 
   // Build content string matching n8n format (title, description, transcript)
   const content = state.selectedVideos
@@ -176,7 +196,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ?
     stage: 'script_en',
     episodeNumber: state.episodeNumber,
     messages: [
-      { role: 'system', content: isRobot ? ROBOT_SYSTEM_PROMPT : SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
     options: {
@@ -188,7 +208,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ?
 
   if (!result.success || !result.content) {
     log.error('English script generation failed');
-    return { scriptEn: '', scriptWordCount: 0, status: 'translating', error: result.error || 'Script generation failed' };
+    return { scriptEn: '', scriptWordCount: 0, memoryContext, status: 'translating', error: result.error || 'Script generation failed' };
   }
 
   const wordCount = result.content.split(/\s+/).length;
@@ -197,6 +217,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ?
   return {
     scriptEn: result.content,
     scriptWordCount: wordCount,
+    memoryContext,
     status: 'translating',
   };
 }

@@ -26,6 +26,23 @@ export function getDb(): Database.Database {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   _db.exec(schema);
 
+  // Add new columns if they don't exist (safe migration for existing DBs)
+  const safeAlter = (sql: string) => {
+    try { _db!.exec(sql); } catch { /* column already exists */ }
+  };
+  safeAlter('ALTER TABLE tools ADD COLUMN current_summary TEXT');
+  safeAlter('ALTER TABLE tools ADD COLUMN summary_version INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE tools ADD COLUMN latest_version_detail TEXT');
+  safeAlter('ALTER TABLE tools ADD COLUMN family_id INTEGER REFERENCES tool_families(id)');
+  safeAlter('ALTER TABLE episode_tool_mentions ADD COLUMN significance REAL DEFAULT 0.5');
+  safeAlter('ALTER TABLE episode_tool_mentions ADD COLUMN version_detail TEXT');
+
+  // Seed tool families
+  try {
+    const { seedFamilies } = require('@/services/memory/toolFamilies');
+    seedFamilies();
+  } catch { /* toolFamilies not available during build */ }
+
   return _db;
 }
 

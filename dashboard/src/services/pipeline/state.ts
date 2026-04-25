@@ -3,7 +3,8 @@
  * Each node reads what it needs, writes what it produces.
  */
 
-import type { ExtractedTool } from '@/services/memory/toolExtractor';
+import type { ResolvedTool } from '@/services/memory/toolExtractor';
+import type { MemoryContext } from '@/services/memory/memoryService';
 
 export interface VideoSource {
   videoId: string;
@@ -74,7 +75,7 @@ export interface PipelineState {
   scriptWordCount: number;
 
   // ── Stage 3.5: Tool Extraction ──
-  extractedTools: ExtractedTool[];
+  extractedTools: ResolvedTool[];
 
   // ── Stage 4: Translate ──
   scriptZh: string;
@@ -82,7 +83,8 @@ export interface PipelineState {
   // ── Stage 4.5b: Custom Content Insertion ──
   customContentInserted: boolean;
 
-  // ── Stage 4.5: Memory Enrichment ──
+  // ── Stage 4.5: Memory Context ──
+  memoryContext: MemoryContext | null;
   memoryEnrichments: string[];
 
   // ── Stage 5: Quality ──
@@ -148,6 +150,7 @@ export function createInitialState(
     extractedTools: [],
     scriptZh: '',
     customContentInserted: false,
+    memoryContext: null,
     memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,

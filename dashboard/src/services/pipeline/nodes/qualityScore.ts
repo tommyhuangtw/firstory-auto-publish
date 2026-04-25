@@ -150,11 +150,14 @@ export async function qualityScore(state: PipelineState): Promise<Partial<Pipeli
   let score: QualityScore | null = null;
   let iterations = state.qualityIterations;
 
+  // Memory-aware quality check context
+  const memoryQualityBrief = state.memoryContext?.briefForQualityCheck || '';
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     // ── Score the script (GPT-5.4) ──
     const scoringUserPrompt = `【待評分腳本】
 ${currentScript}
-
+${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : ''}
 請根據以上內容給予評分與建議。
 
 📥 請依照以下 JSON 格式輸出��果：

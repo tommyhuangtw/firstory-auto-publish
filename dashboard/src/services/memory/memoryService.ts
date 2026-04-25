@@ -1,18 +1,23 @@
 /**
- * Memory Service — manages the tool knowledge base in SQLite.
+ * Memory Service — Layer 2 of the three-layer memory system.
  *
- * Handles tool upsert, history queries, recall statement generation,
- * and browsing queries for the dashboard UI.
+ * Handles:
+ *   - Tool upsert with family-aware canonical names
+ *   - Summary compaction (LSM-tree inspired: fixed-size ≤300 char summaries)
+ *   - Significance-scored contextual recall generation (delta-aware)
+ *   - Dashboard browsing queries
  */
 
 import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
-import type { ExtractedTool } from './toolExtractor';
+import type { ResolvedTool } from './toolExtractor';
 
 const log = createChildLogger('memory:service');
 
-const RECALL_MODEL = 'google/gemini-2.5-flash-lite';
+const COMPACTION_MODEL = 'google/gemini-2.5-flash-lite';
+const COMPACTION_THRESHOLD = 3; // Trigger compaction after this many mentions
+const MAX_SUMMARY_LENGTH = 300;
 
 // ── Types ──
 
@@ -25,6 +30,10 @@ export interface ToolRecord {
   latest_episode: number | null;
   mention_count: number;
   evolving_summary: string | null;
+  current_summary: string | null;
+  summary_version: number;
+  latest_version_detail: string | null;
+  family_id: number | null;
 }
 
 export interface ToolMentionRecord {
@@ -33,69 +42,246 @@ export interface ToolMentionRecord {
   tool_id: number;
   mention_type: string | null;
   context_snippet: string | null;
+  significance: number;
+  version_detail: string | null;
   created_at: string;
 }
 
-// ── Upsert ──
+// ── Upsert with Compaction ──
 
 /**
- * Save extracted tools to DB. Updates existing tools, creates new ones.
+ * Save resolved tools to DB with family-aware canonical names.
+ * Triggers summary compaction for tools that have been seen many times.
  */
-export function upsertTools(episodeNumber: number, tools: ExtractedTool[]): void {
+export async function upsertTools(episodeNumber: number, tools: ResolvedTool[]): Promise<void> {
   const db = getDb();
 
   const upsertTool = db.prepare(`
-    INSERT INTO tools (canonical_name, aliases, category, first_episode, latest_episode, mention_count, evolving_summary)
-    VALUES (?, ?, ?, ?, ?, 1, ?)
+    INSERT INTO tools (canonical_name, aliases, category, first_episode, latest_episode, mention_count, current_summary, latest_version_detail, family_id)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     ON CONFLICT(canonical_name) DO UPDATE SET
       aliases = CASE
         WHEN excluded.aliases IS NOT NULL AND excluded.aliases != '[]'
         THEN excluded.aliases
         ELSE tools.aliases
       END,
+      category = COALESCE(excluded.category, tools.category),
       latest_episode = excluded.latest_episode,
       mention_count = tools.mention_count + 1,
-      evolving_summary = CASE
-        WHEN excluded.evolving_summary IS NOT NULL AND excluded.evolving_summary != ''
-        THEN tools.evolving_summary || ' | EP' || excluded.latest_episode || ': ' || excluded.evolving_summary
-        ELSE tools.evolving_summary
-      END
+      latest_version_detail = COALESCE(excluded.latest_version_detail, tools.latest_version_detail)
   `);
 
   const insertMention = db.prepare(`
-    INSERT INTO episode_tool_mentions (episode_number, tool_id, mention_type, context_snippet)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO episode_tool_mentions (episode_number, tool_id, mention_type, context_snippet, significance, version_detail)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  const getToolId = db.prepare('SELECT id FROM tools WHERE canonical_name = ?');
+  const getToolRow = db.prepare('SELECT id, mention_count, current_summary FROM tools WHERE canonical_name = ?');
+  const getFamilyId = db.prepare('SELECT id FROM tool_families WHERE family_name = ?');
+
+  // Phase 1: Upsert all tools in a transaction
+  const toolsNeedingCompaction: Array<{ name: string; oldSummary: string; newContext: string }> = [];
 
   const transaction = db.transaction(() => {
     for (const tool of tools) {
+      // Look up family_id
+      const familyRow = getFamilyId.get(tool.canonicalName) as { id: number } | undefined;
+      const familyId = familyRow?.id || null;
+
+      // Check existing record before upsert
+      const existing = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number; current_summary: string | null } | undefined;
+
       upsertTool.run(
-        tool.name,
+        tool.canonicalName,
         JSON.stringify(tool.aliases),
         tool.category,
         episodeNumber,
         episodeNumber,
-        tool.contextSnippet
+        tool.contextSnippet,
+        tool.versionDetail || null,
+        familyId
       );
 
-      const row = getToolId.get(tool.name) as { id: number } | undefined;
+      // Insert mention record
+      const row = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number } | undefined;
       if (row) {
-        insertMention.run(episodeNumber, row.id, tool.mentionType, tool.contextSnippet);
+        insertMention.run(
+          episodeNumber,
+          row.id,
+          tool.mentionType,
+          tool.contextSnippet,
+          tool.significanceScore,
+          tool.versionDetail || null
+        );
+      }
+
+      // Queue for compaction if threshold met
+      if (existing && existing.mention_count >= COMPACTION_THRESHOLD && existing.current_summary) {
+        toolsNeedingCompaction.push({
+          name: tool.canonicalName,
+          oldSummary: existing.current_summary,
+          newContext: tool.contextSnippet,
+        });
       }
     }
   });
 
   transaction();
   log.info({ episodeNumber, count: tools.length }, 'Tools upserted');
+
+  // Phase 2: Async summary compaction (outside transaction)
+  for (const item of toolsNeedingCompaction) {
+    try {
+      await compactSummary(item.name, item.oldSummary, item.newContext);
+    } catch (error) {
+      log.warn({ tool: item.name, error: (error as Error).message }, 'Summary compaction failed');
+    }
+  }
 }
 
-// ── Queries ──
+/**
+ * Compact a tool's summary using LLM — merge old + new into ≤300 chars.
+ * Inspired by LSM-tree compaction: accumulate then merge to fixed size.
+ */
+async function compactSummary(toolName: string, oldSummary: string, newContext: string): Promise<void> {
+  const llm = getLLMService();
+
+  const prompt = `Merge these two summaries about the AI tool "${toolName}" into ONE concise paragraph.
+
+Previous summary: ${oldSummary}
+
+New information: ${newContext}
+
+Requirements:
+- Maximum ${MAX_SUMMARY_LENGTH} characters
+- Keep: first appearance context, most significant capability, latest update
+- Drop: redundant info, old version details superseded by newer ones
+- Write in English, factual tone
+
+Return JSON: { "summary": "..." }`;
+
+  const result = await llm.generateJSON<{ summary: string }>(
+    prompt,
+    'summary_compaction',
+    {
+      preferredModel: COMPACTION_MODEL,
+      maxTokens: 256,
+      temperature: 0.2,
+    }
+  );
+
+  if (result.success && result.data?.summary) {
+    const compacted = result.data.summary.slice(0, MAX_SUMMARY_LENGTH);
+    const db = getDb();
+    db.prepare(
+      'UPDATE tools SET current_summary = ?, summary_version = summary_version + 1 WHERE canonical_name = ?'
+    ).run(compacted, toolName);
+
+    log.info({ tool: toolName, length: compacted.length }, 'Summary compacted');
+  }
+}
+
+// ── Memory Context for Script Generation ──
+
+export interface MemoryContext {
+  /** Context brief injected into script generation prompts */
+  briefForScriptGen: string;
+  /** Context brief injected into quality scoring prompts */
+  briefForQualityCheck: string;
+  /** List of well-known tool names (for quick reference) */
+  knownToolNames: string[];
+}
 
 /**
- * Get all tools with optional search/filter.
+ * Build memory context from video titles/transcripts by matching against known tools in DB.
+ *
+ * Called BEFORE script generation to provide the LLM with audience familiarity context.
+ * Uses a lightweight DB scan (no LLM cost) — matches tool canonical names against video text.
+ *
+ * Interview explanation: "Pre-fetch memory context so the LLM knows what the audience
+ * already knows — like giving a speaker briefing notes before going on stage."
  */
+export function buildMemoryContext(
+  videoTexts: string[],
+  episodeNumber: number
+): MemoryContext {
+  const db = getDb();
+  const empty: MemoryContext = { briefForScriptGen: '', briefForQualityCheck: '', knownToolNames: [] };
+
+  // Get all tracked tools from DB (lightweight — typically <200 rows)
+  const allTools = db.prepare(
+    'SELECT canonical_name, category, mention_count, latest_episode, current_summary, latest_version_detail FROM tools ORDER BY mention_count DESC'
+  ).all() as Array<{
+    canonical_name: string;
+    category: string | null;
+    mention_count: number;
+    latest_episode: number | null;
+    current_summary: string | null;
+    latest_version_detail: string | null;
+  }>;
+
+  if (allTools.length === 0) return empty;
+
+  // Combine all video text for matching
+  const combinedText = videoTexts.join(' ').toLowerCase();
+
+  // Find tools mentioned in today's videos
+  const matchedTools = allTools.filter((tool) => {
+    const name = tool.canonical_name.toLowerCase();
+    return combinedText.includes(name);
+  });
+
+  if (matchedTools.length === 0) return empty;
+
+  log.info({ matched: matchedTools.length }, 'Memory context: tools matched from video text');
+
+  // Build brief for script generation
+  const toolBriefs = matchedTools.map((t) => {
+    const episodeGap = episodeNumber - (t.latest_episode || 0);
+    const familiarity = t.mention_count >= 10 ? 'very well-known' :
+      t.mention_count >= 5 ? 'well-known' :
+      t.mention_count >= 2 ? 'mentioned before' : 'new to audience';
+
+    let brief = `- ${t.canonical_name} (${familiarity}, ${t.mention_count}x in past episodes)`;
+    if (t.latest_version_detail) {
+      brief += ` — last version discussed: ${t.latest_version_detail}`;
+    }
+    if (t.current_summary) {
+      brief += ` — previous coverage: ${t.current_summary.slice(0, 150)}`;
+    }
+    if (episodeGap > 20) {
+      brief += ` [not mentioned for ${episodeGap} episodes — worth a brief refresher]`;
+    }
+    return brief;
+  });
+
+  const briefForScriptGen = `AUDIENCE MEMORY CONTEXT — The following tools/companies have been covered in previous episodes. Your audience already knows them.
+
+${toolBriefs.join('\n')}
+
+INSTRUCTIONS based on this context:
+- For very well-known tools (5+ mentions): Do NOT explain what they are. Jump straight to what's NEW. Compare with previous versions or capabilities when relevant.
+- For tools mentioned before: Brief context is fine, but don't explain from scratch.
+- For tools not mentioned for 20+ episodes: A quick refresher is appropriate since the audience may have forgotten.
+- When a tool has a new version (e.g., GPT-4 Turbo → GPT-4o): Highlight what changed compared to the previous version.
+- NEVER say "we discussed this in episode X" or reference previous episodes by number.`;
+
+  const briefForQualityCheck = `KNOWN TOOLS CHECK — These tools are well-known to the audience:
+${matchedTools.filter((t) => t.mention_count >= 3).map((t) => `${t.canonical_name} (${t.mention_count}x mentioned)`).join(', ')}
+
+SCORING RULE: Deduct points if the script explains these well-known tools as if the audience is hearing about them for the first time. The audience is experienced — they know what ChatGPT, Claude, Midjourney etc. are.`;
+
+  return {
+    briefForScriptGen,
+    briefForQualityCheck,
+    knownToolNames: matchedTools.map((t) => t.canonical_name),
+  };
+}
+
+// ── Query Helpers ──
+
+// ── Public Query Functions (for UI) ──
+
 export function getAllTools(options?: {
   search?: string;
   category?: string;
@@ -123,112 +309,22 @@ export function getAllTools(options?: {
   return db.prepare(query).all(...params) as ToolRecord[];
 }
 
-/**
- * Get a single tool by canonical name.
- */
 export function getToolByName(name: string): ToolRecord | undefined {
   const db = getDb();
   return db.prepare('SELECT * FROM tools WHERE canonical_name = ?').get(name) as ToolRecord | undefined;
 }
 
-/**
- * Get all mentions of a tool across episodes.
- */
 export function getToolMentions(toolId: number): (ToolMentionRecord & { segment_type?: string })[] {
   const db = getDb();
   return db.prepare(`
     SELECT m.*, e.segment_type
     FROM episode_tool_mentions m
     LEFT JOIN episodes e ON e.episode_number = m.episode_number
+    WHERE m.tool_id = ?
     ORDER BY m.episode_number DESC
-  `).all() as (ToolMentionRecord & { segment_type?: string })[];
+  `).all(toolId) as (ToolMentionRecord & { segment_type?: string })[];
 }
 
-/**
- * Get tools that were mentioned in previous episodes (for recall generation).
- * Returns tools that appear in the current extraction AND have past mentions.
- */
-export function findReturningTools(
-  currentEpisode: number,
-  toolNames: string[]
-): (ToolRecord & { pastMentionCount: number })[] {
-  if (toolNames.length === 0) return [];
-
-  const db = getDb();
-  const placeholders = toolNames.map(() => '?').join(',');
-
-  return db.prepare(`
-    SELECT *, (mention_count - 1) as pastMentionCount
-    FROM tools
-    WHERE canonical_name IN (${placeholders})
-      AND first_episode < ?
-      AND mention_count > 1
-    ORDER BY mention_count DESC
-  `).all(...toolNames, currentEpisode) as (ToolRecord & { pastMentionCount: number })[];
-}
-
-// ── Recall Generation ──
-
-/**
- * Generate recall statements for tools that appeared in previous episodes.
- * Example: "我們在第 280 集也聊過 ChatGPT，當時還是 GPT-4 版本"
- */
-export async function generateRecallStatements(
-  episodeNumber: number,
-  toolNames: string[]
-): Promise<string[]> {
-  const returningTools = findReturningTools(episodeNumber, toolNames);
-
-  if (returningTools.length === 0) {
-    log.info('No returning tools found, skipping recall generation');
-    return [];
-  }
-
-  const llm = getLLMService();
-
-  const toolSummaries = returningTools.map((t) => {
-    const summary = t.evolving_summary?.slice(0, 200) || '';
-    return `- ${t.canonical_name}: 首次出現 EP${t.first_episode}，共出現 ${t.mention_count} 次。${summary}`;
-  }).join('\n');
-
-  const prompt = `你是一個 AI Podcast 主持人。以下工具在之前的集數已經介紹過。
-請為每個工具生成一句自然的「回顧語句」，可以在新集數中提到。
-
-工具列表：
-${toolSummaries}
-
-要求：
-- 用台灣繁體中文，口語化
-- 每句話要自然融入對話，像是順口提一下
-- 包含之前出現的集數號碼
-- 如果工具出現很多次，可以說「老朋友了」
-- 最多 5 句
-
-Return JSON: { "recalls": ["句子1", "句子2", ...] }`;
-
-  const result = await llm.generateJSON<{ recalls: string[] }>(
-    prompt,
-    'recall_generation',
-    {
-      episodeNumber,
-      preferredModel: RECALL_MODEL,
-      maxTokens: 512,
-      temperature: 0.7,
-    }
-  );
-
-  if (!result.success || !result.data?.recalls) {
-    log.warn('Recall generation failed');
-    return [];
-  }
-
-  log.info({ count: result.data.recalls.length }, 'Recall statements generated');
-  return result.data.recalls;
-}
-
-/**
- * Get distinct tool categories for filtering.
- */
 export function getToolCategories(): string[] {
   const db = getDb();
   const rows = db.prepare(

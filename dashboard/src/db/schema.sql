@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS episodes (
   published_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS tool_families (
+  id INTEGER PRIMARY KEY,
+  family_name TEXT UNIQUE NOT NULL,     -- "Claude", "ChatGPT", "Gemini"
+  pattern TEXT NOT NULL,                -- regex for matching variants
+  canonical_display TEXT NOT NULL,      -- "Claude (Anthropic)" for UI
+  category TEXT                         -- default category for family members
+);
+
 CREATE TABLE IF NOT EXISTS tools (
   id INTEGER PRIMARY KEY,
   canonical_name TEXT UNIQUE NOT NULL,
@@ -47,7 +55,11 @@ CREATE TABLE IF NOT EXISTS tools (
   first_episode INTEGER REFERENCES episodes(episode_number),
   latest_episode INTEGER,
   mention_count INTEGER DEFAULT 0,
-  evolving_summary TEXT
+  evolving_summary TEXT,              -- legacy, kept for migration
+  current_summary TEXT,               -- LLM-compressed ≤300 chars, replaces evolving_summary
+  summary_version INTEGER DEFAULT 0,  -- increments on each compaction
+  latest_version_detail TEXT,         -- "Opus 4.6", "4o", "3.5 Sonnet"
+  family_id INTEGER REFERENCES tool_families(id)
 );
 
 CREATE TABLE IF NOT EXISTS episode_tool_mentions (
@@ -56,6 +68,8 @@ CREATE TABLE IF NOT EXISTS episode_tool_mentions (
   tool_id INTEGER REFERENCES tools(id),
   mention_type TEXT,                  -- 'new' | 'update' | 'deep_dive' | 'brief'
   context_snippet TEXT,
+  significance REAL DEFAULT 0.5,     -- 0.0-1.0 importance score
+  version_detail TEXT,               -- specific version mentioned this episode
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -163,6 +177,8 @@ CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_episode ON llm_calls(episode_number);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_stage ON llm_calls(stage);
 CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_tools_family ON tools(family_id);
+CREATE INDEX IF NOT EXISTS idx_mentions_significance ON episode_tool_mentions(significance);
 CREATE INDEX IF NOT EXISTS idx_youtube_sources_video ON youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_analytics_episode ON platform_analytics(episode_number);
 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON pipeline_snapshots(pipeline_run_id);

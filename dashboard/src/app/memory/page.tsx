@@ -11,6 +11,9 @@ const categoryColors: Record<string, string> = {
   Automation: 'bg-yellow-900/50 text-yellow-300',
   Search: 'bg-cyan-900/50 text-cyan-300',
   Database: 'bg-indigo-900/50 text-indigo-300',
+  Robotics: 'bg-emerald-900/50 text-emerald-300',
+  Company: 'bg-amber-900/50 text-amber-300',
+  Platform: 'bg-teal-900/50 text-teal-300',
   Other: 'bg-zinc-800 text-zinc-400',
 };
 
@@ -96,7 +99,14 @@ async function MemoryContent({
               className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 hover:border-zinc-700 transition-colors"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-zinc-200">{tool.canonical_name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium text-zinc-200">{tool.canonical_name}</h3>
+                  {tool.latest_version_detail && (
+                    <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 text-[10px]">
+                      {tool.latest_version_detail}
+                    </span>
+                  )}
+                </div>
                 {tool.category && (
                   <span className={`px-2 py-0.5 rounded-full text-xs ${categoryColors[tool.category] || categoryColors.Other}`}>
                     {tool.category}
@@ -110,9 +120,9 @@ async function MemoryContent({
                   <span>→ EP{tool.latest_episode}</span>
                 )}
               </div>
-              {tool.evolving_summary && (
+              {(tool.current_summary || tool.evolving_summary) && (
                 <p className="mt-2 text-xs text-zinc-400 line-clamp-2">
-                  {tool.evolving_summary.slice(0, 120)}
+                  {(tool.current_summary || tool.evolving_summary || '').slice(0, 150)}
                 </p>
               )}
             </Link>

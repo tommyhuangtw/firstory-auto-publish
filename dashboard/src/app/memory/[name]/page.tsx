@@ -18,7 +18,14 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
       </Link>
 
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">{tool.canonical_name}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{tool.canonical_name}</h1>
+          {tool.latest_version_detail && (
+            <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-500 text-xs">
+              {tool.latest_version_detail}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3 mt-2">
           {tool.category && (
             <span className="px-2 py-0.5 rounded-full text-xs bg-zinc-800 text-zinc-400">
@@ -50,13 +57,22 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
         </div>
       </div>
 
-      {/* Evolving Summary */}
-      {tool.evolving_summary && (
+      {/* Compacted Summary */}
+      {(tool.current_summary || tool.evolving_summary) && (
         <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-2">
-            Summary
-          </h2>
-          <p className="text-sm text-zinc-300 whitespace-pre-wrap">{tool.evolving_summary}</p>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">
+              Summary
+            </h2>
+            {tool.summary_version > 0 && (
+              <span className="text-[10px] text-zinc-500">
+                v{tool.summary_version} compaction
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-zinc-300 whitespace-pre-wrap">
+            {tool.current_summary || tool.evolving_summary}
+          </p>
         </section>
       )}
 
@@ -86,6 +102,14 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
                   )}
                   {m.segment_type && (
                     <span className="text-xs text-zinc-400">{m.segment_type}</span>
+                  )}
+                  {m.version_detail && (
+                    <span className="text-xs text-zinc-500">v{m.version_detail}</span>
+                  )}
+                  {m.significance > 0.7 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-900/50 text-amber-300">
+                      significant
+                    </span>
                   )}
                 </div>
                 {m.context_snippet && (

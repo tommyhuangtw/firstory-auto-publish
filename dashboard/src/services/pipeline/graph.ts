@@ -18,6 +18,7 @@ import {
   createInitialState,
 } from './state';
 import type { ExtractedTool } from '@/services/memory/toolExtractor';
+import type { MemoryContext } from '@/services/memory/memoryService';
 
 // Node implementations
 import { fetchYoutube } from './nodes/fetchYoutube';
@@ -52,6 +53,7 @@ const PipelineAnnotation = Annotation.Root({
   extractedTools: Annotation<ExtractedTool[]>,
   scriptZh: Annotation<string>,
   customContentInserted: Annotation<boolean>,
+  memoryContext: Annotation<MemoryContext | null>,
   memoryEnrichments: Annotation<string[]>,
   qualityScore: Annotation<QualityScore | null>,
   qualityIterations: Annotation<number>,
@@ -203,6 +205,7 @@ export async function publishEpisode(episodeNumber: number): Promise<Partial<Pip
     extractedTools: [],
     scriptZh: (episode.script_zh as string) || '',
     customContentInserted: false,
+    memoryContext: null,
     memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,

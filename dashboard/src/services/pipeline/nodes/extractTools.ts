@@ -2,14 +2,14 @@
  * Stage 3.5: Extract Tools from English script.
  *
  * Runs after scriptEnglish, before translate.
- * Extracts AI tool mentions and saves to tools + episode_tool_mentions tables.
+ * Extracts AI tool mentions with family resolution and saves to DB.
  */
 
 import { createChildLogger } from '@/lib/logger';
 import { extractToolsFromScript } from '@/services/memory/toolExtractor';
 import { upsertTools } from '@/services/memory/memoryService';
 import type { PipelineState } from '../state';
-import type { ExtractedTool } from '@/services/memory/toolExtractor';
+import type { ResolvedTool } from '@/services/memory/toolExtractor';
 
 const log = createChildLogger('pipeline:extractTools');
 
@@ -19,13 +19,13 @@ export async function extractTools(state: PipelineState): Promise<Partial<Pipeli
     return { extractedTools: [] };
   }
 
-  let tools: ExtractedTool[] = [];
+  let tools: ResolvedTool[] = [];
 
   try {
     tools = await extractToolsFromScript(state.scriptEn, state.episodeNumber);
 
     if (tools.length > 0) {
-      upsertTools(state.episodeNumber, tools);
+      await upsertTools(state.episodeNumber, tools);
     }
 
     log.info({ count: tools.length }, 'Tool extraction complete');
