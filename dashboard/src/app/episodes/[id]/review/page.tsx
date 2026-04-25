@@ -14,6 +14,7 @@ interface Episode {
   description: string | null;
   tags: string | null;
   audio_path: string | null;
+  cover_path: string | null;
   source_videos: string | null;
   quality_score: number | null;
   total_cost_usd: number | null;
@@ -25,6 +26,12 @@ interface Episode {
   published_at: string | null;
 }
 
+interface PipelineRun {
+  error_log: string | null;
+  current_stage: string | null;
+  status: string;
+}
+
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const episodeNumber = parseInt(id);
@@ -33,6 +40,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const db = getDb();
   const episode = db.prepare('SELECT * FROM episodes WHERE episode_number = ?').get(episodeNumber) as Episode | undefined;
   if (!episode) notFound();
+
+  // Get latest pipeline run for error info
+  const pipelineRun = db.prepare(
+    `SELECT error_log, current_stage, status FROM pipeline_runs
+     WHERE episode_number = ? ORDER BY id DESC LIMIT 1`
+  ).get(episodeNumber) as PipelineRun | undefined;
 
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
@@ -47,6 +60,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
         <StatusBadge status={episode.status} />
       </header>
+
+      {/* Pipeline Error */}
+      {pipelineRun?.error_log && (pipelineRun.status === 'failed' || episode.status === 'generating') && (
+        <section className="mb-6 bg-red-950/30 border border-red-900/50 rounded-lg p-4">
+          <h2 className="text-sm font-medium text-red-400 uppercase tracking-wider mb-2">Pipeline 錯誤</h2>
+          <p className="text-sm text-red-300 font-mono whitespace-pre-wrap break-all">
+            {pipelineRun.error_log}
+          </p>
+          {pipelineRun.current_stage && (
+            <p className="text-xs text-red-400/70 mt-2">失敗階段: {pipelineRun.current_stage}</p>
+          )}
+        </section>
+      )}
+
+      {/* Cover Image Preview */}
+      {episode.cover_path && (
+        <section className="mb-6">
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">封面圖</h2>
+          <img
+            src={`/api/audio${episode.cover_path}`}
+            alt={`EP #${episode.episode_number} cover`}
+            className="rounded-lg border border-zinc-800 max-w-xs"
+          />
+        </section>
+      )}
 
       {/* Audio Player */}
       {episode.audio_path && (

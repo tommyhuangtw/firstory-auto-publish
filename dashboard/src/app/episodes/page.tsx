@@ -11,6 +11,8 @@ interface Episode {
   quality_score: number | null;
   total_cost_usd: number | null;
   created_at: string;
+  current_stage: string | null;
+  error_log: string | null;
 }
 
 const segmentLabels: Record<string, string> = {
@@ -29,11 +31,33 @@ const statusColors: Record<string, string> = {
   failed: 'bg-red-900/50 text-red-300',
 };
 
+const stageLabels: Record<string, string> = {
+  fetchYoutube: '抓取影片',
+  classify: '分類',
+  scriptEnglish: '英文講稿',
+  extractTools: '擷取工具',
+  translate: '翻譯',
+  enrichMemory: '記憶注入',
+  scoreQuality: '品質評分',
+  generateMeta: '標題描述',
+  synthesizeTts: '語音合成',
+};
+
 export default function EpisodesPage() {
   const db = getDb();
-  const episodes = db.prepare(
-    'SELECT id, episode_number, segment_type, status, selected_title, quality_score, total_cost_usd, created_at FROM episodes ORDER BY episode_number DESC'
-  ).all() as Episode[];
+  // Join with pipeline_runs to get current_stage + error_log for generating/failed episodes
+  const episodes = db.prepare(`
+    SELECT e.id, e.episode_number, e.segment_type, e.status,
+           e.selected_title, e.quality_score, e.total_cost_usd, e.created_at,
+           pr.current_stage, pr.error_log
+    FROM episodes e
+    LEFT JOIN pipeline_runs pr ON pr.id = (
+      SELECT id FROM pipeline_runs
+      WHERE episode_number = e.episode_number
+      ORDER BY id DESC LIMIT 1
+    )
+    ORDER BY e.episode_number DESC
+  `).all() as Episode[];
 
   return (
     <div className="p-6 md:p-8">
@@ -68,6 +92,11 @@ export default function EpisodesPage() {
                     {ep.status}
                   </span>
                   <span className="text-xs text-zinc-500">{segmentLabels[ep.segment_type] || ep.segment_type}</span>
+                  {ep.status === 'generating' && ep.current_stage && (
+                    <span className="text-xs text-yellow-400/70">
+                      @ {stageLabels[ep.current_stage] || ep.current_stage}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 text-sm text-zinc-500">
                   {ep.quality_score != null && (
@@ -80,6 +109,9 @@ export default function EpisodesPage() {
               </div>
               {ep.selected_title && (
                 <p className="mt-2 text-sm text-zinc-300 truncate">{ep.selected_title}</p>
+              )}
+              {ep.status === 'generating' && ep.error_log && (
+                <p className="mt-2 text-xs text-red-400 truncate">錯誤: {ep.error_log}</p>
               )}
               <p className="mt-1 text-xs text-zinc-600">{ep.created_at}</p>
             </Link>

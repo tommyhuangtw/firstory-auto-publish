@@ -107,22 +107,24 @@ function getCompiledGraph() {
  */
 export async function startPipeline(
   episodeNumber: number,
-  segmentType: SegmentType
+  segmentType: SegmentType,
+  pipelineRunId?: number
 ): Promise<{ pipelineRunId: number; state: PipelineState }> {
   const db = getDb();
 
-  // Create pipeline_run record
-  const result = db.prepare(
-    `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
-     VALUES (?, ?, 'running', 'fetchYoutube')`
-  ).run(episodeNumber, segmentType);
-  const pipelineRunId = Number(result.lastInsertRowid);
+  // If no pipelineRunId provided, create records (backward compat)
+  if (!pipelineRunId) {
+    const result = db.prepare(
+      `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
+       VALUES (?, ?, 'running', 'fetchYoutube')`
+    ).run(episodeNumber, segmentType);
+    pipelineRunId = Number(result.lastInsertRowid);
 
-  // Create episode record if not exists
-  db.prepare(
-    `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
-     VALUES (?, ?, 'generating')`
-  ).run(episodeNumber, segmentType);
+    db.prepare(
+      `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
+       VALUES (?, ?, 'generating')`
+    ).run(episodeNumber, segmentType);
+  }
 
   const initialState = createInitialState(episodeNumber, segmentType, pipelineRunId);
 

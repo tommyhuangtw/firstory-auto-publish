@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startPipeline } from '@/services/pipeline/graph';
+import { getDb } from '@/db';
 import type { SegmentType } from '@/services/pipeline/state';
 
 export async function POST(request: NextRequest) {
@@ -24,8 +25,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Start pipeline (runs async, returns immediately with run ID)
-    const { pipelineRunId } = await startPipeline(episodeNumber, segmentType);
+    // Create pipeline_run + episode records first, then fire-and-forget
+    const db = getDb();
+
+    const result = db.prepare(
+      `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
+       VALUES (?, ?, 'running', 'fetchYoutube')`
+    ).run(episodeNumber, segmentType);
+    const pipelineRunId = Number(result.lastInsertRowid);
+
+    db.prepare(
+      `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
+       VALUES (?, ?, 'generating')`
+    ).run(episodeNumber, segmentType);
+
+    // Fire-and-forget: don't await
+    startPipeline(episodeNumber, segmentType, pipelineRunId).catch(() => {
+      // Error handling is inside startPipeline (updates DB)
+    });
 
     return NextResponse.json({
       message: 'Pipeline started',

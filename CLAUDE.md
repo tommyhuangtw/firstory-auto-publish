@@ -112,3 +112,17 @@
 - Navigation 加入 Metrics 連結
 - **驗證通過**: build 成功，16 個 routes，API 回傳正確資料結構，metrics 頁面 200 OK
 - **Phase 5 完成** — Evaluation Dashboard 到位
+
+### UI 補強
+
+#### 2026-04-25 — Pipeline 追蹤 + 錯誤顯示 + Scheduler UI + 封面預覽
+- Pipeline 啟動改為 fire-and-forget（`/api/pipeline/start` 不再 blocking）
+- 新增 `/api/pipeline/status/[id]` — 單筆 pipeline run 狀態查詢
+- NewEpisodeForm 加入即時進度追蹤 — 9 階段 progress indicator + 2 秒 polling
+- Episodes 列表顯示 generating 狀態的 current_stage（JOIN pipeline_runs）
+- Review 頁面顯示 pipeline 錯誤（紅色 error_log section）
+- Review 頁面新增封面圖預覽（cover_path）
+- 建立 Scheduler 管理頁面（`/scheduler`）— job 列表、手動觸發
+- 新增 `/api/scheduler/trigger` — 手動觸發排程任務
+- Navigation 加入 Scheduler 連結
+- **驗證通過**: build 成功，20 個 routes，pipeline start 立即回傳（0.02s）
