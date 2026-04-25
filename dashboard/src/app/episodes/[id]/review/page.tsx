@@ -1,6 +1,15 @@
 import { getDb } from '@/db';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import ReviewClient from './ReviewClient';
+import PipelineTimeline from './PipelineTimeline';
+import ScriptEditor from './ScriptEditor';
+import QualityBreakdown from './QualityBreakdown';
+import LlmCallsLog from './LlmCallsLog';
+import SourceVideos from './SourceVideos';
+import RetryControls from './RetryControls';
+
+export const dynamic = 'force-dynamic';
 
 interface Episode {
   id: number;
@@ -27,10 +36,46 @@ interface Episode {
 }
 
 interface PipelineRun {
+  id: number;
   error_log: string | null;
   current_stage: string | null;
   status: string;
 }
+
+interface LlmCall {
+  id: number;
+  stage: string;
+  model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  latency_ms: number | null;
+  success: number;
+  error_message: string | null;
+  created_at: string;
+}
+
+const segmentLabels: Record<string, string> = {
+  daily: 'AI懶人報',
+  weekly: 'AI精選週報',
+  robot: '機器人週報',
+};
+
+const segmentColors: Record<string, string> = {
+  daily: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+  weekly: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+  robot: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+};
+
+const statusConfig: Record<string, { color: string; label: string }> = {
+  generating: { color: 'bg-yellow-500/15 text-yellow-400', label: '生成中' },
+  pending_review: { color: 'bg-blue-500/15 text-blue-300', label: '待審核' },
+  approved: { color: 'bg-indigo-500/15 text-indigo-300', label: '已核准' },
+  publishing: { color: 'bg-purple-500/15 text-purple-300', label: '發布中' },
+  published: { color: 'bg-emerald-500/15 text-emerald-400', label: '已發布' },
+  rejected: { color: 'bg-red-500/15 text-red-400', label: '已拒絕' },
+  failed: { color: 'bg-red-500/15 text-red-400', label: '失敗' },
+};
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,144 +86,205 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const episode = db.prepare('SELECT * FROM episodes WHERE episode_number = ?').get(episodeNumber) as Episode | undefined;
   if (!episode) notFound();
 
-  // Get latest pipeline run for error info
+  // Get latest pipeline run
   const pipelineRun = db.prepare(
-    `SELECT error_log, current_stage, status FROM pipeline_runs
+    `SELECT id, error_log, current_stage, status FROM pipeline_runs
      WHERE episode_number = ? ORDER BY id DESC LIMIT 1`
   ).get(episodeNumber) as PipelineRun | undefined;
+
+  // Get LLM calls for this episode
+  const llmCalls = db.prepare(
+    `SELECT * FROM llm_calls WHERE episode_number = ? ORDER BY id ASC`
+  ).all(episodeNumber) as LlmCall[];
+
+  // Get quality score from latest snapshot if available
+  let qualityScoreData = null;
+  let qualityIterations = 0;
+  if (pipelineRun) {
+    const qSnapshot = db.prepare(
+      `SELECT output_data FROM pipeline_snapshots
+       WHERE pipeline_run_id = ? AND stage = 'scoreQuality'
+       ORDER BY id DESC LIMIT 1`
+    ).get(pipelineRun.id) as { output_data: string } | undefined;
+
+    if (qSnapshot) {
+      try {
+        const data = JSON.parse(qSnapshot.output_data);
+        if (data.qualityScore) qualityScoreData = data.qualityScore;
+        if (data.qualityIterations != null) qualityIterations = data.qualityIterations;
+      } catch { /* skip */ }
+    }
+  }
 
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
 
+  const canEdit = episode.status === 'pending_review' || episode.status === 'failed';
+  const sc = statusConfig[episode.status] || { color: 'bg-zinc-800 text-zinc-400', label: episode.status };
+  const seg = segmentColors[episode.segment_type] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
+
   return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <header className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-2xl font-bold">EP #{episode.episode_number}</h1>
-          <span className="text-xs uppercase text-zinc-500">{episode.segment_type}</span>
+    <div className="p-6 md:p-8 max-w-4xl">
+      {/* Back link + Header */}
+      <header className="mb-8">
+        <Link
+          href="/episodes"
+          className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-300 transition-colors mb-4"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+          Episodes
+        </Link>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">EP {episode.episode_number}</h1>
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
+            {segmentLabels[episode.segment_type] || episode.segment_type}
+          </span>
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${sc.color}`}>
+            {sc.label}
+          </span>
         </div>
-        <StatusBadge status={episode.status} />
+        {episode.selected_title && (
+          <p className="text-zinc-400 text-sm mt-2">{episode.selected_title}</p>
+        )}
+        <p className="text-zinc-400 text-xs mt-1">{episode.created_at?.split('T')[0]}</p>
       </header>
 
-      {/* Pipeline Error */}
-      {pipelineRun?.error_log && (pipelineRun.status === 'failed' || episode.status === 'generating') && (
-        <section className="mb-6 bg-red-950/30 border border-red-900/50 rounded-lg p-4">
-          <h2 className="text-sm font-medium text-red-400 uppercase tracking-wider mb-2">Pipeline 錯誤</h2>
-          <p className="text-sm text-red-300 font-mono whitespace-pre-wrap break-all">
-            {pipelineRun.error_log}
-          </p>
-          {pipelineRun.current_stage && (
-            <p className="text-xs text-red-400/70 mt-2">失敗階段: {pipelineRun.current_stage}</p>
-          )}
-        </section>
-      )}
-
-      {/* Cover Image Preview */}
-      {episode.cover_path && (
-        <section className="mb-6">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">封面圖</h2>
-          <img
-            src={`/api/audio${episode.cover_path}`}
-            alt={`EP #${episode.episode_number} cover`}
-            className="rounded-lg border border-zinc-800 max-w-xs"
-          />
-        </section>
-      )}
-
-      {/* Audio Player */}
-      {episode.audio_path && (
-        <section className="mb-6">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Audio</h2>
-          <audio
-            controls
-            className="w-full"
-            src={`/api/audio${episode.audio_path}`}
-            preload="metadata"
-          />
-        </section>
-      )}
-
-      {/* Quality Score */}
-      {episode.quality_score != null && (
-        <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Quality</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-3xl font-bold">{episode.quality_score.toFixed(0)}</span>
-            <span className="text-zinc-500">/100</span>
-          </div>
-          {episode.total_cost_usd != null && (
-            <p className="text-xs text-zinc-500 mt-1">Cost: ${episode.total_cost_usd.toFixed(4)}</p>
-          )}
-          {episode.script_word_count != null && (
-            <p className="text-xs text-zinc-500">Word count: {episode.script_word_count.toLocaleString()}</p>
-          )}
-        </section>
-      )}
-
-      {/* Interactive Review Section */}
-      <ReviewClient
-        episodeNumber={episode.episode_number}
-        status={episode.status}
-        candidateTitles={candidateTitles}
-        selectedTitle={episode.selected_title || ''}
-        description={episode.description || ''}
-        tags={tags}
-        soundonUrl={episode.soundon_url}
-        youtubeUrl={episode.youtube_url}
-      />
-
-      {/* Source Videos */}
-      {sourceVideos.length > 0 && (
-        <section className="mt-6">
-          <details className="bg-zinc-900 rounded-lg border border-zinc-800">
-            <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-zinc-400 uppercase tracking-wider">
-              Source Videos ({sourceVideos.length})
-            </summary>
-            <div className="px-4 pb-4 space-y-2">
-              {sourceVideos.map((v: Record<string, unknown>, i: number) => (
-                <div key={i} className="text-sm">
-                  <p className="text-zinc-300">{v.title as string}</p>
-                  <p className="text-xs text-zinc-500">{v.channelTitle as string}</p>
-                </div>
-              ))}
+      <div className="space-y-6">
+        {/* Pipeline Error Banner */}
+        {pipelineRun?.error_log && (pipelineRun.status === 'failed' || episode.status === 'generating') && (
+          <div className="rounded-xl bg-red-950/20 border border-red-900/30 p-4">
+            <div className="flex items-start gap-2">
+              <svg className="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              <div>
+                <p className="text-[11px] font-medium text-red-400 mb-1">
+                  Pipeline 錯誤 — 階段: {pipelineRun.current_stage}
+                </p>
+                <p className="text-[11px] text-red-300/80 font-mono break-all">{pipelineRun.error_log}</p>
+              </div>
             </div>
-          </details>
-        </section>
-      )}
+          </div>
+        )}
 
-      {/* Publish URLs */}
-      {(episode.soundon_url || episode.youtube_url) && (
-        <section className="mt-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Published</h2>
-          {episode.soundon_url && (
-            <a href={episode.soundon_url} target="_blank" rel="noopener noreferrer" className="block text-sm text-blue-400 hover:underline">
-              SoundOn
-            </a>
+        {/* Cover + Audio row */}
+        <div className="flex gap-4">
+          {episode.cover_path && (
+            <div className="shrink-0">
+              <img
+                src={`/api/audio${episode.cover_path}`}
+                alt={`EP ${episode.episode_number} cover`}
+                className="rounded-xl border border-zinc-800 w-40 h-40 object-cover"
+              />
+            </div>
           )}
-          {episode.youtube_url && (
-            <a href={episode.youtube_url} target="_blank" rel="noopener noreferrer" className="block text-sm text-blue-400 hover:underline mt-1">
-              YouTube
-            </a>
+          {episode.audio_path && (
+            <div className="flex-1 flex flex-col justify-end">
+              <p className="text-[11px] text-zinc-400 mb-1.5">Audio</p>
+              <audio
+                controls
+                className="w-full"
+                src={`/api/audio${episode.audio_path}`}
+                preload="metadata"
+              />
+            </div>
           )}
-        </section>
-      )}
+        </div>
+
+        {/* Quality Breakdown */}
+        {qualityScoreData && (
+          <QualityBreakdown
+            qualityScore={qualityScoreData}
+            qualityIterations={qualityIterations}
+            totalCost={episode.total_cost_usd}
+            wordCount={episode.script_word_count}
+          />
+        )}
+
+        {/* Fallback: simple quality display if no snapshot data */}
+        {!qualityScoreData && episode.quality_score != null && (
+          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+            <h3 className="text-sm font-medium text-zinc-300 mb-2">Quality</h3>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold tabular-nums">{episode.quality_score.toFixed(0)}</span>
+              <span className="text-zinc-400">/100</span>
+            </div>
+            <div className="flex gap-3 mt-2 text-[11px] text-zinc-400">
+              {episode.total_cost_usd != null && <span className="tabular-nums">${episode.total_cost_usd.toFixed(4)}</span>}
+              {episode.script_word_count != null && <span className="tabular-nums">{episode.script_word_count.toLocaleString()} 字</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Script Editor */}
+        {(episode.script_zh || episode.script_en) && (
+          <ScriptEditor
+            episodeNumber={episode.episode_number}
+            scriptEn={episode.script_en || ''}
+            scriptZh={episode.script_zh || ''}
+            pipelineRunId={pipelineRun?.id ?? null}
+            canEdit={canEdit}
+          />
+        )}
+
+        {/* Interactive Review Section (title picker, description, approve/reject) */}
+        <ReviewClient
+          episodeNumber={episode.episode_number}
+          status={episode.status}
+          candidateTitles={candidateTitles}
+          selectedTitle={episode.selected_title || ''}
+          description={episode.description || ''}
+          tags={tags}
+          soundonUrl={episode.soundon_url}
+          youtubeUrl={episode.youtube_url}
+        />
+
+        {/* Pipeline Timeline */}
+        {pipelineRun && (
+          <PipelineTimeline
+            pipelineRunId={pipelineRun.id}
+            currentStage={pipelineRun.current_stage}
+            pipelineStatus={pipelineRun.status}
+            errorLog={pipelineRun.error_log}
+          />
+        )}
+
+        {/* LLM Calls Log */}
+        <LlmCallsLog calls={llmCalls} />
+
+        {/* Source Videos */}
+        <SourceVideos videos={sourceVideos} />
+
+        {/* Retry Controls */}
+        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review') && (
+          <RetryControls
+            pipelineRunId={pipelineRun.id}
+            failedStage={pipelineRun.status === 'failed' ? pipelineRun.current_stage : null}
+          />
+        )}
+
+        {/* Publish URLs */}
+        {(episode.soundon_url || episode.youtube_url) && (
+          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+            <h3 className="text-sm font-medium text-zinc-300 mb-2">Published</h3>
+            <div className="flex gap-4">
+              {episode.soundon_url && (
+                <a href={episode.soundon_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline">
+                  SoundOn
+                </a>
+              )}
+              {episode.youtube_url && (
+                <a href={episode.youtube_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline">
+                  YouTube
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    generating: 'bg-yellow-900/50 text-yellow-300',
-    pending_review: 'bg-blue-900/50 text-blue-300',
-    approved: 'bg-indigo-900/50 text-indigo-300',
-    publishing: 'bg-purple-900/50 text-purple-300',
-    published: 'bg-green-900/50 text-green-300',
-    rejected: 'bg-red-900/50 text-red-300',
-  };
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${colors[status] || 'bg-zinc-800 text-zinc-400'}`}>
-      {status}
-    </span>
   );
 }

@@ -54,7 +54,7 @@ export default function SchedulerClient() {
   }
 
   if (loading) {
-    return <div className="p-8 text-zinc-500">Loading scheduler...</div>;
+    return <div className="p-8 text-zinc-400">Loading scheduler...</div>;
   }
 
   return (
@@ -74,8 +74,8 @@ export default function SchedulerClient() {
 
       {jobs.length === 0 ? (
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
-          <p className="text-zinc-500">尚未註冊任何排程任務。</p>
-          <p className="text-zinc-600 text-xs mt-1">
+          <p className="text-zinc-400">尚未註冊任何排程任務。</p>
+          <p className="text-zinc-400 text-xs mt-1">
             在程式碼中使用 scheduler.register() 來新增任務
           </p>
         </div>
@@ -92,10 +92,10 @@ export default function SchedulerClient() {
                     job.running ? 'bg-green-400' : job.enabled ? 'bg-yellow-400' : 'bg-zinc-600'
                   }`} />
                   <span className="font-medium text-sm">{job.name}</span>
-                  <code className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">
+                  <code className="text-xs text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">
                     {job.schedule}
                   </code>
-                  <span className={`text-xs ${job.enabled ? 'text-green-400' : 'text-zinc-500'}`}>
+                  <span className={`text-xs ${job.enabled ? 'text-green-400' : 'text-zinc-400'}`}>
                     {job.enabled ? '啟用' : '停用'}
                   </span>
                 </div>
@@ -108,7 +108,7 @@ export default function SchedulerClient() {
                 </button>
               </div>
 
-              <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
+              <div className="mt-2 flex items-center gap-4 text-xs text-zinc-400">
                 {job.lastRun && (
                   <span>上次執行: {new Date(job.lastRun).toLocaleString('zh-TW')}</span>
                 )}

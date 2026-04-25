@@ -81,7 +81,7 @@ async function MemoryContent({
       {/* Tool List */}
       {tools.length === 0 ? (
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
-          <p className="text-zinc-500">
+          <p className="text-zinc-400">
             {search || category
               ? 'No tools match your filter.'
               : 'No tools tracked yet. Run a pipeline to start building the knowledge base.'}
@@ -103,7 +103,7 @@ async function MemoryContent({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-4 text-xs text-zinc-500">
+              <div className="flex items-center gap-4 text-xs text-zinc-400">
                 <span>{tool.mention_count}x mentioned</span>
                 {tool.first_episode && <span>EP{tool.first_episode}</span>}
                 {tool.latest_episode && tool.latest_episode !== tool.first_episode && (
@@ -111,7 +111,7 @@ async function MemoryContent({
                 )}
               </div>
               {tool.evolving_summary && (
-                <p className="mt-2 text-xs text-zinc-500 line-clamp-2">
+                <p className="mt-2 text-xs text-zinc-400 line-clamp-2">
                   {tool.evolving_summary.slice(0, 120)}
                 </p>
               )}

@@ -5,21 +5,25 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 const SEGMENTS = [
-  { value: 'daily', label: 'AI懶人報', desc: '每日 AI 工具與新聞精選' },
-  { value: 'weekly', label: 'AI精選週報', desc: '一週 AI 重點整理' },
-  { value: 'robot', label: '機器人週報', desc: '機器人與自動化新聞' },
+  { value: 'daily', label: 'AI懶人報', desc: '每日精選', color: 'border-blue-500/40 bg-blue-500/10 text-blue-400' },
+  { value: 'weekly', label: 'AI精選週報', desc: '一週重點', color: 'border-violet-500/40 bg-violet-500/10 text-violet-400' },
+  { value: 'robot', label: '機器人週報', desc: '自動化新聞', color: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
 ] as const;
 
-const PIPELINE_STAGES = [
-  { key: 'fetchYoutube', label: '抓取影片' },
+const STAGES = [
+  { key: 'fetchYoutube', label: '抓取' },
   { key: 'classify', label: '分類' },
-  { key: 'scriptEnglish', label: '英文講稿' },
-  { key: 'extractTools', label: '擷取工具' },
+  { key: 'scriptEnglish', label: '講稿' },
+  { key: 'extractTools', label: '工具' },
   { key: 'translate', label: '翻譯' },
-  { key: 'enrichMemory', label: '記憶注入' },
-  { key: 'scoreQuality', label: '品質評分' },
-  { key: 'generateMeta', label: '標題描述' },
-  { key: 'synthesizeTts', label: '語音合成' },
+  { key: 'customContentInsert', label: '插入' },
+  { key: 'enrichMemory', label: '記憶' },
+  { key: 'scoreQuality', label: '評分' },
+  { key: 'generateMeta', label: '描述' },
+  { key: 'generateCover', label: '封面' },
+  { key: 'synthesizeTts', label: '語音' },
+  { key: 'uploadAssets', label: '上傳' },
+  { key: 'notify', label: '通知' },
 ] as const;
 
 interface PipelineRun {
@@ -39,11 +43,22 @@ export default function NewEpisodeForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Pipeline tracking state
   const [tracking, setTracking] = useState<PipelineRun | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cleanup polling on unmount
+  // Auto-fetch next episode number from SoundOn RSS
+  useEffect(() => {
+    fetch('/api/soundon/latest')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.nextEpisodeNumber && !episodeNumber) {
+          setEpisodeNumber(String(data.nextEpisodeNumber));
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -52,21 +67,19 @@ export default function NewEpisodeForm() {
 
   function startPolling(runId: number) {
     if (intervalRef.current) clearInterval(intervalRef.current);
-
     intervalRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/pipeline/status/${runId}`);
         if (!res.ok) return;
         const run: PipelineRun = await res.json();
         setTracking(run);
-
         if (run.status === 'completed' || run.status === 'failed') {
           if (intervalRef.current) clearInterval(intervalRef.current);
           intervalRef.current = null;
           if (run.status === 'completed') router.refresh();
         }
       } catch {
-        // Ignore polling errors
+        // ignore
       }
     }, 2000);
   }
@@ -78,7 +91,6 @@ export default function NewEpisodeForm() {
       setMessage('請輸入有效的集數');
       return;
     }
-
     setLoading(true);
     setMessage('');
     setTracking(null);
@@ -90,8 +102,6 @@ export default function NewEpisodeForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
-      // Start tracking
       setTracking({
         id: data.pipelineRunId,
         episode_number: num,
@@ -102,7 +112,7 @@ export default function NewEpisodeForm() {
       });
       startPolling(data.pipelineRunId);
     } catch (err) {
-      setMessage(`錯誤: ${(err as Error).message}`);
+      setMessage(`${(err as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -117,162 +127,217 @@ export default function NewEpisodeForm() {
     setEpisodeNumber('');
   }
 
+  // Collapsed button
   if (!open && !tracking) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+        className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
       >
-        + 建立新集數
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        建立新集數
       </button>
     );
   }
 
-  // Pipeline tracking view
+  // Pipeline tracking — compact card with stepper
   if (tracking) {
-    const currentIdx = PIPELINE_STAGES.findIndex((s) => s.key === tracking.current_stage);
+    const currentIdx = STAGES.findIndex((s) => s.key === tracking.current_stage);
     const isRunning = tracking.status === 'running';
     const isCompleted = tracking.status === 'completed';
     const isFailed = tracking.status === 'failed';
+    const progress = currentIdx >= 0 ? ((currentIdx + 1) / STAGES.length) * 100 : 0;
 
     return (
-      <div className="w-full mt-4">
-        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold">
-              EP #{tracking.episode_number} — Pipeline {isRunning ? '執行中' : isCompleted ? '完成' : '失敗'}
-            </h3>
+      <div className="w-full mt-6">
+        <div className="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+          {/* Top progress bar */}
+          <div className="h-1 bg-zinc-800">
+            <div
+              className={`h-full transition-all duration-700 ease-out ${
+                isFailed
+                  ? 'bg-red-500'
+                  : isCompleted
+                    ? 'bg-emerald-500'
+                    : 'bg-gradient-to-r from-blue-500 to-cyan-400'
+              }`}
+              style={{ width: isCompleted ? '100%' : `${progress}%` }}
+            />
+          </div>
+
+          <div className="p-5">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <span className="font-mono font-semibold text-zinc-200">
+                  EP {tracking.episode_number}
+                </span>
+                {isRunning && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-blue-400">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75 animate-ping" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+                    </span>
+                    Pipeline 執行中
+                  </span>
+                )}
+                {isCompleted && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    完成
+                  </span>
+                )}
+                {isFailed && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-red-400">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    失敗
+                  </span>
+                )}
+              </div>
+              {isRunning && (
+                <span className="text-[11px] text-zinc-400 tabular-nums">
+                  {currentIdx + 1} / {STAGES.length}
+                </span>
+              )}
+            </div>
+
+            {/* Horizontal stepper */}
+            <div className="flex gap-1">
+              {STAGES.map((stage, i) => {
+                const isDone = isCompleted || i < currentIdx;
+                const isActive = i === currentIdx && isRunning;
+                const isError = i === currentIdx && isFailed;
+
+                return (
+                  <div key={stage.key} className="flex-1 group relative">
+                    <div
+                      className={`h-2 rounded-sm transition-all duration-300 ${
+                        isDone
+                          ? 'bg-emerald-500/70'
+                          : isActive
+                            ? 'bg-blue-500 animate-pulse'
+                            : isError
+                              ? 'bg-red-500'
+                              : 'bg-zinc-800'
+                      }`}
+                    />
+                    {/* Tooltip on hover */}
+                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <span className={
+                        isDone ? 'text-emerald-500/80' :
+                        isActive ? 'text-blue-400' :
+                        isError ? 'text-red-400' :
+                        'text-zinc-500'
+                      }>
+                        {stage.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Current stage info */}
             {isRunning && (
-              <span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              <p className="mt-6 text-xs text-zinc-400">
+                正在執行：<span className="text-zinc-300">{STAGES[currentIdx]?.label || '準備中'}</span>
+              </p>
+            )}
+
+            {/* Error */}
+            {isFailed && tracking.error_log && (
+              <div className="mt-5 rounded-lg bg-red-950/20 border border-red-900/30 p-3">
+                <p className="text-[11px] font-medium text-red-400 mb-1">錯誤訊息</p>
+                <p className="text-[11px] text-red-300/80 font-mono leading-relaxed break-all">
+                  {tracking.error_log}
+                </p>
+              </div>
+            )}
+
+            {/* Actions */}
+            {(isCompleted || isFailed) && (
+              <div className="mt-5 flex items-center gap-3">
+                {isCompleted && (
+                  <Link
+                    href={`/episodes/${tracking.episode_number}/review`}
+                    className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
+                  >
+                    前往審核
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                    </svg>
+                  </Link>
+                )}
+                <button
+                  onClick={handleReset}
+                  className="text-zinc-400 hover:text-zinc-300 px-3 py-2 text-sm transition-colors cursor-pointer"
+                >
+                  關閉
+                </button>
+              </div>
             )}
           </div>
-
-          {/* Stage progress */}
-          <div className="space-y-1.5">
-            {PIPELINE_STAGES.map((stage, i) => {
-              let status: 'done' | 'running' | 'pending' | 'failed' = 'pending';
-              if (isFailed && i === currentIdx) {
-                status = 'failed';
-              } else if (i < currentIdx || (isCompleted && i <= currentIdx)) {
-                status = 'done';
-              } else if (i === currentIdx && isRunning) {
-                status = 'running';
-              } else if (isCompleted) {
-                status = 'done';
-              }
-
-              return (
-                <div key={stage.key} className="flex items-center gap-3">
-                  <div className="w-5 flex justify-center">
-                    {status === 'done' && <span className="text-green-400 text-sm">&#10003;</span>}
-                    {status === 'running' && <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />}
-                    {status === 'failed' && <span className="text-red-400 text-sm">&#10007;</span>}
-                    {status === 'pending' && <span className="w-2 h-2 rounded-full bg-zinc-700" />}
-                  </div>
-                  <span className={`text-sm ${
-                    status === 'done' ? 'text-zinc-400' :
-                    status === 'running' ? 'text-zinc-100 font-medium' :
-                    status === 'failed' ? 'text-red-400' :
-                    'text-zinc-600'
-                  }`}>
-                    {stage.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Error log */}
-          {isFailed && tracking.error_log && (
-            <div className="mt-4 bg-red-950/30 border border-red-900/50 rounded-lg p-3">
-              <p className="text-xs font-medium text-red-400 mb-1">錯誤訊息</p>
-              <p className="text-xs text-red-300 font-mono whitespace-pre-wrap break-all">
-                {tracking.error_log}
-              </p>
-            </div>
-          )}
-
-          {/* Success actions */}
-          {isCompleted && (
-            <div className="mt-4 flex items-center gap-3">
-              <Link
-                href={`/episodes/${tracking.episode_number}/review`}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
-              >
-                前往審核
-              </Link>
-              <button
-                onClick={handleReset}
-                className="text-zinc-500 hover:text-zinc-300 px-3 py-2 text-sm transition-colors"
-              >
-                關閉
-              </button>
-            </div>
-          )}
-
-          {/* Failed actions */}
-          {isFailed && (
-            <div className="mt-4">
-              <button
-                onClick={handleReset}
-                className="text-zinc-500 hover:text-zinc-300 px-3 py-2 text-sm transition-colors"
-              >
-                關閉
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
   }
 
-  // Form view
+  // Create form
   return (
-    <div className="w-full mt-4">
-      <form onSubmit={handleSubmit} className="bg-zinc-900 rounded-lg border border-zinc-800 p-5">
-        <h3 className="text-base font-semibold mb-4">建立新集數</h3>
+    <div className="w-full mt-6">
+      <form onSubmit={handleSubmit} className="rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+        <h3 className="text-sm font-semibold text-zinc-300 mb-4">建立新集數</h3>
 
-        {/* Segment type cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          {SEGMENTS.map((seg) => (
-            <button
-              key={seg.value}
-              type="button"
-              onClick={() => setSegmentType(seg.value)}
-              className={`text-left p-3 rounded-lg border transition-colors ${
-                segmentType === seg.value
-                  ? 'border-blue-500 bg-blue-950/40'
-                  : 'border-zinc-700 bg-zinc-800 hover:border-zinc-600'
-              }`}
-            >
-              <p className="font-medium text-sm text-zinc-200">{seg.label}</p>
-              <p className="text-xs text-zinc-500 mt-0.5">{seg.desc}</p>
-            </button>
-          ))}
+        {/* Segment selector */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {SEGMENTS.map((seg) => {
+            const isSelected = segmentType === seg.value;
+            return (
+              <button
+                key={seg.value}
+                type="button"
+                onClick={() => setSegmentType(seg.value)}
+                className={`text-left px-3 py-2.5 rounded-lg border transition-all duration-200 cursor-pointer ${
+                  isSelected
+                    ? seg.color
+                    : 'border-zinc-800 bg-zinc-800/50 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                }`}
+              >
+                <p className={`text-sm font-medium ${isSelected ? '' : 'text-zinc-300'}`}>{seg.label}</p>
+                <p className="text-[11px] mt-0.5 opacity-70">{seg.desc}</p>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Episode number + actions */}
-        <div className="flex items-center gap-3">
+        {/* Input row */}
+        <div className="flex items-center gap-2">
           <input
             type="number"
             value={episodeNumber}
             onChange={(e) => setEpisodeNumber(e.target.value)}
-            placeholder="集數 (例: 301)"
+            placeholder="集數"
             min="1"
             required
-            className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 w-40 focus:outline-none focus:border-zinc-500"
+            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 w-28 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500/30 tabular-nums transition-colors"
           />
           <button
             type="submit"
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer disabled:cursor-not-allowed"
           >
             {loading ? '啟動中...' : '開始生成'}
           </button>
           <button
             type="button"
             onClick={() => { setOpen(false); setMessage(''); }}
-            className="text-zinc-500 hover:text-zinc-300 px-3 py-2 text-sm transition-colors"
+            className="text-zinc-400 hover:text-zinc-300 px-3 py-2 text-sm transition-colors cursor-pointer"
           >
             取消
           </button>
@@ -280,9 +345,7 @@ export default function NewEpisodeForm() {
       </form>
 
       {message && (
-        <p className={`mt-2 text-sm ${message.startsWith('錯誤') ? 'text-red-400' : 'text-green-400'}`}>
-          {message}
-        </p>
+        <p className="mt-2 text-sm text-red-400">{message}</p>
       )}
     </div>
   );

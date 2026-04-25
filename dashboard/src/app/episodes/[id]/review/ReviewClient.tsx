@@ -77,7 +77,7 @@ export default function ReviewClient({
       {/* Title Picker */}
       {candidateTitles.length > 0 && (
         <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">Title</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-3">Title</h2>
           <div className="space-y-2">
             {candidateTitles.map((t, i) => (
               <label
@@ -114,7 +114,7 @@ export default function ReviewClient({
 
       {/* Description Editor */}
       <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Description</h2>
+        <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-2">Description</h2>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -127,7 +127,7 @@ export default function ReviewClient({
       {/* Tags */}
       {tags.length > 0 && (
         <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Tags</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-2">Tags</h2>
           <div className="flex flex-wrap gap-2">
             {tags.map((tag, i) => (
               <span key={i} className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-300">

@@ -13,7 +13,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
 
   return (
     <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <Link href="/memory" className="text-sm text-zinc-500 hover:text-zinc-300 mb-4 inline-block">
+      <Link href="/memory" className="text-sm text-zinc-400 hover:text-zinc-300 mb-4 inline-block">
         ← Back to tools
       </Link>
 
@@ -25,10 +25,10 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
               {tool.category}
             </span>
           )}
-          <span className="text-sm text-zinc-500">{tool.mention_count}x mentioned</span>
+          <span className="text-sm text-zinc-400">{tool.mention_count}x mentioned</span>
         </div>
         {aliases.length > 0 && (
-          <p className="text-xs text-zinc-600 mt-1">
+          <p className="text-xs text-zinc-400 mt-1">
             Also known as: {aliases.join(', ')}
           </p>
         )}
@@ -38,22 +38,22 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
       <div className="grid grid-cols-3 gap-3 mb-6">
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
           <p className="text-2xl font-bold">{tool.mention_count}</p>
-          <p className="text-xs text-zinc-500">Mentions</p>
+          <p className="text-xs text-zinc-400">Mentions</p>
         </div>
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
           <p className="text-2xl font-bold">{tool.first_episode ?? '-'}</p>
-          <p className="text-xs text-zinc-500">First EP</p>
+          <p className="text-xs text-zinc-400">First EP</p>
         </div>
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
           <p className="text-2xl font-bold">{tool.latest_episode ?? '-'}</p>
-          <p className="text-xs text-zinc-500">Latest EP</p>
+          <p className="text-xs text-zinc-400">Latest EP</p>
         </div>
       </div>
 
       {/* Evolving Summary */}
       {tool.evolving_summary && (
         <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-2">
             Summary
           </h2>
           <p className="text-sm text-zinc-300 whitespace-pre-wrap">{tool.evolving_summary}</p>
@@ -62,11 +62,11 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
 
       {/* Episode Timeline */}
       <section>
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-3">
           Episode History ({mentions.length})
         </h2>
         {mentions.length === 0 ? (
-          <p className="text-zinc-500 text-sm">No mention records yet.</p>
+          <p className="text-zinc-400 text-sm">No mention records yet.</p>
         ) : (
           <div className="space-y-2">
             {mentions.map((m) => (
@@ -85,7 +85,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
                     <MentionTypeBadge type={m.mention_type} />
                   )}
                   {m.segment_type && (
-                    <span className="text-xs text-zinc-600">{m.segment_type}</span>
+                    <span className="text-xs text-zinc-400">{m.segment_type}</span>
                   )}
                 </div>
                 {m.context_snippet && (

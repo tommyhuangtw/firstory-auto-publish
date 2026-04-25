@@ -20,7 +20,7 @@ export default function Navigation() {
       <aside className="hidden md:flex md:flex-col md:w-56 md:fixed md:inset-y-0 bg-zinc-900 border-r border-zinc-800">
         <div className="px-4 py-5 border-b border-zinc-800">
           <h1 className="text-lg font-bold text-zinc-100">AI Podcast</h1>
-          <p className="text-xs text-zinc-500">AI懶人報 Dashboard</p>
+          <p className="text-xs text-zinc-400">AI懶人報 Dashboard</p>
         </div>
         <nav className="flex-1 px-2 py-4 space-y-1">
           {navItems.map((item) => {
@@ -57,7 +57,7 @@ export default function Navigation() {
                 key={item.href}
                 href={item.href}
                 className={`flex-1 flex flex-col items-center py-2 text-xs transition-colors ${
-                  isActive ? 'text-zinc-100' : 'text-zinc-500'
+                  isActive ? 'text-zinc-100' : 'text-zinc-400'
                 }`}
               >
                 <span className="text-lg">{item.icon}</span>

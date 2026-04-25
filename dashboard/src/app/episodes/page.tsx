@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { getDb } from '@/db';
 import NewEpisodeForm from './NewEpisodeForm';
+import ActivePipelines from './ActivePipelines';
+
+export const dynamic = 'force-dynamic';
 
 interface Episode {
   id: number;
@@ -12,6 +15,7 @@ interface Episode {
   total_cost_usd: number | null;
   created_at: string;
   current_stage: string | null;
+  pipeline_status: string | null;
   error_log: string | null;
 }
 
@@ -21,35 +25,34 @@ const segmentLabels: Record<string, string> = {
   robot: '機器人週報',
 };
 
-const statusColors: Record<string, string> = {
-  generating: 'bg-yellow-900/50 text-yellow-300',
-  pending_review: 'bg-blue-900/50 text-blue-300',
-  approved: 'bg-indigo-900/50 text-indigo-300',
-  publishing: 'bg-purple-900/50 text-purple-300',
-  published: 'bg-green-900/50 text-green-300',
-  rejected: 'bg-red-900/50 text-red-300',
-  failed: 'bg-red-900/50 text-red-300',
+const segmentColors: Record<string, string> = {
+  daily: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+  weekly: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+  robot: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
 };
 
-const stageLabels: Record<string, string> = {
-  fetchYoutube: '抓取影片',
-  classify: '分類',
-  scriptEnglish: '英文講稿',
-  extractTools: '擷取工具',
-  translate: '翻譯',
-  enrichMemory: '記憶注入',
-  scoreQuality: '品質評分',
-  generateMeta: '標題描述',
-  synthesizeTts: '語音合成',
+const statusConfig: Record<string, { color: string; label: string }> = {
+  generating: { color: 'bg-yellow-500/15 text-yellow-400', label: '生成中' },
+  pending_review: { color: 'bg-blue-500/15 text-blue-300', label: '待審核' },
+  approved: { color: 'bg-indigo-500/15 text-indigo-300', label: '已核准' },
+  publishing: { color: 'bg-purple-500/15 text-purple-300', label: '發布中' },
+  published: { color: 'bg-emerald-500/15 text-emerald-400', label: '已發布' },
+  rejected: { color: 'bg-red-500/15 text-red-400', label: '已拒絕' },
+  failed: { color: 'bg-red-500/15 text-red-400', label: '失敗' },
 };
+
+const STAGE_KEYS = [
+  'fetchYoutube', 'classify', 'scriptEnglish', 'extractTools', 'translate',
+  'customContentInsert', 'enrichMemory', 'scoreQuality', 'generateMeta',
+  'generateCover', 'synthesizeTts', 'uploadAssets', 'notify',
+];
 
 export default function EpisodesPage() {
   const db = getDb();
-  // Join with pipeline_runs to get current_stage + error_log for generating/failed episodes
   const episodes = db.prepare(`
     SELECT e.id, e.episode_number, e.segment_type, e.status,
            e.selected_title, e.quality_score, e.total_cost_usd, e.created_at,
-           pr.current_stage, pr.error_log
+           pr.current_stage, pr.status as pipeline_status, pr.error_log
     FROM episodes e
     LEFT JOIN pipeline_runs pr ON pr.id = (
       SELECT id FROM pipeline_runs
@@ -59,63 +62,124 @@ export default function EpisodesPage() {
     ORDER BY e.episode_number DESC
   `).all() as Episode[];
 
+  // Separate running pipelines from completed episodes
+  const activePipelines = episodes.filter(
+    (ep) => ep.status === 'generating' && ep.pipeline_status === 'running'
+  );
+  const otherEpisodes = episodes.filter(
+    (ep) => !(ep.status === 'generating' && ep.pipeline_status === 'running')
+  );
+
   return (
-    <div className="p-6 md:p-8">
-      <header className="mb-6">
+    <div className="p-6 md:p-8 max-w-5xl">
+      {/* Header */}
+      <header className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Episodes</h1>
-            <p className="text-zinc-400 text-sm mt-1">{episodes.length} episodes total</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Episodes</h1>
+            <p className="text-zinc-400 text-sm mt-1">
+              {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+            </p>
           </div>
           <NewEpisodeForm />
         </div>
       </header>
 
-      {episodes.length === 0 ? (
-        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
-          <p className="text-zinc-500">No episodes yet. Start a pipeline to generate your first episode.</p>
+      {/* Active Pipelines — client component with live polling */}
+      {activePipelines.length > 0 && (
+        <section className="mb-6">
+          <ActivePipelines
+            initialRuns={activePipelines.map((ep) => ({
+              episode_number: ep.episode_number,
+              segment_type: ep.segment_type,
+              current_stage: ep.current_stage,
+              pipeline_status: ep.pipeline_status,
+              error_log: ep.error_log,
+            }))}
+          />
+        </section>
+      )}
+
+      {/* Episode List */}
+      {otherEpisodes.length === 0 && activePipelines.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-800 p-12 text-center">
+          <div className="w-12 h-12 rounded-full bg-zinc-800/80 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </div>
+          <p className="text-zinc-400 text-sm">還沒有 episode，點右上角開始建立</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {episodes.map((ep) => (
-            <Link
-              key={ep.id}
-              href={`/episodes/${ep.episode_number}/review`}
-              className="block bg-zinc-900 rounded-lg border border-zinc-800 p-4 hover:border-zinc-700 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-lg font-mono font-bold text-zinc-300">
-                    #{ep.episode_number}
-                  </span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${statusColors[ep.status] || 'bg-zinc-800 text-zinc-400'}`}>
-                    {ep.status}
-                  </span>
-                  <span className="text-xs text-zinc-500">{segmentLabels[ep.segment_type] || ep.segment_type}</span>
-                  {ep.status === 'generating' && ep.current_stage && (
-                    <span className="text-xs text-yellow-400/70">
-                      @ {stageLabels[ep.current_stage] || ep.current_stage}
-                    </span>
+        <div className="space-y-2">
+          {otherEpisodes.map((ep) => {
+            const stageIdx = ep.current_stage ? STAGE_KEYS.indexOf(ep.current_stage) : -1;
+            const progress = ep.status === 'generating' && stageIdx >= 0
+              ? Math.round(((stageIdx + 1) / STAGE_KEYS.length) * 100)
+              : null;
+            const sc = statusConfig[ep.status] || { color: 'bg-zinc-800 text-zinc-400', label: ep.status };
+            const seg = segmentColors[ep.segment_type] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
+
+            return (
+              <Link
+                key={ep.id}
+                href={`/episodes/${ep.episode_number}/review`}
+                className="group block rounded-xl bg-zinc-900/60 border border-zinc-800/60 hover:border-zinc-700 hover:bg-zinc-900 transition-all duration-200 cursor-pointer"
+              >
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Left: EP number + badges */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-base font-mono font-semibold text-zinc-200 tabular-nums shrink-0">
+                        EP {ep.episode_number}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
+                        {segmentLabels[ep.segment_type] || ep.segment_type}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${sc.color}`}>
+                        {sc.label}
+                      </span>
+                    </div>
+
+                    {/* Right: metadata */}
+                    <div className="flex items-center gap-4 text-xs text-zinc-400 shrink-0">
+                      {ep.quality_score != null && (
+                        <span className="tabular-nums">{ep.quality_score.toFixed(0)} pts</span>
+                      )}
+                      {ep.total_cost_usd != null && (
+                        <span className="tabular-nums">${ep.total_cost_usd.toFixed(3)}</span>
+                      )}
+                      <span className="tabular-nums">{ep.created_at?.split('T')[0] || ep.created_at}</span>
+                      <svg className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  {ep.selected_title && (
+                    <p className="mt-2 text-sm text-zinc-400 truncate group-hover:text-zinc-300 transition-colors">
+                      {ep.selected_title}
+                    </p>
+                  )}
+
+                  {/* Inline progress bar for stalled/generating */}
+                  {progress != null && (
+                    <div className="mt-3">
+                      <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
+                        <div className="h-full rounded-full bg-yellow-500/70 transition-all duration-500" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {ep.error_log && (
+                    <p className="mt-2 text-xs text-red-400/80 truncate">{ep.error_log}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-4 text-sm text-zinc-500">
-                  {ep.quality_score != null && (
-                    <span title="Quality score">{ep.quality_score.toFixed(0)}pts</span>
-                  )}
-                  {ep.total_cost_usd != null && (
-                    <span title="Cost">${ep.total_cost_usd.toFixed(3)}</span>
-                  )}
-                </div>
-              </div>
-              {ep.selected_title && (
-                <p className="mt-2 text-sm text-zinc-300 truncate">{ep.selected_title}</p>
-              )}
-              {ep.status === 'generating' && ep.error_log && (
-                <p className="mt-2 text-xs text-red-400 truncate">錯誤: {ep.error_log}</p>
-              )}
-              <p className="mt-1 text-xs text-zinc-600">{ep.created_at}</p>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
