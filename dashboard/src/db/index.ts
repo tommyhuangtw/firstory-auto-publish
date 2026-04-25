@@ -37,6 +37,13 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episode_tool_mentions ADD COLUMN significance REAL DEFAULT 0.5');
   safeAlter('ALTER TABLE episode_tool_mentions ADD COLUMN version_detail TEXT');
 
+  // Create indexes on new columns (after safe ALTER ensures columns exist)
+  const safeIndex = (sql: string) => {
+    try { _db!.exec(sql); } catch { /* index already exists */ }
+  };
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_tools_family ON tools(family_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_mentions_significance ON episode_tool_mentions(significance)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');

@@ -177,8 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_episode ON llm_calls(episode_number);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_stage ON llm_calls(stage);
 CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(canonical_name);
-CREATE INDEX IF NOT EXISTS idx_tools_family ON tools(family_id);
-CREATE INDEX IF NOT EXISTS idx_mentions_significance ON episode_tool_mentions(significance);
+-- idx_tools_family and idx_mentions_significance created in index.ts after safe ALTER
 CREATE INDEX IF NOT EXISTS idx_youtube_sources_video ON youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_analytics_episode ON platform_analytics(episode_number);
 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON pipeline_snapshots(pipeline_run_id);
