@@ -1,0 +1,34 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getScheduler } from '@/services/scheduler';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { name, action } = await request.json() as {
+      name: string;
+      action: 'skip' | 'unskip' | 'enable' | 'disable';
+    };
+    if (!name) {
+      return NextResponse.json({ error: 'Job name is required' }, { status: 400 });
+    }
+
+    const scheduler = getScheduler();
+    const messages: Record<string, () => string> = {
+      skip: () => { scheduler.skipToday(name); return `"${name}" 已跳過今天`; },
+      unskip: () => { scheduler.unskip(name); return `"${name}" 已恢復排程`; },
+      enable: () => { scheduler.enable(name); return `"${name}" 已啟用`; },
+      disable: () => { scheduler.disable(name); return `"${name}" 已停用`; },
+    };
+
+    const handler = messages[action];
+    if (!handler) {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
+
+    return NextResponse.json({ message: handler() });
+  } catch (error) {
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}

@@ -13,6 +13,7 @@ interface ScheduledJob {
   task: ScheduledTask | null;
   lastRun: Date | null;
   lastError: string | null;
+  skippedUntil: Date | null;
 }
 
 /**
@@ -40,6 +41,7 @@ export class Scheduler {
       task: null,
       lastRun: null,
       lastError: null,
+      skippedUntil: null,
     });
 
     log.info({ name, schedule }, 'Job registered');
@@ -50,6 +52,15 @@ export class Scheduler {
       if (!job.enabled) continue;
 
       job.task = cron.schedule(job.schedule, async () => {
+        // Auto-clear expired skip
+        if (job.skippedUntil && new Date() >= job.skippedUntil) {
+          job.skippedUntil = null;
+          log.info({ name }, 'Skip expired, job re-enabled');
+        }
+        if (job.skippedUntil) {
+          log.info({ name, skippedUntil: job.skippedUntil.toISOString() }, 'Job skipped (paused until midnight)');
+          return;
+        }
         log.info({ name }, 'Job triggered');
         try {
           await job.handler();
@@ -91,6 +102,61 @@ export class Scheduler {
     }
   }
 
+  enable(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+    if (job.enabled) return;
+    job.enabled = true;
+    job.task = cron.schedule(job.schedule, async () => {
+      if (job.skippedUntil && new Date() >= job.skippedUntil) {
+        job.skippedUntil = null;
+      }
+      if (job.skippedUntil) return;
+      log.info({ name }, 'Job triggered');
+      try {
+        await job.handler();
+        job.lastRun = new Date();
+        job.lastError = null;
+      } catch (error) {
+        job.lastError = (error as Error).message;
+        log.error({ name, error: job.lastError }, 'Job failed');
+      }
+    });
+    log.info({ name }, 'Job enabled');
+  }
+
+  disable(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+    job.enabled = false;
+    if (job.task) {
+      job.task.stop();
+      job.task = null;
+    }
+    log.info({ name }, 'Job disabled');
+  }
+
+  skipToday(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+
+    // Set skip until next midnight (Asia/Taipei)
+    const now = new Date();
+    const midnight = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    midnight.setDate(midnight.getDate() + 1);
+    midnight.setHours(0, 0, 0, 0);
+
+    job.skippedUntil = midnight;
+    log.info({ name, skippedUntil: midnight.toISOString() }, 'Job skipped until midnight');
+  }
+
+  unskip(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+    job.skippedUntil = null;
+    log.info({ name }, 'Job unskipped');
+  }
+
   getStatus(): Array<{
     name: string;
     schedule: string;
@@ -98,6 +164,7 @@ export class Scheduler {
     running: boolean;
     lastRun: string | null;
     lastError: string | null;
+    skippedUntil: string | null;
   }> {
     return Array.from(this.jobs.values()).map((job) => ({
       name: job.name,
@@ -106,13 +173,17 @@ export class Scheduler {
       running: job.task !== null,
       lastRun: job.lastRun?.toISOString() ?? null,
       lastError: job.lastError,
+      skippedUntil: job.skippedUntil && job.skippedUntil > new Date()
+        ? job.skippedUntil.toISOString()
+        : null,
     }));
   }
 }
 
-// Singleton
-let _instance: Scheduler | null = null;
+// Singleton — use globalThis to survive Next.js module reloads
+const globalKey = '__podcast_scheduler__';
 export function getScheduler(): Scheduler {
-  if (!_instance) _instance = new Scheduler();
-  return _instance;
+  const g = globalThis as Record<string, unknown>;
+  if (!g[globalKey]) g[globalKey] = new Scheduler();
+  return g[globalKey] as Scheduler;
 }
