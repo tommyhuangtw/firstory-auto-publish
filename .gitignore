@@ -98,3 +98,5 @@ dashboard/data/*.db
 dashboard/data/*.db-wal
 dashboard/data/*.db-shm
 dashboard/node_modules/
+dashboard/scripts/test-*.ts
+dashboard/scripts/seed-memory.mjs

@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS episodes (
   -- Source videos
   source_videos TEXT,                 -- JSON: [{videoId, title, views, ...}]
 
+  -- Summary (condensed script for meta generation)
+  script_summary TEXT,
+
   -- Quality & Cost
   quality_score REAL,
   total_cost_usd REAL,
@@ -31,6 +34,7 @@ CREATE TABLE IF NOT EXISTS episodes (
   -- Publish results
   soundon_url TEXT,
   youtube_url TEXT,
+  ig_caption TEXT,
   ig_post_id TEXT,
 
   -- Timestamps
@@ -59,7 +63,9 @@ CREATE TABLE IF NOT EXISTS tools (
   current_summary TEXT,               -- LLM-compressed ≤300 chars, replaces evolving_summary
   summary_version INTEGER DEFAULT 0,  -- increments on each compaction
   latest_version_detail TEXT,         -- "Opus 4.6", "4o", "3.5 Sonnet"
-  family_id INTEGER REFERENCES tool_families(id)
+  family_id INTEGER REFERENCES tool_families(id),
+  first_seen_date TEXT,               -- "2026-04-20" — date-based tracking for memory UI
+  latest_seen_date TEXT               -- "2026-04-25"
 );
 
 CREATE TABLE IF NOT EXISTS episode_tool_mentions (
@@ -70,6 +76,7 @@ CREATE TABLE IF NOT EXISTS episode_tool_mentions (
   context_snippet TEXT,
   significance REAL DEFAULT 0.5,     -- 0.0-1.0 importance score
   version_detail TEXT,               -- specific version mentioned this episode
+  aired_date TEXT,                   -- "2026-04-20" — date of the episode
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -169,6 +176,20 @@ CREATE TABLE IF NOT EXISTS pipeline_snapshots (
   started_at TEXT DEFAULT (datetime('now')),
   elapsed_ms INTEGER,
   FOREIGN KEY (pipeline_run_id) REFERENCES pipeline_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ad_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  is_active INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- Indexes for common queries
