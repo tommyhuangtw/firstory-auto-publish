@@ -11,7 +11,8 @@
 
 import { getScheduler } from '@/services/scheduler';
 import { getDb } from '@/db';
-import { startPipeline } from '@/services/pipeline/graph';
+import { startPipeline, retryFromStage } from '@/services/pipeline/graph';
+import { getGmailService } from '@/services/gmail';
 import { createChildLogger } from './logger';
 import type { SegmentType } from '@/services/pipeline/state';
 
@@ -105,8 +106,57 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
      VALUES (?, ?, 'generating')`
   ).run(nextEp, segmentType);
 
-  // Fire and forget
-  startPipeline(nextEp, segmentType, pipelineRunId).catch((error) => {
-    log.error({ segmentType, episodeNumber: nextEp, error: (error as Error).message }, 'Scheduled pipeline failed');
+  // Fire and forget — with auto-retry and email notifications
+  startPipeline(nextEp, segmentType, pipelineRunId).catch(async (error) => {
+    const errMsg = (error as Error).message;
+    log.error({ segmentType, episodeNumber: nextEp, error: errMsg }, 'Scheduled pipeline failed');
+
+    // Get failed stage from DB
+    const failedRun = db.prepare(
+      'SELECT current_stage FROM pipeline_runs WHERE id = ?'
+    ).get(pipelineRunId) as { current_stage: string | null } | undefined;
+    const failedStage = failedRun?.current_stage || null;
+
+    // 1. Send failure notification email
+    const gmail = getGmailService();
+    try {
+      await gmail.sendPipelineNotification({
+        episodeNumber: nextEp, segmentType, failedStage,
+        errorMessage: errMsg, type: 'failure',
+      });
+    } catch (emailErr) {
+      log.error({ error: (emailErr as Error).message }, 'Failed to send failure notification email');
+    }
+
+    // 2. Auto retry once from the failed stage
+    if (failedStage) {
+      log.info({ segmentType, episodeNumber: nextEp, failedStage }, 'Auto-retrying pipeline from failed stage');
+      try {
+        await retryFromStage(pipelineRunId, failedStage);
+
+        // 3a. Retry succeeded — send success email
+        try {
+          await gmail.sendPipelineNotification({
+            episodeNumber: nextEp, segmentType, failedStage,
+            errorMessage: errMsg, type: 'retry_success',
+          });
+        } catch (emailErr) {
+          log.error({ error: (emailErr as Error).message }, 'Failed to send retry success email');
+        }
+      } catch (retryError) {
+        const retryErrMsg = (retryError as Error).message;
+        log.error({ segmentType, episodeNumber: nextEp, error: retryErrMsg }, 'Auto-retry also failed');
+
+        // 3b. Retry failed — send retry-failure email
+        try {
+          await gmail.sendPipelineNotification({
+            episodeNumber: nextEp, segmentType, failedStage,
+            errorMessage: errMsg, type: 'retry_failure', retryError: retryErrMsg,
+          });
+        } catch (emailErr) {
+          log.error({ error: (emailErr as Error).message }, 'Failed to send retry failure email');
+        }
+      }
+    }
   });
 }

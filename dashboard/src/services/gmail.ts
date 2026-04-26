@@ -255,6 +255,89 @@ export class GmailService {
     await this.sendEmail(gmail, recipientEmail, subject, html);
     log.info({ recipientEmail, episodeNumber }, 'Daily report email sent');
   }
+  /**
+   * Send pipeline failure/retry notification email.
+   */
+  async sendPipelineNotification(params: {
+    episodeNumber: number;
+    segmentType: string;
+    failedStage: string | null;
+    errorMessage: string;
+    type: 'failure' | 'retry_success' | 'retry_failure';
+    retryError?: string;
+  }): Promise<void> {
+    const gmail = this.ensureGmail();
+    const to = 'tommyhuang0511@gmail.com';
+    const { episodeNumber, segmentType, failedStage, errorMessage, type, retryError } = params;
+
+    const segmentLabels: Record<string, string> = { daily: 'AI懶人報', weekly: 'AI精選週報', robot: '機器人週報' };
+    const segmentLabel = segmentLabels[segmentType] || segmentType;
+    const now = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+
+    let subject: string;
+    let statusColor: string;
+    let statusText: string;
+    let bodyContent: string;
+
+    if (type === 'failure') {
+      subject = `[AI懶人報] Pipeline 失敗 — EP${episodeNumber} ${segmentLabel}`;
+      statusColor = '#ef4444';
+      statusText = 'Pipeline 失敗';
+      bodyContent = `
+        <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">排程 Pipeline 執行失敗，系統將自動重試一次。</p>
+        <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#991b1b">失敗階段: ${failedStage || 'unknown'}</p>
+          <p style="margin:0;font-size:13px;color:#7f1d1d;font-family:monospace;word-break:break-all">${errorMessage}</p>
+        </div>`;
+    } else if (type === 'retry_success') {
+      subject = `[AI懶人報] Retry 成功 — EP${episodeNumber} ${segmentLabel}`;
+      statusColor = '#22c55e';
+      statusText = 'Retry 成功';
+      bodyContent = `
+        <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">Pipeline 在自動重試後已成功完成。</p>
+        <div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0;font-size:13px;color:#166534">從 <strong>${failedStage}</strong> 階段重試成功，Pipeline 已完成。</p>
+        </div>
+        <div style="background:#fef2f2;border-left:4px solid #fbbf24;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#92400e">原始錯誤（已恢復）</p>
+          <p style="margin:0;font-size:12px;color:#78350f;font-family:monospace;word-break:break-all">${errorMessage}</p>
+        </div>`;
+    } else {
+      subject = `[AI懶人報] Retry 仍失敗 — EP${episodeNumber} ${segmentLabel}`;
+      statusColor = '#ef4444';
+      statusText = 'Retry 仍失敗';
+      bodyContent = `
+        <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">Pipeline 在自動重試後仍然失敗，請手動檢查。</p>
+        <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#991b1b">原始錯誤（階段: ${failedStage}）</p>
+          <p style="margin:0;font-size:13px;color:#7f1d1d;font-family:monospace;word-break:break-all">${errorMessage}</p>
+        </div>
+        <div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#991b1b">Retry 錯誤</p>
+          <p style="margin:0;font-size:13px;color:#7f1d1d;font-family:monospace;word-break:break-all">${retryError || 'unknown'}</p>
+        </div>`;
+    }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc">
+      <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08)">
+        <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:32px;color:white">
+          <div style="display:inline-block;background:${statusColor};color:white;padding:4px 12px;border-radius:6px;font-size:13px;font-weight:600;margin-bottom:12px">${statusText}</div>
+          <h1 style="margin:0 0 8px;font-size:24px">EP${episodeNumber} — ${segmentLabel}</h1>
+          <p style="margin:0;opacity:0.8;font-size:14px">${now}</p>
+        </div>
+        <div style="padding:32px">
+          ${bodyContent}
+          <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0">
+            <p style="margin:0;font-size:12px;color:#94a3b8">AI懶人報 Podcast Automation</p>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+
+    await this.sendEmail(gmail, to, subject, html);
+    log.info({ to, episodeNumber, type }, 'Pipeline notification email sent');
+  }
 }
 
 // Singleton
