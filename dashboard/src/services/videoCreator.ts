@@ -44,33 +44,43 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
   const args: string[] = [];
 
   if (coverPath && fs.existsSync(coverPath)) {
-    // Audio + cover image → video
+    // Audio + cover image → video (1fps for static image = fast encode)
     args.push(
+      '-y', '-nostdin',
       '-loop', '1',
+      '-framerate', '1',
       '-i', coverPath,
       '-i', audioPath,
       '-c:v', 'libx264',
+      '-preset', 'ultrafast',
       '-tune', 'stillimage',
+      '-crf', '23',
+      '-g', '99999',
+      '-r', '1',
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
+      '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
       '-shortest',
-      '-y',
       outputPath
     );
   } else {
     // Audio + black background → video
     args.push(
+      '-y', '-nostdin',
       '-f', 'lavfi',
       '-i', 'color=c=black:s=1920x1080:r=1',
       '-i', audioPath,
       '-c:v', 'libx264',
+      '-preset', 'ultrafast',
       '-tune', 'stillimage',
+      '-crf', '23',
+      '-g', '99999',
+      '-r', '1',
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
       '-shortest',
-      '-y',
       outputPath
     );
   }

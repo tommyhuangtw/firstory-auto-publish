@@ -12,6 +12,20 @@ import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:publish');
 
+// ── Title Formatting ──
+
+export function formatSoundonTitle(episodeNumber: number, segmentType: string, title: string): string {
+  if (segmentType === 'weekly') return `EP${episodeNumber} ｜ AI懶人精選週報 – ${title}`;
+  if (segmentType === 'robot') return `EP${episodeNumber} ｜ 機器人觀察週報 – ${title}`;
+  return `EP${episodeNumber} – ${title}`;
+}
+
+export function formatYoutubeTitle(episodeNumber: number, segmentType: string, title: string): string {
+  if (segmentType === 'weekly') return `AI懶人報Podcast ｜ EP${episodeNumber} AI懶人精選週報 - ${title}`;
+  if (segmentType === 'robot') return `AI懶人報Podcast ｜ EP${episodeNumber} 機器人觀察週報 - ${title}`;
+  return `AI懶人報Podcast ｜ EP${episodeNumber} - ${title}`;
+}
+
 export async function publish(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeNumber: state.episodeNumber }, 'Publishing episode');
 
@@ -49,37 +63,62 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
   return results;
 }
 
-async function publishToSoundOnPlatform(state: PipelineState): Promise<string> {
+export async function publishToSoundOnPlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
+
+  const formattedTitle = formatSoundonTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
+  log.info({ formattedTitle }, 'Publishing to SoundOn');
 
   // Lazy import to avoid crash if playwright not installed
   const { publishToSoundOn } = await import('@/services/soundon');
   return publishToSoundOn({
-    title: state.selectedTitle,
+    title: formattedTitle,
     description: state.description,
     audioPath: state.audioPath,
+    coverPath: state.coverPath,
   });
 }
 
-async function publishToYouTubePlatform(state: PipelineState): Promise<string> {
+export async function publishToYouTubePlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
 
-  // Step 1: Create video from audio + cover
+  const formattedTitle = formatYoutubeTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
+  log.info({ formattedTitle }, 'Publishing to YouTube');
+
+  // Step 1: Generate composite YouTube thumbnail (brand + title | cover image)
+  const { generateYouTubeThumbnail } = await import('@/services/thumbnailGenerator');
+  const thumbnailPath = await generateYouTubeThumbnail({
+    title: state.selectedTitle,
+    episodeNumber: state.episodeNumber,
+    coverImagePath: state.coverPath,
+    segmentType: state.segmentType,
+  });
+
+  // Step 2: Create video from audio + cover image
   const { createVideoFromAudio } = await import('@/services/videoCreator');
   const videoPath = await createVideoFromAudio({
     audioPath: state.audioPath,
+    coverPath: state.coverPath,
   });
 
-  // Step 2: Upload to YouTube
+  // Step 3: Assemble final YouTube description (ad + main + footer + hashtags)
+  const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
+  const finalDescription = assembleYoutubeDescription(
+    state.youtubeDescription || state.description,
+    state.tags,
+  );
+
+  // Step 4: Upload to YouTube with composite thumbnail
   const { YouTubeService } = await import('@/services/youtube');
   const yt = new YouTubeService();
   await yt.initialize();
   const result = await yt.uploadVideo({
     videoPath,
-    title: state.selectedTitle,
-    description: state.description,
+    title: formattedTitle,
+    description: finalDescription,
     tags: state.tags,
     privacyStatus: 'public',
+    thumbnailPath,
   });
 
   return result.videoUrl;

@@ -2,8 +2,12 @@ import { google, youtube_v3 } from 'googleapis';
 import { Auth } from 'googleapis';
 import fs from 'fs-extra';
 import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { createGoogleAuthClient } from '@/lib/googleAuth';
 import { createChildLogger } from '@/lib/logger';
+
+const execFileAsync = promisify(execFile);
 
 const log = createChildLogger('youtube');
 
@@ -131,23 +135,42 @@ export class YouTubeService {
   async setThumbnail(videoId: string, thumbnailPath: string): Promise<void> {
     const yt = this.ensureYt();
 
+    let finalPath = thumbnailPath;
     const stats = await fs.stat(thumbnailPath);
+
     if (stats.size > 2 * 1024 * 1024) {
-      log.warn({ sizeMB: (stats.size / (1024 * 1024)).toFixed(2) }, 'Thumbnail exceeds 2MB, skipping');
-      return;
+      log.info({ sizeMB: (stats.size / (1024 * 1024)).toFixed(2) }, 'Thumbnail exceeds 2MB, compressing');
+      finalPath = path.join(path.dirname(thumbnailPath), `thumb_compressed_${Date.now()}.jpg`);
+
+      // Try progressively smaller sizes + lower quality until under 2MB
+      const attempts: [number, number][] = [[1280, 3], [1280, 8], [960, 5], [960, 10], [640, 8]];
+      for (const [width, qv] of attempts) {
+        await execFileAsync('ffmpeg', [
+          '-y', '-i', thumbnailPath,
+          '-vf', `scale=${width}:-1`,
+          '-q:v', String(qv),
+          finalPath,
+        ]);
+        const size = (await fs.stat(finalPath)).size;
+        log.info({ width, qv, sizeMB: (size / (1024 * 1024)).toFixed(2) }, 'Compression attempt');
+        if (size <= 2 * 1024 * 1024) break;
+      }
     }
 
-    const ext = path.extname(thumbnailPath).toLowerCase();
+    const ext = path.extname(finalPath).toLowerCase();
     const mimeType = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
 
     try {
       await yt.thumbnails.set({
         videoId,
-        media: { mimeType, body: fs.createReadStream(thumbnailPath) },
+        media: { mimeType, body: fs.createReadStream(finalPath) },
       });
       log.info({ videoId }, 'Thumbnail set');
     } catch (error) {
       log.warn({ videoId, error: (error as Error).message }, 'Thumbnail upload failed (may need phone verification)');
+    } finally {
+      // Clean up compressed file
+      if (finalPath !== thumbnailPath) await fs.remove(finalPath).catch(() => {});
     }
   }
 

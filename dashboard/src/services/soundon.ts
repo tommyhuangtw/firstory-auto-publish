@@ -7,6 +7,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
 import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('soundon');
@@ -83,12 +84,18 @@ export async function publishToSoundOn(params: UploadParams): Promise<string> {
     // 6. Disable ads
     await setAdvertisementOptions(page);
 
-    // 7. Upload cover if provided
+    // 7. Upload cover if provided (compress first to avoid SoundOn size limits)
     if (coverPath && fs.existsSync(coverPath)) {
-      await uploadCoverImage(page, path.resolve(coverPath));
+      const compressedCover = await compressCoverImage(path.resolve(coverPath));
+      await uploadCoverImage(page, compressedCover);
     }
 
-    // 8. Publish
+    // 8. Publish (first attempt)
+    await clickPublish(page);
+
+    // 9. SoundOn bug workaround: click 編輯 → publish again
+    await page.waitForTimeout(3000);
+    await clickEditButton(page);
     await clickPublish(page);
 
     // Get final URL
@@ -217,6 +224,33 @@ async function setAdvertisementOptions(page: import('playwright').Page) {
   }
 }
 
+async function compressCoverImage(imagePath: string): Promise<string> {
+  const stats = fs.statSync(imagePath);
+  const sizeMB = stats.size / (1024 * 1024);
+  log.info({ imagePath, sizeMB: sizeMB.toFixed(2) }, 'Checking cover image size');
+
+  // If already under 500KB, no need to compress
+  if (stats.size < 500 * 1024) {
+    return imagePath;
+  }
+
+  const dir = path.dirname(imagePath);
+  const compressedPath = path.join(dir, 'cover-compressed.jpg');
+
+  await sharp(imagePath)
+    .resize(1400, 1400, { fit: 'cover' })
+    .jpeg({ quality: 85 })
+    .toFile(compressedPath);
+
+  const newStats = fs.statSync(compressedPath);
+  log.info(
+    { original: `${sizeMB.toFixed(2)}MB`, compressed: `${(newStats.size / (1024 * 1024)).toFixed(2)}MB` },
+    'Cover image compressed for SoundOn',
+  );
+
+  return compressedPath;
+}
+
 async function uploadCoverImage(page: import('playwright').Page, imagePath: string) {
   log.info('Uploading cover image...');
   try {
@@ -228,40 +262,69 @@ async function uploadCoverImage(page: import('playwright').Page, imagePath: stri
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(imagePath);
 
-    await page.waitForSelector('.ant-modal:has-text("上傳封面圖片")', { timeout: 10000 });
-    const uploadBtn = page.locator('.ant-modal .ant-btn-primary:has-text("上傳")');
-    if (await uploadBtn.isVisible({ timeout: 5000 })) {
-      await uploadBtn.click();
-    }
-    await page.waitForTimeout(5000);
+    // Wait for crop modal to appear
+    await page.waitForSelector('.ant-modal', { timeout: 15000 });
+    await page.waitForTimeout(3000); // Let image load in crop tool
+
+    // Click the blue "上傳" button in the modal footer
+    const modalFooter = page.locator('.ant-modal-footer');
+    const uploadConfirm = modalFooter.locator('button.ant-btn-primary').first();
+    await uploadConfirm.waitFor({ state: 'visible', timeout: 10000 });
+    log.info('Clicking upload confirm button in modal...');
+    await uploadConfirm.click();
+
+    // Wait for modal to fully close
+    await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 30000 });
+    await page.waitForTimeout(2000);
     log.info('Cover image uploaded');
   } catch (err) {
     log.warn({ error: (err as Error).message }, 'Cover image upload failed');
   }
 }
 
+async function clickEditButton(page: import('playwright').Page) {
+  log.info('Clicking edit button (SoundOn bug workaround)...');
+  const editBtn = page.locator('div.ant-row.ant-row-space-between.mb-md button.ant-btn.ant-btn-primary');
+  try {
+    await editBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await editBtn.click();
+    await page.waitForTimeout(3000);
+    log.info('Edit button clicked');
+  } catch {
+    log.warn('Edit button not found, skipping workaround');
+  }
+}
+
 async function clickPublish(page: import('playwright').Page) {
   log.info('Publishing episode...');
 
-  // Find and click publish button
-  const selectors = [
-    'button.ant-btn.ant-btn-primary:has(span:text("發布"))',
-    'button:has-text("發布")',
-    'button:has-text("發佈")',
-  ];
+  // Ensure no modal is blocking
+  await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 10000 }).catch(() => {});
 
+  // Scroll to top so the publish button in the header is visible
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(1000);
+
+  // Find and click publish button
+  const btn = page.locator('button.ant-btn.ant-btn-primary', { hasText: '發布' }).first();
   let clicked = false;
-  for (const sel of selectors) {
-    try {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 5000 })) {
-        await btn.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(1000);
-        await btn.click();
-        clicked = true;
-        break;
-      }
-    } catch { continue; }
+
+  try {
+    await btn.waitFor({ state: 'visible', timeout: 10000 });
+    await btn.click();
+    clicked = true;
+  } catch {
+    // Fallback selectors
+    for (const sel of ['button:has-text("發佈")', 'button:has-text("發布")']) {
+      try {
+        const fb = page.locator(sel).first();
+        if (await fb.isVisible({ timeout: 3000 })) {
+          await fb.click();
+          clicked = true;
+          break;
+        }
+      } catch { continue; }
+    }
   }
 
   if (!clicked) throw new Error('Could not find publish button');
