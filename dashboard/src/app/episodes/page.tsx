@@ -77,7 +77,10 @@ export default function EpisodesPage() {
       <header className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Episodes</h1>
+            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+              <span className="w-1 h-6 rounded-full bg-brand" />
+              Episodes
+            </h1>
             <p className="text-zinc-400 text-sm mt-1">
               {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
             </p>
@@ -125,7 +128,7 @@ export default function EpisodesPage() {
               <Link
                 key={ep.id}
                 href={`/episodes/${ep.episode_number}/review`}
-                className="group block rounded-xl bg-zinc-900/60 border border-zinc-800/60 hover:border-zinc-700 hover:bg-zinc-900 transition-all duration-200 cursor-pointer"
+                className="group block rounded-xl bg-zinc-900/60 border border-zinc-800/60 hover:border-brand/30 hover:bg-zinc-900 transition-all duration-200 cursor-pointer"
               >
                 <div className="p-4">
                   <div className="flex items-center justify-between gap-4">

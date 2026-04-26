@@ -44,8 +44,11 @@ async function MemoryContent({
   return (
     <div className="p-6 md:p-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Tool Memory</h1>
-        <p className="text-zinc-400 text-sm mt-1">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <span className="w-1 h-6 rounded-full bg-brand" />
+          Tool Memory
+        </h1>
+        <p className="text-brand-taupe text-sm mt-1">
           {tools.length} tools tracked across all episodes
         </p>
       </header>
@@ -55,7 +58,7 @@ async function MemoryContent({
         <Link
           href="/memory"
           className={`px-3 py-1 rounded-full text-xs transition-colors ${
-            !category ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+            !category ? 'bg-brand text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
           }`}
         >
           All
@@ -66,7 +69,7 @@ async function MemoryContent({
             href={`/memory?category=${cat}`}
             className={`px-3 py-1 rounded-full text-xs transition-colors ${
               category === cat
-                ? 'bg-zinc-100 text-zinc-900'
+                ? 'bg-brand text-white'
                 : categoryColors[cat] || 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
             }`}
           >
@@ -82,7 +85,7 @@ async function MemoryContent({
           name="search"
           defaultValue={search}
           placeholder="Search tools..."
-          className="w-full sm:w-72 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+          className="w-full sm:w-72 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
         />
       </form>
 
@@ -101,7 +104,7 @@ async function MemoryContent({
             <Link
               key={tool.id}
               href={`/memory/${encodeURIComponent(tool.canonical_name)}`}
-              className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 hover:border-zinc-700 transition-colors"
+              className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 hover:border-brand/30 transition-colors cursor-pointer"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">

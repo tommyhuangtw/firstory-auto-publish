@@ -14,15 +14,18 @@ export default function Dashboard() {
 
   return (
     <div className="p-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold">AI Podcast Automation</h1>
-        <p className="text-zinc-300 mt-1">Dashboard — AI懶人報</p>
+      <header className="mb-8 flex items-center gap-5">
+        <img src="/logo-sm.png" alt="AI懶人報" className="w-16 h-16 rounded-xl" />
+        <div>
+          <h1 className="text-3xl font-bold">AI懶人報</h1>
+          <p className="text-brand-taupe mt-1">Podcast Automation Dashboard</p>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {/* DB Status */}
-        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Database</h2>
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Database</h2>
           <p className="text-2xl font-bold mt-2">
             <span className="text-green-400">Connected</span>
           </p>
@@ -30,15 +33,15 @@ export default function Dashboard() {
         </div>
 
         {/* Episodes */}
-        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Episodes</h2>
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Episodes</h2>
           <p className="text-2xl font-bold mt-2">{episodeCount}</p>
           <p className="text-zinc-400 text-sm mt-1">total episodes</p>
         </div>
 
         {/* Pipeline */}
-        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Pipeline</h2>
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Pipeline</h2>
           <p className="text-2xl font-bold mt-2">{recentRuns.c}</p>
           <p className="text-zinc-400 text-sm mt-1">recent runs (7d)</p>
         </div>
@@ -46,7 +49,10 @@ export default function Dashboard() {
 
       {/* Recent Episodes */}
       <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6">
-        <h2 className="text-lg font-semibold mb-4">Recent Episodes</h2>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span className="w-1 h-5 rounded-full bg-brand" />
+          Recent Episodes
+        </h2>
         {episodes.length > 0 ? (
           <table className="w-full text-sm">
             <thead>

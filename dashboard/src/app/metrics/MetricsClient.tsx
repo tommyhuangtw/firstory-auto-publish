@@ -56,8 +56,11 @@ export default function MetricsClient() {
   return (
     <div className="p-6 md:p-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">LLM Metrics</h1>
-        <p className="text-zinc-300 text-sm mt-1">Cost tracking, quality trends, and pipeline history</p>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <span className="w-1 h-6 rounded-full bg-brand" />
+          LLM Metrics
+        </h1>
+        <p className="text-brand-taupe text-sm mt-1">Cost tracking, quality trends, and pipeline history</p>
       </header>
 
       {/* Summary Cards */}
@@ -85,7 +88,7 @@ export default function MetricsClient() {
                     formatter={(value) => [`$${Number(value).toFixed(4)}`, 'Cost']}
                     labelFormatter={(v) => `EP #${v}`}
                   />
-                  <Bar dataKey="total_cost" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total_cost" fill="#c9956b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </section>
@@ -105,7 +108,7 @@ export default function MetricsClient() {
                     labelStyle={{ color: '#a1a1aa' }}
                     labelFormatter={(v) => `EP #${v}`}
                   />
-                  <Line type="monotone" dataKey="quality_score" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 4 }} />
+                  <Line type="monotone" dataKey="quality_score" stroke="#e8c66a" strokeWidth={2} dot={{ fill: '#e8c66a', r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -184,8 +187,8 @@ export default function MetricsClient() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-      <p className="text-xs font-medium text-zinc-300 uppercase tracking-wider">{label}</p>
+    <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 hover:border-brand/30 transition-colors">
+      <p className="text-xs font-medium text-brand-taupe uppercase tracking-wider">{label}</p>
       <p className="text-2xl font-bold mt-1">{value}</p>
     </div>
   );

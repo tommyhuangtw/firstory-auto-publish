@@ -174,7 +174,10 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="p-6 md:p-8 max-w-3xl">
-        <h1 className="text-2xl font-semibold tracking-tight mb-6">Settings</h1>
+        <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
+          <span className="w-1 h-6 rounded-full bg-brand" />
+          Settings
+        </h1>
         <p className="text-zinc-400 text-sm">Loading...</p>
       </div>
     );
@@ -182,7 +185,10 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight mb-6">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
+        <span className="w-1 h-6 rounded-full bg-brand" />
+        Settings
+      </h1>
 
       <div className="space-y-8">
         {/* Ad Presets Section */}
@@ -214,14 +220,14 @@ export default function SettingsPage() {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="模板名稱（例如：VoAI 絕好聲創）"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 mb-2"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 mb-2"
               />
               <textarea
                 value={newContent}
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="業配文案內容..."
                 rows={6}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 resize-y"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
               />
               <div className="flex gap-2 mt-3">
                 <button
@@ -256,13 +262,13 @@ export default function SettingsPage() {
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500 mb-2"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 mb-2"
                     />
                     <textarea
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
                       rows={8}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500 resize-y"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
                     />
                     <div className="flex gap-2 mt-3">
                       <button
@@ -288,8 +294,8 @@ export default function SettingsPage() {
                   key={preset.id}
                   className={`rounded-xl border transition-colors ${
                     isActive
-                      ? 'border-blue-500/40 bg-blue-950/20'
-                      : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
+                      ? 'border-brand/40 bg-brand/5'
+                      : 'border-zinc-800 bg-zinc-900 hover:border-brand/20'
                   }`}
                 >
                   <div
@@ -305,7 +311,7 @@ export default function SettingsPage() {
                       disabled={saving === 'preset'}
                       className={`shrink-0 w-4 h-4 rounded-full border-2 transition-colors cursor-pointer ${
                         isActive
-                          ? 'border-blue-500 bg-blue-500'
+                          ? 'border-brand bg-brand'
                           : 'border-zinc-600 hover:border-zinc-400'
                       }`}
                       aria-label={`Activate ${preset.name}`}
@@ -321,7 +327,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-zinc-200">{preset.name}</span>
                         {isActive && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand/20 text-brand font-medium">
                             使用中
                           </span>
                         )}
@@ -414,7 +420,7 @@ export default function SettingsPage() {
                     value={footerValues[field.key] || ''}
                     onChange={(e) => setFooterValues(prev => ({ ...prev, [field.key]: e.target.value }))}
                     rows={field.rows}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 resize-y font-mono"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y font-mono"
                   />
                   <div className="flex items-center justify-end gap-2 mt-2">
                     <button
@@ -426,7 +432,7 @@ export default function SettingsPage() {
                     <button
                       onClick={async () => { await handleSaveFooter(field.key); setEditingFooter(null); }}
                       disabled={saving === field.key}
-                      className="px-4 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white transition-colors cursor-pointer"
+                      className="px-4 py-1.5 text-xs font-medium rounded-lg bg-brand hover:bg-brand-light disabled:bg-zinc-700 disabled:text-zinc-500 text-white transition-colors cursor-pointer"
                     >
                       {saving === field.key ? '儲存中...' : '儲存'}
                     </button>

@@ -103,8 +103,11 @@ export default function SchedulerClient() {
   return (
     <div className="p-6 md:p-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">排程管理</h1>
-        <p className="text-zinc-400 text-sm mt-1">管理 cron 排程任務</p>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <span className="w-1 h-6 rounded-full bg-brand" />
+          排程管理
+        </h1>
+        <p className="text-brand-taupe text-sm mt-1">管理 cron 排程任務</p>
       </header>
 
       {message && (
@@ -141,8 +144,8 @@ export default function SchedulerClient() {
                     <span className={`w-2 h-2 rounded-full ${
                       isDisabled ? 'bg-zinc-600'
                         : isSkipped ? 'bg-yellow-400'
-                        : job.running ? 'bg-green-400'
-                        : 'bg-green-400'
+                        : job.running ? 'bg-brand'
+                        : 'bg-brand'
                     }`} />
                     <span className={`font-medium text-sm ${isDisabled ? 'text-zinc-500' : ''}`}>{job.name}</span>
                     <code className="text-xs text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">
@@ -153,7 +156,7 @@ export default function SchedulerClient() {
                     ) : isSkipped ? (
                       <span className="text-xs text-yellow-400">已跳過今天</span>
                     ) : (
-                      <span className="text-xs text-green-400">啟用</span>
+                      <span className="text-xs text-brand">啟用</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">

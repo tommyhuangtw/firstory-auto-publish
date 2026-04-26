@@ -154,7 +154,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       <header className="mb-8">
         <Link
           href="/episodes"
-          className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-300 transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-brand transition-colors mb-4"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -201,7 +201,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               <img
                 src={`/api/audio${episode.cover_path}`}
                 alt={`EP ${episode.episode_number} cover`}
-                className="rounded-xl border border-zinc-800 w-40 h-40 object-cover"
+                className="rounded-xl border border-brand/30 w-40 h-40 object-cover"
               />
             </div>
           )}
