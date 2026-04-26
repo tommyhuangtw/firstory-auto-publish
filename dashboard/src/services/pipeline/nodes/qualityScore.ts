@@ -8,7 +8,7 @@
 
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
-import type { PipelineState, QualityScore } from '../state';
+import type { PipelineState, QualityScore, QualityIteration } from '../state';
 
 const log = createChildLogger('pipeline:quality');
 
@@ -149,6 +149,7 @@ export async function qualityScore(state: PipelineState): Promise<Partial<Pipeli
   let currentScript = state.scriptZh;
   let score: QualityScore | null = null;
   let iterations = state.qualityIterations;
+  const history: QualityIteration[] = [];
 
   // Memory-aware quality check context
   const memoryQualityBrief = state.memoryContext?.briefForQualityCheck || '';
@@ -224,6 +225,7 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
       },
     };
     iterations++;
+    history.push({ iteration: iterations, score, scriptZh: currentScript });
 
     log.info(
       { total: score.overall, iteration: iterations, dimensions: score.dimensions },
@@ -289,6 +291,7 @@ ${currentScript}
     scriptZh: currentScript,
     qualityScore: score,
     qualityIterations: iterations,
+    qualityHistory: history,
     status: 'generating_meta',
   };
 }

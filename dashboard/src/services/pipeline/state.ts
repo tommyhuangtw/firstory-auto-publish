@@ -38,6 +38,12 @@ export interface QualityScore {
   };
 }
 
+export interface QualityIteration {
+  iteration: number;
+  score: QualityScore;
+  scriptZh: string;
+}
+
 export type SegmentType = 'daily' | 'weekly' | 'robot';
 
 export type PipelineStatus =
@@ -90,11 +96,16 @@ export interface PipelineState {
   // ── Stage 5: Quality ──
   qualityScore: QualityScore | null;
   qualityIterations: number;
+  qualityHistory: QualityIteration[];
+
+  // ── Stage 5.5: Script Summary (for meta generation) ──
+  scriptSummary: string;
 
   // ── Stage 6: Generate Meta (titles, description, tags) ──
   candidateTitles: string[];
   selectedTitle: string;
   description: string;
+  youtubeDescription: string;
   tags: string[];
 
   // ── Stage 7: Cover Image ──
@@ -154,9 +165,12 @@ export function createInitialState(
     memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,
+    qualityHistory: [],
+    scriptSummary: '',
     candidateTitles: [],
     selectedTitle: '',
     description: '',
+    youtubeDescription: '',
     tags: [],
     coverPath: '',
     coverUrl: '',
