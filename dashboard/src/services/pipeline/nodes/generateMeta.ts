@@ -6,6 +6,7 @@
  */
 
 import { getLLMService } from '@/services/llmService';
+import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import type { PipelineState } from '../state';
 
@@ -23,10 +24,21 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const isRobot = state.segmentType === 'robot';
   const isWeekly = state.segmentType === 'weekly';
 
+  // Step 0: Summarize full script → used by all downstream prompts
+  const summary = await summarizeScript(content, state.segmentType, state.episodeNumber);
+  log.info({ summaryLength: summary.length }, 'Script summarized for meta generation');
+
+  // Persist summary to DB
+  try {
+    const db = getDb();
+    db.prepare('UPDATE episodes SET script_summary = ? WHERE episode_number = ?')
+      .run(summary, state.episodeNumber);
+  } catch { /* non-critical */ }
+
   // Step 1: Generate 10 title candidates
-  const titlePrompt = isRobot ? buildRobotTitlePrompt(content)
-    : isWeekly ? buildWeeklyTitlePrompt(content)
-    : buildTitlePrompt(content);
+  const titlePrompt = isRobot ? buildRobotTitlePrompt(summary)
+    : isWeekly ? buildWeeklyTitlePrompt(summary)
+    : buildTitlePrompt(summary);
   const titlesResult = await llm.generateJSON<{ titles: string[] }>(
     titlePrompt,
     'title_gen',
@@ -41,7 +53,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   // Step 2: Select best title
   const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
-    buildTitleSelectionPrompt(candidateTitles, content.slice(0, 1000)),
+    buildTitleSelectionPrompt(candidateTitles, summary),
     'title_select',
     { episodeNumber: state.episodeNumber, maxTokens: 512, temperature: 0.3 }
   );
@@ -57,9 +69,9 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   log.info({ selectedTitle: selectedTitle.slice(0, 50) }, 'Title selected');
 
   // Step 3: Generate description
-  const descPrompt = isRobot ? buildRobotDescriptionPrompt(content)
-    : isWeekly ? buildWeeklyDescriptionPrompt(content)
-    : buildDescriptionPrompt(content);
+  const descPrompt = isRobot ? buildRobotDescriptionPrompt(summary)
+    : isWeekly ? buildWeeklyDescriptionPrompt(summary)
+    : buildDescriptionPrompt(summary);
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,
     'description_gen',
@@ -73,9 +85,23 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
       .trim()
     : getFallbackDescription();
 
+  // Step 3.5: Generate YouTube description (longer format with timestamps + CTA)
+  const ytDescPrompt = isRobot ? buildRobotYoutubeDescriptionPrompt(summary)
+    : isWeekly ? buildWeeklyYoutubeDescriptionPrompt(summary)
+    : buildYoutubeDescriptionPrompt(summary);
+  const ytDescResult = await llm.generateJSON<{ youtubeDescription: string }>(
+    ytDescPrompt,
+    'youtube_description_gen',
+    { episodeNumber: state.episodeNumber, maxTokens: 1536, temperature: 0.7 }
+  );
+
+  const youtubeDescription = ytDescResult.success && ytDescResult.data?.youtubeDescription
+    ? ytDescResult.data.youtubeDescription.trim()
+    : description; // Fallback to podcast description
+
   // Step 4: Generate tags
   const tagsResult = await llm.generateJSON<{ tags: string[] }>(
-    buildTagsPrompt(content, selectedTitle),
+    buildTagsPrompt(summary, selectedTitle),
     'tags_gen',
     { episodeNumber: state.episodeNumber, maxTokens: 512, temperature: 0.5 }
   );
@@ -84,158 +110,328 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     ? tagsResult.data.tags
     : getFallbackTags();
 
-  log.info({ descLength: description.length, tagCount: tags.length }, 'Meta generation complete');
+  log.info({ descLength: description.length, ytDescLength: youtubeDescription.length, tagCount: tags.length }, 'Meta generation complete');
 
   return {
+    scriptSummary: summary,
     candidateTitles,
     selectedTitle,
     description,
+    youtubeDescription,
     tags,
     status: 'tts',
   };
 }
 
+// ── Script Summarization ──
+
+async function summarizeScript(
+  content: string,
+  segmentType: string,
+  episodeNumber?: number,
+): Promise<string> {
+  const llm = getLLMService();
+
+  const segmentContext = segmentType === 'robot'
+    ? '機器人觀察週報'
+    : segmentType === 'weekly'
+    ? 'AI懶人精選週報'
+    : 'AI懶人報（每日）';
+
+  const prompt = `你是一位 Podcast 內容分析專家。請將以下「${segmentContext}」的完整腳本濃縮成一份結構化摘要，確保不遺漏任何重要工具或主題。
+
+完整腳本：
+${content}
+
+請產出以下結構的摘要（約 800 字）：
+
+1. **本集主題**（1-2 句）：本集的核心主題是什麼？
+
+2. **提到的工具/品牌**（列表）：列出所有提到的 AI 工具、公司或品牌名稱，以及它們的關鍵更新或功能亮點。格式：
+   - 工具名稱：一句話描述亮點
+
+3. **主要論點與觀點**（3-5 點）：腳本中最有力的論述、爭議性觀點、或令人驚訝的發現
+
+4. **數據與具體成果**：提到的任何具體數字、百分比、價格、速度比較等
+
+5. **結論/呼籲行動**（1-2 句）：腳本的結論或主要 takeaway
+
+以純文字回傳摘要（不需要 JSON 格式）。`;
+
+  const result = await llm.generate(
+    prompt,
+    'script_summary',
+    { episodeNumber, maxTokens: 2048, temperature: 0.3 }
+  );
+
+  if (result.success && result.content) {
+    return result.content.trim();
+  }
+
+  // Fallback: use first 3000 chars if summarization fails
+  log.warn('Script summarization failed, falling back to truncation');
+  return content.slice(0, 3000);
+}
+
 // ── Prompt Builders (ported from contentGenerator.js) ──
 
-function buildTitlePrompt(content: string): string {
-  return `你是一位經驗豐富的 Podcast 製作人，深知如何吸引觀眾眼光、提高點擊率。請根據以下內容生成10個吸引人的標題。
+function buildTitlePrompt(summary: string): string {
+  return `你是一位經驗豐富的 Podcast 製作人，專門打造高下載量的標題。根據 293 集的下載數據分析，以下模式能顯著提升點擊率。請根據內容生成10個標題。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
-標題要求：
-1. 每個標題聚焦一個清晰的核心主題
-2. 包含 1-2 個觀眾最感興趣的 AI 工具名稱
-3. 標題長度 35-45 字
-4. 使用臺灣繁體中文用語
-5. 不要加 EPxx 集數編號
-6. 不要加類型標記（如【資訊型】）
+── 高下載量的 5 大爆款模式（每個標題至少要使用 1 個模式）──
 
-風格涵蓋：資訊型、幽默型、誇張型、對話式
+模式A「顛覆性問句」(+35% 下載)：挑戰現有認知，製造 FOMO
+  例：「RAG 真的要涼了？深入解析超長上下文大戰」
+  例：「Google 搜尋過時了？這7款 AI 工具讓你工作效率飆升」
+
+模式B「具體數字 + 個人視角」(+30% 下載)：用數字創造可信度
+  例：「試過 500+ AI 工具後，這 20 個幫我年收百萬！」
+  例：「Claude Design 實測！16分鐘打造影片、網站、App」
+
+模式C「大品牌 + 強動詞」(+25% 下載)：知名品牌搭配爆炸性動詞
+  例：「Claude Dispatch 殺瘋了！OpenClaw 準備被取代？」
+  例：「Claude Code 2.0 終於來了！效率直接起飛」
+
+模式D「免費/賺錢鉤子」(+28% 下載)：直擊錢包痛點
+  例：「Google Nano Banana 2.0 免費送！速度、功能全面進化」
+  例：「2026年想靠 AI 賺錢？這4個給新手的 AI 副業」
+
+模式E「秘密/禁止/危險」(+22% 下載)：製造好奇心缺口
+  例：「Claude Mythos 被 Anthropic 封鎖？太危險！一般人根本不能碰」
+  例：「Anthropic 到底在隱瞞什麼？Claude Opus 偷偷變弱」
+
+── 必須避免的 4 大雷區（會導致低下載量）──
+❌ 用聽眾不認識的小工具當主角（如 TuriX、Auto Whisk）→ 改用知名品牌帶流量
+❌ 太技術導向（如 "Guardrails"、"gRPC"）→ 改用白話描述效果
+❌ 模糊形容詞（如 "威力驚人"、"太神了"）→ 改用具體數字或成果
+❌ 純教學標題（如 "n8n 搭配 AI Agent"）→ 改用故事或成果包裝
+
+── 基本規則 ──
+1. 標題長度 35-45 字
+2. 包含 1-2 個知名度高的 AI 工具/品牌名
+3. 使用臺灣繁體中文用語
+4. 不要加 EPxx 集數編號
+5. 不要加類型標記（如【資訊型】）
+
+── 10 個標題的模式分配 ──
+• 3 個用模式A（顛覆性問句）
+• 2 個用模式B（數字+個人視角）
+• 2 個用模式C（大品牌+強動詞）
+• 2 個用模式D（免費/賺錢）
+• 1 個用模式E（秘密/危險）
 
 以 JSON 格式回傳：
 { "titles": ["標題1", "標題2", ..., "標題10"] }`;
 }
 
-function buildRobotTitlePrompt(content: string): string {
-  return `你是一位專注於機器人科技的 Podcast 製作人。請根據以下「機器人觀察週報」內容生成10個標題。
+function buildRobotTitlePrompt(summary: string): string {
+  return `你是一位專注於機器人科技的 Podcast 製作人，專門打造高下載量的標題。請根據以下「機器人觀察週報」內容生成10個標題。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
-標題要求：
-1. 聚焦機器人趨勢、技術突破或產業動態
-2. 包含 1-2 個機器人品牌/公司名（Tesla Optimus, Figure, Boston Dynamics, Unitree 等）
-3. 標題長度 35-45 字
-4. 使用臺灣繁體中文
-5. 不要加 EPxx 或類型標記
+── 高下載量的爆款模式（每個標題至少用 1 個）──
+
+模式A「顛覆性問句」：挑戰認知、製造 FOMO
+  例：「AI 機器人失控警告！OpenAI、Anthropic 會是下一個危險因子嗎？」
+  例：「你的車95%時間在吃灰？無人計程車24小時不打烊」
+
+模式B「具體數字 + 衝擊感」：
+  例：「Open-Source 機器手臂 reBot 只要 $1K？物理 AI 硬體門檻將被徹底打破！」
+
+模式C「大品牌 + 強動詞」：Tesla、NVIDIA、Boston Dynamics 等帶流量
+  例：「NVIDIA GTC 2026 震撼彈！黃仁勳牽手 Disney 打造 Olaf 活體機器人」
+  例：「Elon Musk 押寶 Optimus！AI 機器人將取代人類？」
+
+模式D「秘密/恐懼/未來衝擊」：
+  例：「AI 告白：留著人類只因有利用價值？聽完毛骨悚然的機器人真心話」
+  例：「中國屠殺機器人上線！AI 操控的軍隊，Siri 變成殺人機器只是時間問題？」
+
+── 必須避免 ──
+❌ 沒人認識的小公司/品牌當主角
+❌ 太技術（純規格、型號）→ 用白話講影響
+❌ 模糊形容詞 → 用具體場景或數字
+
+── 基本規則 ──
+1. 包含 1-2 個知名機器人品牌/公司名（Tesla Optimus, Figure, Boston Dynamics, Unitree, Waymo, NVIDIA 等）
+2. 標題長度 35-45 字，臺灣繁體中文
+3. 不要加 EPxx 或類型標記
+4. 不要在標題中加入「週報」「本週精選」「一週回顧」等詞彙（系統會自動加上）
 
 以 JSON 格式回傳：
 { "titles": ["標題1", ..., "標題10"] }`;
 }
 
-function buildWeeklyTitlePrompt(content: string): string {
-  return `你是一位經驗豐富的 Podcast 製作人，專門製作《AI懶人精選週報》。請根據以下本週精選內容生成10個吸引人的標題。
+function buildWeeklyTitlePrompt(summary: string): string {
+  return `你是一位經驗豐富的 Podcast 製作人，專門製作《AI懶人精選週報》。根據 293 集的下載數據分析，以下模式能顯著提升點擊率。請根據本週精選內容生成10個標題。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
-標題要求：
-1. 聚焦本週最重要的 AI 工具趨勢或重大更新
-2. 包含 1-2 個本週最熱門的 AI 工具名稱
-3. 標題長度 35-45 字
-4. 使用臺灣繁體中文用語
-5. 不要加 EPxx 集數編號
-6. 不要加類型標記（如【資訊型】）
-7. 標題中適合加入「週報」「本週精選」「一週回顧」等週報感關鍵字
+── 高下載量的 5 大爆款模式（每個標題至少要使用 1 個模式）──
 
-風格涵蓋：資訊型、幽默型、誇張型、對話式
+模式A「顛覆性問句」(+35% 下載)：挑戰現有認知，製造 FOMO
+  例：「OpenAI 這週放的大招，會讓 Google 睡不著覺？」
+  例：「這週 AI 圈最大震撼：免費模型竟然打贏付費的？」
+
+模式B「具體數字 + 盤點視角」(+30% 下載)：用數字創造可信度
+  例：「一週 12 個重磅更新！Claude、GPT、Gemini 誰贏了？」
+  例：「本週必看 5 大 AI 工具更新，第3個直接省你50%時間」
+
+模式C「大品牌 + 強動詞」(+25% 下載)：知名品牌搭配爆炸性動詞
+  例：「Claude Code 2.0 終於來了！效率直接起飛」
+  例：「Google 放大絕！Gemini 免費版功能暴增，OpenAI 慌了」
+
+模式D「免費/賺錢鉤子」(+28% 下載)：直擊錢包痛點
+  例：「Google 本週送大禮！3個免費 AI 工具搶先體驗」
+  例：「這週最值得收藏的免費 AI 工具，錯過再等一年」
+
+模式E「秘密/危險/獨家」(+22% 下載)：製造好奇心缺口
+  例：「Anthropic 到底在隱瞞什麼？Claude Opus 偷偷變弱」
+  例：「這週 AI 圈不想讓你知道的3件事」
+
+── 必須避免的 4 大雷區（會導致低下載量）──
+❌ 用聽眾不認識的小工具當主角（如 TuriX、Auto Whisk）→ 改用知名品牌帶流量
+❌ 太技術導向（如 "Guardrails"、"gRPC"）→ 改用白話描述效果
+❌ 模糊形容詞（如 "威力驚人"、"太神了"）→ 改用具體數字或成果
+❌ 純教學標題（如 "n8n 搭配 AI Agent"）→ 改用故事或成果包裝
+
+── 基本規則 ──
+1. 標題長度 35-45 字
+2. 包含 1-2 個本週最熱門的 AI 工具/品牌名
+3. 使用臺灣繁體中文用語
+4. 不要加 EPxx 集數編號
+5. 不要加類型標記（如【資訊型】）
+6. 不要在標題中加入「週報」「本週精選」「一週回顧」「精選週報」等詞彙（系統會自動加上）
+
+── 10 個標題的模式分配 ──
+• 3 個用模式A（顛覆性問句）
+• 2 個用模式B（數字+盤點視角）
+• 2 個用模式C（大品牌+強動詞）
+• 2 個用模式D（免費/賺錢）
+• 1 個用模式E（秘密/危險）
 
 以 JSON 格式回傳：
 { "titles": ["標題1", "標題2", ..., "標題10"] }`;
 }
 
-function buildTitleSelectionPrompt(titles: string[], content: string): string {
+function buildTitleSelectionPrompt(titles: string[], summary: string): string {
   const titleList = titles.map((t, i) => `${i + 1}. ${t}`).join('\n');
-  return `從以下10個標題中選出最佳 Podcast 標題。
+  return `你是 Podcast 下載量優化專家。根據以下 5 大高下載模式，從候選標題中選出最可能衝高下載量的標題。
 
 候選標題：
 ${titleList}
 
 內容摘要：
-${content}
+${summary}
 
-評選標準：點擊吸引力 > 內容相關度 > 品牌知名度 > 情感驅動 > 搜尋友善
+── 評分依據（根據 293 集下載數據）──
+
+加分模式（每命中一個 +10 分）：
+A. 顛覆性問句（+35% 下載）：挑戰現有認知、製造 FOMO
+B. 具體數字（+30% 下載）：用數字創造可信度和好奇心
+C. 大品牌+強動詞（+25% 下載）：知名品牌搭配爆炸性動詞
+D. 免費/賺錢鉤子（+28% 下載）：直擊錢包痛點
+E. 秘密/禁止/危險（+22% 下載）：製造好奇心缺口
+
+扣分雷區（每踩一個 -15 分）：
+❌ 聽眾不認識的小工具當主角
+❌ 太技術導向的用詞
+❌ 模糊形容詞（威力驚人、太神了）
+❌ 純教學式標題
+
+其他加分項：
++5 內容相關度高（標題反映腳本重點）
++3 包含知名品牌名
++2 長度適中（35-45字）
+
+請為每個標題打分，選出分數最高的那個。
 
 以 JSON 格式回傳：
-{ "bestIndex": 1, "bestTitle": "完整標題", "reason": "理由" }`;
+{ "bestIndex": 1, "bestTitle": "完整標題", "reason": "命中模式X和Y，品牌知名度高，具體理由..." }`;
 }
 
-function buildDescriptionPrompt(content: string): string {
-  return `根據以下內容生成 Podcast 描述，包含5個 AI 工具。
+function buildDescriptionPrompt(summary: string): string {
+  return `根據以下內容生成 Podcast 描述，列出 5 個重點亮點。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
 格式：
-開頭段落（包含"全都交給 AI"和"精選 5 支熱門 AI 工具"）🚀
+開頭段落（用 1-2 句吸引人的話帶出本集主題）🚀
 
-💡 工具名稱：功能亮點
+接下來用 💡 和 👉 列出 5 個重點（可以是工具亮點、應用場景或重要觀點）：
+💡 一句話描述這個亮點
 👉 應用場景和價值
 
-（重複5次）
+⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
+❌ 錯誤：💡 Claude Code：你的程式碼助手學會排程任務了！
+❌ 錯誤：💡 向量資料庫：AI 的長期記憶海馬迴！
+✅ 正確：💡「Claude Code」學會排程任務，變成你 24 小時不打烊的專屬工程師！
+✅ 正確：💡「向量資料庫」讓 AI 擁有長期記憶，搜尋精準度直接飆升！
 
-要求：200-350字、輕鬆有趣、不含外部連結
+要求：200-400字、輕鬆有趣、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
-function buildRobotDescriptionPrompt(content: string): string {
-  return `根據以下「機器人觀察週報」內容生成 Podcast 描述，包含5個機器人趨勢亮點。
+function buildRobotDescriptionPrompt(summary: string): string {
+  return `根據以下「機器人觀察週報」內容生成 Podcast 描述，列出 5 個重點亮點。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
 格式：
 開頭段落（點出本週機器人圈重大趨勢）🤖
 
-💡 亮點名稱：事件或突破
+接下來用 💡 和 👉 列出 5 個重點（可以是機器人、公司、技術突破或應用場景）：
+💡 一句話描述這個亮點
 👉 產業影響或未來展望
 
-（重複5次）
+⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
+❌ 錯誤：💡 Tesla Optimus：人形機器人取得重大突破！
+✅ 正確：💡「Tesla Optimus」走出工廠，首度在真實環境完成搬運任務！
 
-要求：200-350字、輕鬆但有科技觀點、不含外部連結
+要求：200-400字、輕鬆但有科技觀點、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
-function buildWeeklyDescriptionPrompt(content: string): string {
-  return `根據以下《AI懶人精選週報》內容生成 Podcast 描述，包含本週5個精選 AI 工具亮點。
+function buildWeeklyDescriptionPrompt(summary: string): string {
+  return `根據以下《AI懶人精選週報》內容生成 Podcast 描述，列出 5 個重點亮點。
 
 內容摘要：
-${content.slice(0, 3000)}
+${summary}
 
 格式：
 開頭段落（點出本週 AI 工具圈最值得關注的趨勢）🚀
 
-💡 工具名稱：本週亮點功能或更新
+接下來用 💡 和 👉 列出 5 個重點（可以是工具亮點、應用場景或重要觀點）：
+💡 一句話描述這個亮點
 👉 應用場景和價值
 
-（重複5次）
+⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
+❌ 錯誤：💡 Claude Code：你的程式碼助手學會排程任務了！
+❌ 錯誤：💡 向量資料庫：AI 的長期記憶海馬迴！
+✅ 正確：💡「Claude Code」學會排程任務，變成你 24 小時不打烊的專屬工程師！
+✅ 正確：💡「向量資料庫」讓 AI 擁有長期記憶，搜尋精準度直接飆升！
 
-要求：200-350字、輕鬆有趣、帶有「一週回顧」的語氣、不含外部連結
+要求：200-400字、輕鬆有趣、帶有「一週回顧」的語氣、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
-function buildTagsPrompt(content: string, title: string): string {
+function buildTagsPrompt(summary: string, title: string): string {
   return `你是 YouTube SEO 專家。根據以下 Podcast 內容和標題，生成 YouTube tags。
 
 標題：${title}
-內容摘要：${content.slice(0, 2000)}
+內容摘要：${summary}
 
 要求：
 1. 20-30 個 tags
@@ -245,6 +441,182 @@ function buildTagsPrompt(content: string, title: string): string {
 
 以 JSON 格式回傳：
 { "tags": ["tag1", "tag2", ...] }`;
+}
+
+// ── YouTube Description Prompt Builders ──
+
+function buildYoutubeDescriptionPrompt(summary: string): string {
+  return `根據以下 Podcast 內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+
+內容摘要：
+${summary}
+
+格式要求：
+1. 開頭段落（2-3句吸引人的簡介，包含本集主題）
+2. 本集重點（每個工具直接用名稱開頭，一行簡介其功能亮點和應用場景）
+
+範例格式：
+AI 工具百百種，每天都有新玩意兒...（開頭段落）
+
+🚀 本集精選 AI 工具：
+
+Claude Design：直接生成互動式網頁原型，3D 動畫、光影特效都能輕鬆搞定。
+Claude Code：自動檢查程式碼、抓錯，還能化身自動交易員、分析市場。
+自動化網站監控與修復 AI：半夜巡邏網站，發現攻擊自動修復並送出報告。
+
+注意：
+- 不要在每一行前面加「工具名稱：」這種標籤
+- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
+- 200-400字、繁體中文、不含外部連結
+
+以 JSON 格式回傳：
+{ "youtubeDescription": "完整描述主體" }`;
+}
+
+function buildRobotYoutubeDescriptionPrompt(summary: string): string {
+  return `根據以下「機器人觀察週報」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+
+內容摘要：
+${summary}
+
+格式要求：
+1. 開頭段落（2-3句點出本週機器人技術重大突破）
+2. 本週重點亮點（每個亮點直接用名稱開頭，一行簡介）
+
+注意：
+- 不要在每一行前面加「亮點名稱：」這種標籤
+- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
+- 200-400字、繁體中文、帶科技觀點
+
+以 JSON 格式回傳：
+{ "youtubeDescription": "完整描述主體" }`;
+}
+
+function buildWeeklyYoutubeDescriptionPrompt(summary: string): string {
+  return `根據以下《AI懶人精選週報》內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+
+內容摘要：
+${summary}
+
+格式要求：
+1. 開頭段落（2-3句帶出本週 AI 工具圈最值得關注的趨勢）
+2. 本週精選工具列表（每個工具直接用名稱開頭，一行簡介其本週亮點）
+
+注意：
+- 不要在每一行前面加「工具名稱：」這種標籤
+- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
+- 200-400字、繁體中文、帶週報回顧語氣
+
+以 JSON 格式回傳：
+{ "youtubeDescription": "完整描述主體" }`;
+}
+
+// ── Reusable Title Regeneration ──
+
+export async function regenerateTitles(
+  segmentType: string,
+  scriptContent: string,
+  episodeNumber?: number,
+): Promise<{ candidateTitles: string[]; selectedTitle: string }> {
+  const llm = getLLMService();
+  const isRobot = segmentType === 'robot';
+  const isWeekly = segmentType === 'weekly';
+
+  // Try to use saved summary, otherwise generate one
+  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeNumber);
+
+  const titlePrompt = isRobot ? buildRobotTitlePrompt(summary)
+    : isWeekly ? buildWeeklyTitlePrompt(summary)
+    : buildTitlePrompt(summary);
+
+  const titlesResult = await llm.generateJSON<{ titles: string[] }>(
+    titlePrompt,
+    'title_gen',
+    { episodeNumber, maxTokens: 2048, temperature: 0.7 }
+  );
+
+  const candidateTitles = titlesResult.success && titlesResult.data?.titles
+    ? titlesResult.data.titles
+    : getFallbackTitles();
+
+  const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
+    buildTitleSelectionPrompt(candidateTitles, summary),
+    'title_select',
+    { episodeNumber, maxTokens: 512, temperature: 0.3 }
+  );
+
+  let selectedTitle = candidateTitles[0];
+  if (selectResult.success && selectResult.data) {
+    const idx = (selectResult.data.bestIndex || 1) - 1;
+    if (idx >= 0 && idx < candidateTitles.length) {
+      selectedTitle = candidateTitles[idx];
+    }
+  }
+
+  return { candidateTitles, selectedTitle };
+}
+
+// ── Reusable Description Regeneration ──
+
+export async function regenerateDescription(
+  segmentType: string,
+  scriptContent: string,
+  episodeNumber?: number,
+): Promise<string> {
+  const llm = getLLMService();
+  const isRobot = segmentType === 'robot';
+  const isWeekly = segmentType === 'weekly';
+
+  // Try to use saved summary, otherwise generate one
+  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeNumber);
+
+  const descPrompt = isRobot ? buildRobotDescriptionPrompt(summary)
+    : isWeekly ? buildWeeklyDescriptionPrompt(summary)
+    : buildDescriptionPrompt(summary);
+
+  const descResult = await llm.generateJSON<{ description: string }>(
+    descPrompt,
+    'description_gen',
+    { episodeNumber, maxTokens: 1024, temperature: 0.7 }
+  );
+
+  if (descResult.success && descResult.data?.description) {
+    return descResult.data.description
+      .replace(/.*drive\.google\.com.*\n?/g, '')
+      .replace(/.*點擊這裡收聽.*\n?/g, '')
+      .trim();
+  }
+
+  return getFallbackDescription();
+}
+
+// ── Summary Helper ──
+
+async function getOrCreateSummary(
+  scriptContent: string,
+  segmentType: string,
+  episodeNumber?: number,
+): Promise<string> {
+  if (episodeNumber) {
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT script_summary FROM episodes WHERE episode_number = ?')
+        .get(episodeNumber) as { script_summary: string | null } | undefined;
+      if (row?.script_summary) return row.script_summary;
+    } catch { /* non-critical */ }
+  }
+
+  const summary = await summarizeScript(scriptContent, segmentType, episodeNumber);
+
+  if (episodeNumber) {
+    try {
+      const db = getDb();
+      db.prepare('UPDATE episodes SET script_summary = ? WHERE episode_number = ?')
+        .run(summary, episodeNumber);
+    } catch { /* non-critical */ }
+  }
+
+  return summary;
 }
 
 // ── Fallbacks ──
