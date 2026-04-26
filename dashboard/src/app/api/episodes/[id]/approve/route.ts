@@ -14,12 +14,12 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { selectedTitle, description } = body as { selectedTitle?: string; description?: string };
+    const { selectedTitle, description, youtubeDescription } = body as { selectedTitle?: string; description?: string; youtubeDescription?: string };
 
     const db = getDb();
 
     // Update title/description if provided
-    if (selectedTitle || description) {
+    if (selectedTitle || description || youtubeDescription) {
       const updates: string[] = [];
       const values: unknown[] = [];
 
@@ -30,6 +30,10 @@ export async function POST(
       if (description) {
         updates.push('description = ?');
         values.push(description);
+      }
+      if (youtubeDescription) {
+        updates.push('youtube_description = ?');
+        values.push(youtubeDescription);
       }
 
       updates.push("status = 'approved'");

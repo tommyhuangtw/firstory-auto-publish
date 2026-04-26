@@ -28,6 +28,19 @@ export async function POST(request: NextRequest) {
     // Create pipeline_run + episode records first, then fire-and-forget
     const db = getDb();
 
+    // Guard: prevent duplicate running pipeline for same episode + segment
+    const running = db.prepare(
+      `SELECT id FROM pipeline_runs
+       WHERE episode_number = ? AND segment_type = ? AND status = 'running'`
+    ).get(episodeNumber, segmentType) as { id: number } | undefined;
+
+    if (running) {
+      return NextResponse.json(
+        { error: `EP ${episodeNumber} (${segmentType}) 已有正在執行的 pipeline (run #${running.id})` },
+        { status: 409 }
+      );
+    }
+
     const result = db.prepare(
       `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
        VALUES (?, ?, 'running', 'fetchYoutube')`

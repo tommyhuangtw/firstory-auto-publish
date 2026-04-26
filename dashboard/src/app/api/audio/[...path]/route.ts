@@ -54,9 +54,14 @@ export async function GET(
     const stream = fs.createReadStream(filePath, { start, end });
     const readable = new ReadableStream({
       start(controller) {
-        stream.on('data', (chunk) => controller.enqueue(chunk));
-        stream.on('end', () => controller.close());
-        stream.on('error', (err) => controller.error(err));
+        let closed = false;
+        stream.on('data', (chunk) => { if (!closed) controller.enqueue(chunk); });
+        stream.on('end', () => { if (!closed) { closed = true; controller.close(); } });
+        stream.on('error', (err) => { if (!closed) { closed = true; controller.error(err); } });
+        stream.once('close', () => { closed = true; });
+      },
+      cancel() {
+        stream.destroy();
       },
     });
 
@@ -75,9 +80,14 @@ export async function GET(
   const stream = fs.createReadStream(filePath);
   const readable = new ReadableStream({
     start(controller) {
-      stream.on('data', (chunk) => controller.enqueue(chunk));
-      stream.on('end', () => controller.close());
-      stream.on('error', (err) => controller.error(err));
+      let closed = false;
+      stream.on('data', (chunk) => { if (!closed) controller.enqueue(chunk); });
+      stream.on('end', () => { if (!closed) { closed = true; controller.close(); } });
+      stream.on('error', (err) => { if (!closed) { closed = true; controller.error(err); } });
+      stream.once('close', () => { closed = true; });
+    },
+    cancel() {
+      stream.destroy();
     },
   });
 

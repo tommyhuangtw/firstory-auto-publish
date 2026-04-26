@@ -1,0 +1,57 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/db';
+import { createChildLogger } from '@/lib/logger';
+import fs from 'fs';
+
+const log = createChildLogger('api:episode-delete');
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const episodeNumber = parseInt(id);
+    if (isNaN(episodeNumber)) {
+      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    }
+
+    const db = getDb();
+    const episode = db.prepare(
+      'SELECT episode_number, status, audio_path, cover_path FROM episodes WHERE episode_number = ?'
+    ).get(episodeNumber) as { episode_number: number; status: string; audio_path: string | null; cover_path: string | null } | undefined;
+
+    if (!episode) {
+      return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
+    }
+
+    if (episode.status === 'published') {
+      return NextResponse.json(
+        { error: '已發布的集數不可刪除。請先從 podcast 平台下架。' },
+        { status: 403 }
+      );
+    }
+
+    // Cascade delete related records
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM episode_tool_mentions WHERE episode_number = ?').run(episodeNumber);
+      db.prepare('DELETE FROM llm_calls WHERE episode_number = ?').run(episodeNumber);
+      db.prepare('DELETE FROM pipeline_runs WHERE episode_number = ?').run(episodeNumber);
+      db.prepare('DELETE FROM episodes WHERE episode_number = ?').run(episodeNumber);
+    });
+    tx();
+
+    // Clean up local files if they exist
+    for (const filePath of [episode.audio_path, episode.cover_path]) {
+      if (filePath) {
+        try { fs.unlinkSync(filePath); } catch { /* file may not exist */ }
+      }
+    }
+
+    log.info({ episodeNumber, status: episode.status }, 'Episode deleted');
+
+    return NextResponse.json({ deleted: episodeNumber });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  }
+}
