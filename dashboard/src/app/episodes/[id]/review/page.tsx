@@ -5,9 +5,11 @@ import ReviewClient from './ReviewClient';
 import PipelineTimeline from './PipelineTimeline';
 import ScriptEditor from './ScriptEditor';
 import QualityBreakdown from './QualityBreakdown';
+import QualityHistory from './QualityHistory';
 import LlmCallsLog from './LlmCallsLog';
 import SourceVideos from './SourceVideos';
 import RetryControls from './RetryControls';
+import RepublishSection from './RepublishSection';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +23,7 @@ interface Episode {
   candidate_titles: string | null;
   selected_title: string | null;
   description: string | null;
+  youtube_description: string | null;
   tags: string | null;
   audio_path: string | null;
   cover_path: string | null;
@@ -30,6 +33,8 @@ interface Episode {
   script_word_count: number | null;
   soundon_url: string | null;
   youtube_url: string | null;
+  ig_caption: string | null;
+  ig_post_id: string | null;
   created_at: string;
   approved_at: string | null;
   published_at: string | null;
@@ -100,6 +105,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   // Get quality score from latest snapshot if available
   let qualityScoreData = null;
   let qualityIterations = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let qualityHistory: any[] = [];
   if (pipelineRun) {
     const qSnapshot = db.prepare(
       `SELECT output_data FROM pipeline_snapshots
@@ -112,6 +119,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         const data = JSON.parse(qSnapshot.output_data);
         if (data.qualityScore) qualityScoreData = data.qualityScore;
         if (data.qualityIterations != null) qualityIterations = data.qualityIterations;
+        if (Array.isArray(data.qualityHistory)) qualityHistory = data.qualityHistory;
       } catch { /* skip */ }
     }
   }
@@ -119,6 +127,22 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
+
+  // Recover ig_caption from pipeline snapshot if not in episodes table
+  let igCaption = episode.ig_caption || '';
+  if (!igCaption && pipelineRun) {
+    const notifySnapshot = db.prepare(
+      `SELECT output_data FROM pipeline_snapshots
+       WHERE pipeline_run_id = ? AND stage = 'notify'
+       ORDER BY id DESC LIMIT 1`
+    ).get(pipelineRun.id) as { output_data: string } | undefined;
+    if (notifySnapshot) {
+      try {
+        const data = JSON.parse(notifySnapshot.output_data);
+        if (data.igCaption) igCaption = data.igCaption;
+      } catch { /* skip */ }
+    }
+  }
 
   const canEdit = episode.status === 'pending_review' || episode.status === 'failed';
   const sc = statusConfig[episode.status] || { color: 'bg-zinc-800 text-zinc-400', label: episode.status };
@@ -204,6 +228,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           />
         )}
 
+        {/* Quality Iteration History */}
+        {qualityHistory.length > 1 && (
+          <QualityHistory history={qualityHistory} />
+        )}
+
         {/* Fallback: simple quality display if no snapshot data */}
         {!qualityScoreData && episode.quality_score != null && (
           <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
@@ -234,9 +263,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         <ReviewClient
           episodeNumber={episode.episode_number}
           status={episode.status}
+          segmentType={episode.segment_type}
           candidateTitles={candidateTitles}
           selectedTitle={episode.selected_title || ''}
           description={episode.description || ''}
+          igCaption={igCaption}
           tags={tags}
           soundonUrl={episode.soundon_url}
           youtubeUrl={episode.youtube_url}
@@ -266,23 +297,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           />
         )}
 
-        {/* Publish URLs */}
-        {(episode.soundon_url || episode.youtube_url) && (
-          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-            <h3 className="text-sm font-medium text-zinc-300 mb-2">Published</h3>
-            <div className="flex gap-4">
-              {episode.soundon_url && (
-                <a href={episode.soundon_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline">
-                  SoundOn
-                </a>
-              )}
-              {episode.youtube_url && (
-                <a href={episode.youtube_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline">
-                  YouTube
-                </a>
-              )}
-            </div>
-          </div>
+        {/* Publish Status + Republish */}
+        {episode.status === 'published' && (
+          <RepublishSection
+            episodeNumber={episode.episode_number}
+            soundonUrl={episode.soundon_url}
+            youtubeUrl={episode.youtube_url}
+            igPostId={episode.ig_post_id}
+          />
         )}
       </div>
     </div>

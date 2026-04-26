@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getDb } from '@/db';
 import NewEpisodeForm from './NewEpisodeForm';
 import ActivePipelines from './ActivePipelines';
+import DeleteButton from './DeleteButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,6 +151,9 @@ export default function EpisodesPage() {
                         <span className="tabular-nums">${ep.total_cost_usd.toFixed(3)}</span>
                       )}
                       <span className="tabular-nums">{ep.created_at?.split('T')[0] || ep.created_at}</span>
+                      {ep.status !== 'published' && (
+                        <DeleteButton episodeNumber={ep.episode_number} />
+                      )}
                       <svg className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                       </svg>
