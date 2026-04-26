@@ -17,6 +17,9 @@ import type { SegmentType } from '@/services/pipeline/state';
 
 const log = createChildLogger('scheduler-init');
 
+const PODCAST_ID = 'ca974d36-6fcc-46fc-a339-ba7ed8902c80';
+const RSS_URL = `https://feeds.soundon.fm/podcasts/${PODCAST_ID}.xml`;
+
 let initialized = false;
 
 export function initializeSchedulerJobs(): void {
@@ -47,12 +50,46 @@ export function initializeSchedulerJobs(): void {
 async function runPipeline(segmentType: SegmentType): Promise<void> {
   const db = getDb();
 
-  // Find next episode number
-  const latest = db.prepare(
-    'SELECT MAX(episode_number) as max_ep FROM episodes WHERE segment_type = ?'
-  ).get(segmentType) as { max_ep: number | null } | undefined;
+  // Guard: prevent duplicate runs on the same day for the same segment type
+  const today = new Date().toISOString().slice(0, 10);
+  const existing = db.prepare(
+    `SELECT id FROM pipeline_runs
+     WHERE segment_type = ? AND date(started_at) = ? AND status IN ('running', 'completed')`
+  ).get(segmentType, today) as { id: number } | undefined;
 
-  const nextEp = (latest?.max_ep || 0) + 1;
+  if (existing) {
+    log.warn({ segmentType, today, existingRunId: existing.id }, 'Pipeline already ran today — skipping');
+    return;
+  }
+
+  // Determine next episode number from RSS feed (all segment types share the same podcast feed)
+  let nextEp: number;
+  try {
+    const res = await fetch(RSS_URL);
+    if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
+    const xml = await res.text();
+    const epMatch = xml.match(/<item>[\s\S]*?<title><!\[CDATA\[.*?EP\s*(\d+)/i);
+    const latestRssEp = epMatch ? parseInt(epMatch[1]) : null;
+
+    if (latestRssEp) {
+      nextEp = latestRssEp + 1;
+      log.info({ segmentType, latestRssEp, nextEp }, 'Episode number from RSS feed');
+    } else {
+      // RSS parsed but no EP number found — fallback to DB max across all segment types
+      const latest = db.prepare(
+        'SELECT MAX(episode_number) as max_ep FROM episodes'
+      ).get() as { max_ep: number | null } | undefined;
+      nextEp = (latest?.max_ep || 0) + 1;
+      log.warn({ segmentType, nextEp }, 'No EP number in RSS — using DB fallback');
+    }
+  } catch (error) {
+    // RSS fetch failed entirely — fallback to DB
+    const latest = db.prepare(
+      'SELECT MAX(episode_number) as max_ep FROM episodes'
+    ).get() as { max_ep: number | null } | undefined;
+    nextEp = (latest?.max_ep || 0) + 1;
+    log.warn({ segmentType, nextEp, error: (error as Error).message }, 'RSS fetch failed — using DB fallback');
+  }
 
   log.info({ segmentType, episodeNumber: nextEp }, 'Scheduler triggering pipeline');
 
