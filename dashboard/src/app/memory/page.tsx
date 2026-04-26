@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { getAllTools, getToolCategories } from '@/services/memory/memoryService';
 
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 const categoryColors: Record<string, string> = {
   LLM: 'bg-purple-900/50 text-purple-300',
   DevTool: 'bg-blue-900/50 text-blue-300',
@@ -115,9 +120,9 @@ async function MemoryContent({
               </div>
               <div className="flex items-center gap-4 text-xs text-zinc-400">
                 <span>{tool.mention_count}x mentioned</span>
-                {tool.first_episode && <span>EP{tool.first_episode}</span>}
-                {tool.latest_episode && tool.latest_episode !== tool.first_episode && (
-                  <span>→ EP{tool.latest_episode}</span>
+                {tool.first_seen_date && <span>{formatShortDate(tool.first_seen_date)}</span>}
+                {tool.latest_seen_date && tool.latest_seen_date !== tool.first_seen_date && (
+                  <span>→ {formatShortDate(tool.latest_seen_date)}</span>
                 )}
               </div>
               {(tool.current_summary || tool.evolving_summary) && (

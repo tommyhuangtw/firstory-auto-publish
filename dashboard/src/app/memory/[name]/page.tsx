@@ -2,6 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getToolByName, getToolMentions } from '@/services/memory/memoryService';
 
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 export default async function ToolDetailPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const decodedName = decodeURIComponent(name);
@@ -48,12 +54,12 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
           <p className="text-xs text-zinc-400">Mentions</p>
         </div>
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
-          <p className="text-2xl font-bold">{tool.first_episode ?? '-'}</p>
-          <p className="text-xs text-zinc-400">First EP</p>
+          <p className="text-2xl font-bold">{formatDate(tool.first_seen_date)}</p>
+          <p className="text-xs text-zinc-400">First seen</p>
         </div>
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3 text-center">
-          <p className="text-2xl font-bold">{tool.latest_episode ?? '-'}</p>
-          <p className="text-xs text-zinc-400">Latest EP</p>
+          <p className="text-2xl font-bold">{formatDate(tool.latest_seen_date)}</p>
+          <p className="text-xs text-zinc-400">Latest</p>
         </div>
       </div>
 
@@ -76,10 +82,10 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
         </section>
       )}
 
-      {/* Episode Timeline */}
+      {/* Mention Timeline */}
       <section>
         <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-3">
-          Episode History ({mentions.length})
+          Mention History ({mentions.length})
         </h2>
         {mentions.length === 0 ? (
           <p className="text-zinc-400 text-sm">No mention records yet.</p>
@@ -91,12 +97,9 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ nam
                 className="bg-zinc-900 rounded-lg border border-zinc-800 p-3"
               >
                 <div className="flex items-center gap-3 mb-1">
-                  <Link
-                    href={`/episodes/${m.episode_number}/review`}
-                    className="font-mono text-sm text-blue-400 hover:underline"
-                  >
-                    EP#{m.episode_number}
-                  </Link>
+                  <span className="font-mono text-sm text-zinc-300">
+                    {formatDate(m.aired_date)}
+                  </span>
                   {m.mention_type && (
                     <MentionTypeBadge type={m.mention_type} />
                   )}

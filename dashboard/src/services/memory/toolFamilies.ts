@@ -33,6 +33,11 @@ const BLOCKLIST = new Set([
   'linkedin', 'x', 'threads',
   // Generic non-AI tools
   'chrome', 'firefox', 'vs code', 'terminal', 'docker', 'kubernetes',
+  // Self-references / sponsors / generic AI concepts
+  'ai懒人报', 'ai懶人報', 'ai lanrenbao', 'voai',
+  'ai workstation', 'ai workstations',
+  'ai video generation', 'ai video editing', 'ai video',
+  'design.md', 'agents.md',
 ]);
 
 /**

@@ -24,6 +24,7 @@ export interface ExtractedTool {
   aliases: string[];
   contextSnippet: string;
   mentionType: 'new' | 'update' | 'deep_dive' | 'brief';
+  isStandaloneProduct: boolean; // LLM decides: true = distinct product, false = version of parent
 }
 
 export interface ResolvedTool extends ExtractedTool {
@@ -56,6 +57,17 @@ For each entity, provide:
 - aliases: Array of alternative names used in the script (empty array if none)
 - contextSnippet: A 1-2 sentence summary of what the script says — focus on WHAT'S NEW (new release, update, partnership, funding, controversy)
 - mentionType: "deep_dive" if discussed in detail (>2 paragraphs), "update" if discussing a new version/feature/announcement, "new" if introducing for the first time, "brief" if just mentioned in passing
+- isStandaloneProduct: true if this is a distinct product with its own purpose/category (e.g., "Claude Code" is a CLI dev tool, separate from "Claude" the LLM chatbot). false if this is just a version/update of an existing product (e.g., "Claude 3.5 Sonnet" is a version of Claude, "GPT-4o" is a version of ChatGPT).
+
+PRODUCT vs VERSION — use these examples to guide your judgment:
+- "Claude Code" → isStandaloneProduct: true (CLI dev tool, different from Claude chatbot)
+- "Claude Design" → isStandaloneProduct: true (design tool, different product line)
+- "Claude Opus 4.6" → isStandaloneProduct: false (model version of Claude)
+- "ChatGPT Search" → isStandaloneProduct: true (search product, not a chatbot version)
+- "GPT-4o" → isStandaloneProduct: false (model version of ChatGPT)
+- "Codex CLI" → isStandaloneProduct: true (coding agent, separate from ChatGPT)
+- "GitHub Copilot" → isStandaloneProduct: true (not a version of GitHub)
+- "Gemini 2.0 Flash" → isStandaloneProduct: false (model version of Gemini)
 
 EXTRACT these types of entities:
 1. AI/ML software products and services (ChatGPT, Midjourney, Cursor, n8n)
@@ -76,7 +88,7 @@ DO NOT extract:
 Script:
 ${scriptChunk}
 
-Return JSON: { "tools": [ { "name": "...", "category": "...", "aliases": [], "contextSnippet": "...", "mentionType": "..." } ] }
+Return JSON: { "tools": [ { "name": "...", "category": "...", "aliases": [], "contextSnippet": "...", "mentionType": "...", "isStandaloneProduct": true/false } ] }
 
 Maximum 12 entities. Focus on entities with actual news or developments discussed, not just name-dropped.`;
 
@@ -126,10 +138,21 @@ function postProcess(tools: ExtractedTool[], episodeNumber: number): ResolvedToo
       continue;
     }
 
-    // Step 2b: Family resolution (regex)
+    // Step 2b: Family resolution — respect LLM's standalone product judgment
     const family = resolveCanonicalName(tool.name);
-    const canonicalName = family?.familyName || tool.name;
-    const versionDetail = family?.versionDetail || '';
+
+    let canonicalName: string;
+    let versionDetail: string;
+
+    if (tool.isStandaloneProduct) {
+      // LLM says this is a distinct product (e.g., "Claude Code") → keep its own name
+      canonicalName = tool.name;
+      versionDetail = '';
+    } else {
+      // Version/update (e.g., "Claude Opus 4.6") → merge into family
+      canonicalName = family?.familyName || tool.name;
+      versionDetail = family?.versionDetail || '';
+    }
 
     // Step 2c: Deduplicate by canonical name (keep highest mention type)
     if (seen.has(canonicalName.toLowerCase())) {
@@ -160,14 +183,14 @@ function postProcess(tools: ExtractedTool[], episodeNumber: number): ResolvedToo
  * Compute significance score using four signals (IDF-inspired).
  *
  * Signal 1: Mention depth (40%) — deep_dive > update > new > brief
- * Signal 2: Recency decay (30%) — tools absent for many episodes get a boost
+ * Signal 2: Recency decay (30%) — tools absent for many days get a boost
  * Signal 3: Inverse frequency (20%) — tools in every episode have low recall value
  * Signal 4: Version change (10%) — version updates are noteworthy
  */
 function computeSignificance(
   tool: ExtractedTool,
   canonicalName: string,
-  currentEpisode: number
+  _currentEpisode: number
 ): number {
   let score = 0;
 
@@ -184,25 +207,27 @@ function computeSignificance(
   try {
     const db = getDb();
     const record = db.prepare(
-      'SELECT latest_episode, mention_count, latest_version_detail FROM tools WHERE canonical_name = ?'
-    ).get(canonicalName) as { latest_episode: number; mention_count: number; latest_version_detail: string } | undefined;
+      'SELECT latest_seen_date, mention_count, latest_version_detail FROM tools WHERE canonical_name = ?'
+    ).get(canonicalName) as { latest_seen_date: string | null; mention_count: number; latest_version_detail: string } | undefined;
 
     if (record) {
-      // Signal 2: Recency decay
-      const episodeGap = currentEpisode - (record.latest_episode || 0);
-      if (episodeGap > 50) score += 0.3 * 0.3;
-      else if (episodeGap > 20) score += 0.2 * 0.3;
-      else if (episodeGap > 5) score += 0.1 * 0.3;
-      // < 5 episodes ago: no recency boost
+      // Signal 2: Recency decay (date-based)
+      const daysSinceLast = record.latest_seen_date
+        ? Math.floor((Date.now() - new Date(record.latest_seen_date).getTime()) / 86400000)
+        : 999;
+      if (daysSinceLast > 60) score += 0.3 * 0.3;
+      else if (daysSinceLast > 30) score += 0.2 * 0.3;
+      else if (daysSinceLast > 7) score += 0.1 * 0.3;
+      // < 7 days ago: no recency boost
 
       // Signal 3: Inverse frequency (IDF-inspired)
-      const totalEpisodes = Math.max(currentEpisode, 1);
-      const idf = Math.log(totalEpisodes / (record.mention_count + 1));
+      // Use total pipeline runs as corpus size proxy
+      const totalRuns = (db.prepare('SELECT COUNT(*) as cnt FROM pipeline_runs').get() as { cnt: number })?.cnt || 1;
+      const idf = Math.log(Math.max(totalRuns, 10) / (record.mention_count + 1));
       score += Math.min(idf / 5, 0.3) * 0.2;
 
       // Signal 4: Version change
       if (record.latest_version_detail && tool.name !== canonicalName) {
-        // Name includes version info that differs from stored version
         score += 0.1;
       }
     } else {

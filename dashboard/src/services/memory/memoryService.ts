@@ -34,6 +34,8 @@ export interface ToolRecord {
   summary_version: number;
   latest_version_detail: string | null;
   family_id: number | null;
+  first_seen_date: string | null;
+  latest_seen_date: string | null;
 }
 
 export interface ToolMentionRecord {
@@ -44,6 +46,7 @@ export interface ToolMentionRecord {
   context_snippet: string | null;
   significance: number;
   version_detail: string | null;
+  aired_date: string | null;
   created_at: string;
 }
 
@@ -53,12 +56,13 @@ export interface ToolMentionRecord {
  * Save resolved tools to DB with family-aware canonical names.
  * Triggers summary compaction for tools that have been seen many times.
  */
-export async function upsertTools(episodeNumber: number, tools: ResolvedTool[]): Promise<void> {
+export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], airedDate?: string): Promise<void> {
   const db = getDb();
+  const dateStr = airedDate || new Date().toISOString().slice(0, 10);
 
   const upsertTool = db.prepare(`
-    INSERT INTO tools (canonical_name, aliases, category, first_episode, latest_episode, mention_count, current_summary, latest_version_detail, family_id)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    INSERT INTO tools (canonical_name, aliases, category, first_episode, latest_episode, mention_count, current_summary, latest_version_detail, family_id, first_seen_date, latest_seen_date)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     ON CONFLICT(canonical_name) DO UPDATE SET
       aliases = CASE
         WHEN excluded.aliases IS NOT NULL AND excluded.aliases != '[]'
@@ -68,12 +72,13 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[]):
       category = COALESCE(excluded.category, tools.category),
       latest_episode = excluded.latest_episode,
       mention_count = tools.mention_count + 1,
-      latest_version_detail = COALESCE(excluded.latest_version_detail, tools.latest_version_detail)
+      latest_version_detail = COALESCE(excluded.latest_version_detail, tools.latest_version_detail),
+      latest_seen_date = excluded.latest_seen_date
   `);
 
   const insertMention = db.prepare(`
-    INSERT INTO episode_tool_mentions (episode_number, tool_id, mention_type, context_snippet, significance, version_detail)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO episode_tool_mentions (episode_number, tool_id, mention_type, context_snippet, significance, version_detail, aired_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getToolRow = db.prepare('SELECT id, mention_count, current_summary FROM tools WHERE canonical_name = ?');
@@ -99,7 +104,9 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[]):
         episodeNumber,
         tool.contextSnippet,
         tool.versionDetail || null,
-        familyId
+        familyId,
+        dateStr,
+        dateStr
       );
 
       // Insert mention record
@@ -111,7 +118,8 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[]):
           tool.mentionType,
           tool.contextSnippet,
           tool.significanceScore,
-          tool.versionDetail || null
+          tool.versionDetail || null,
+          dateStr
         );
       }
 
@@ -210,12 +218,12 @@ export function buildMemoryContext(
 
   // Get all tracked tools from DB (lightweight — typically <200 rows)
   const allTools = db.prepare(
-    'SELECT canonical_name, category, mention_count, latest_episode, current_summary, latest_version_detail FROM tools ORDER BY mention_count DESC'
+    'SELECT canonical_name, category, mention_count, latest_seen_date, current_summary, latest_version_detail FROM tools ORDER BY mention_count DESC'
   ).all() as Array<{
     canonical_name: string;
     category: string | null;
     mention_count: number;
-    latest_episode: number | null;
+    latest_seen_date: string | null;
     current_summary: string | null;
     latest_version_detail: string | null;
   }>;
@@ -235,9 +243,13 @@ export function buildMemoryContext(
 
   log.info({ matched: matchedTools.length }, 'Memory context: tools matched from video text');
 
+  const today = new Date();
+
   // Build brief for script generation
   const toolBriefs = matchedTools.map((t) => {
-    const episodeGap = episodeNumber - (t.latest_episode || 0);
+    const daysSinceLast = t.latest_seen_date
+      ? Math.floor((today.getTime() - new Date(t.latest_seen_date).getTime()) / 86400000)
+      : 999;
     const familiarity = t.mention_count >= 10 ? 'very well-known' :
       t.mention_count >= 5 ? 'well-known' :
       t.mention_count >= 2 ? 'mentioned before' : 'new to audience';
@@ -249,8 +261,8 @@ export function buildMemoryContext(
     if (t.current_summary) {
       brief += ` — previous coverage: ${t.current_summary.slice(0, 150)}`;
     }
-    if (episodeGap > 20) {
-      brief += ` [not mentioned for ${episodeGap} episodes — worth a brief refresher]`;
+    if (daysSinceLast > 30) {
+      brief += ` [not mentioned for ${daysSinceLast} days — worth a brief refresher]`;
     }
     return brief;
   });
@@ -262,7 +274,7 @@ ${toolBriefs.join('\n')}
 INSTRUCTIONS based on this context:
 - For very well-known tools (5+ mentions): Do NOT explain what they are. Jump straight to what's NEW. Compare with previous versions or capabilities when relevant.
 - For tools mentioned before: Brief context is fine, but don't explain from scratch.
-- For tools not mentioned for 20+ episodes: A quick refresher is appropriate since the audience may have forgotten.
+- For tools not mentioned for 30+ days: A quick refresher is appropriate since the audience may have forgotten.
 - When a tool has a new version (e.g., GPT-4 Turbo → GPT-4o): Highlight what changed compared to the previous version.
 - NEVER say "we discussed this in episode X" or reference previous episodes by number.`;
 
@@ -285,7 +297,7 @@ SCORING RULE: Deduct points if the script explains these well-known tools as if 
 export function getAllTools(options?: {
   search?: string;
   category?: string;
-  sortBy?: 'mention_count' | 'latest_episode' | 'canonical_name';
+  sortBy?: 'mention_count' | 'latest_seen_date' | 'canonical_name';
   limit?: number;
 }): ToolRecord[] {
   const db = getDb();
@@ -321,7 +333,7 @@ export function getToolMentions(toolId: number): (ToolMentionRecord & { segment_
     FROM episode_tool_mentions m
     LEFT JOIN episodes e ON e.episode_number = m.episode_number
     WHERE m.tool_id = ?
-    ORDER BY m.episode_number DESC
+    ORDER BY m.aired_date DESC, m.id DESC
   `).all(toolId) as (ToolMentionRecord & { segment_type?: string })[];
 }
 
