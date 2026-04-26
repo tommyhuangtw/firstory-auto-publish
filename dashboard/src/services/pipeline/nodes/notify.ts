@@ -7,6 +7,7 @@
 
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
+import { getDb } from '@/db';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:notify');
@@ -23,6 +24,10 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
     if (state.coverUrl && process.env.INSTAGRAM_ACCESS_TOKEN) {
       const caption = await generateIgCaption(state);
       results.igCaption = caption;
+
+      // Persist caption to DB
+      getDb().prepare('UPDATE episodes SET ig_caption = ? WHERE episode_number = ?')
+        .run(caption, state.episodeNumber);
 
       const { postToInstagram } = await import('@/services/instagram');
       const postId = await postToInstagram(state.coverUrl, caption);
@@ -72,18 +77,60 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
 
 // n8n exact prompt for IG貼文文案撰寫Agent
 async function generateIgCaption(state: PipelineState): Promise<string> {
-  const llm = getLLMService();
-  const isRobot = state.segmentType === 'robot';
-  const scenario = state.igScenario || '湯懶懶躺在沙發上用 AI 自動處理所有工作';
+  const videos = (state.selectedVideos || []).map(v => ({ title: v.title, viewCount: v.viewCount }));
+  return regenerateIgCaption(
+    state.segmentType,
+    state.igScenario,
+    videos,
+    state.episodeNumber,
+    state.scriptSummary,
+  );
+}
 
-  // Build podcast summary from selected videos
-  const summary = (state.selectedVideos || [])
-    .map((v) => `${v.title} (${v.viewCount.toLocaleString()} views)`)
-    .join('\n');
+/** Reusable IG caption generation — can be called from API for regeneration */
+export async function regenerateIgCaption(
+  segmentType: string,
+  igScenario: string,
+  selectedVideos: { title: string; viewCount: number }[],
+  episodeNumber: number,
+  scriptSummary?: string,
+): Promise<string> {
+  const llm = getLLMService();
+  const isRobot = segmentType === 'robot';
+  const scenario = igScenario || '湯懶懶躺在沙發上用 AI 自動處理所有工作';
+
+  // Prefer script summary (accurate Chinese content) over video titles (English, prone to hallucination)
+  let podcastSummary: string;
+  if (scriptSummary) {
+    podcastSummary = scriptSummary;
+  } else if (episodeNumber) {
+    // Try to load from DB
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT script_summary FROM episodes WHERE episode_number = ?')
+        .get(episodeNumber) as { script_summary: string | null } | undefined;
+      if (row?.script_summary) {
+        podcastSummary = row.script_summary;
+      } else {
+        // Fallback to video titles
+        podcastSummary = (selectedVideos || [])
+          .map((v) => `${v.title} (${v.viewCount.toLocaleString()} views)`)
+          .join('\n');
+      }
+    } catch {
+      podcastSummary = (selectedVideos || [])
+        .map((v) => `${v.title} (${v.viewCount.toLocaleString()} views)`)
+        .join('\n');
+    }
+  } else {
+    podcastSummary = (selectedVideos || [])
+      .map((v) => `${v.title} (${v.viewCount.toLocaleString()} views)`)
+      .join('\n');
+  }
 
   const userPrompt = `湯懶懶情境： ${scenario}
 Podcast總結（IG貼文要用中文輸出 可保留重點公司或是工具名稱為英文）:
-${summary}`;
+${podcastSummary}`;
 
   const systemPrompt = isRobot
     ? `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
@@ -166,7 +213,7 @@ ${summary}`;
 
   const result = await llm.call({
     stage: 'ig_caption',
-    episodeNumber: state.episodeNumber,
+    episodeNumber,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -183,7 +230,7 @@ ${summary}`;
   }
 
   // Fallback simple caption
-  return `AI懶人報 EP#${state.episodeNumber}\n\n${state.selectedTitle || ''}\n\n#AI懶人報 #Podcast #AI工具`;
+  return `AI懶人報 EP#${episodeNumber}\n\n#AI懶人報 #Podcast #AI工具`;
 }
 
 // n8n exact prompts for Email週報內容產生Agent + HTML郵件格式化Agent
@@ -193,8 +240,8 @@ async function generateEmailHtml(state: PipelineState): Promise<string> {
   const isRobot = state.segmentType === 'robot';
   const isWeekly = state.segmentType === 'weekly';
 
-  // Build video summary for email
-  const summary = (state.selectedVideos || [])
+  // Build video metadata for email (YouTube links, stats)
+  const videoMetadata = (state.selectedVideos || [])
     .map((v) => JSON.stringify({
       title: v.title,
       channelName: v.channelName,
@@ -205,6 +252,9 @@ async function generateEmailHtml(state: PipelineState): Promise<string> {
       videoId: v.videoId,
     }))
     .join('\n');
+
+  // Use script summary for accurate Chinese content descriptions
+  const scriptSummary = state.scriptSummary || '';
 
   const podcastUrl = state.driveAudioUrl || '';
 
@@ -283,7 +333,12 @@ async function generateEmailHtml(state: PipelineState): Promise<string> {
 
   const contentUserPrompt = `今天是 ${today}
 這是本集的中文 Podcast 連結：${podcastUrl}
-以下是本週影片精選摘要：${summary}`;
+
+以下是本集 Podcast 內容摘要（請根據此摘要撰寫中文描述，確保工具名稱和版本號正確）：
+${scriptSummary}
+
+以下是影片 metadata（請用來填寫觀看數、按讚數、留言數、YouTube 連結等）：
+${videoMetadata}`;
 
   const contentResult = await llm.call({
     stage: 'email_content',
