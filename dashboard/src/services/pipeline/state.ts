@@ -75,6 +75,7 @@ export interface PipelineState {
   // ── Stage 2: Classify ──
   classifiedVideos: VideoSource[];
   selectedVideos: VideoSource[];
+  excludedVideoIds: string[];
 
   // ── Stage 3: English Script ──
   scriptEn: string;
@@ -156,6 +157,7 @@ export function createInitialState(
     videos: [],
     classifiedVideos: [],
     selectedVideos: [],
+    excludedVideoIds: [],
     scriptEn: '',
     scriptWordCount: 0,
     extractedTools: [],

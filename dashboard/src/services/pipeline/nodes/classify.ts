@@ -161,7 +161,17 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   // Robot: min 270s (n8n), daily/weekly: min 300s
   const minDuration = isRobot ? 270 : MIN_DURATION_SEC;
 
+  // Excluded videos (user-removed from review page)
+  const excludedIds = new Set(state.excludedVideoIds || []);
+  if (excludedIds.size > 0) {
+    log.info({ excludedVideoIds: [...excludedIds] }, 'Excluding user-removed videos');
+  }
+
   const filtered = relevantVideos.filter((v) => {
+    if (excludedIds.has(v.videoId)) {
+      log.debug({ videoId: v.videoId, title: v.title.slice(0, 40) }, 'Filtered: excluded by user');
+      return false;
+    }
     if (usedIds.size > 0 && usedIds.has(v.videoId)) {
       log.debug({ videoId: v.videoId, title: v.title.slice(0, 40) }, 'Filtered: already used');
       return false;

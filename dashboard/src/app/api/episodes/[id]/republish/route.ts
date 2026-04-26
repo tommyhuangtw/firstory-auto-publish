@@ -45,6 +45,7 @@ export async function POST(
       videos: [],
       classifiedVideos: [],
       selectedVideos: [],
+      excludedVideoIds: [],
       scriptEn: (episode.script_en as string) || '',
       scriptWordCount: (episode.script_word_count as number) || 0,
       extractedTools: [],

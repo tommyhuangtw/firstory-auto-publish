@@ -287,7 +287,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         <LlmCallsLog calls={llmCalls} />
 
         {/* Source Videos */}
-        <SourceVideos videos={sourceVideos} />
+        <SourceVideos
+          videos={sourceVideos}
+          canEdit={canEdit}
+          pipelineRunId={pipelineRun?.id}
+        />
 
         {/* Retry Controls */}
         {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review') && (
