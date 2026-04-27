@@ -11,6 +11,7 @@ import SourceVideos from './SourceVideos';
 import RetryControls from './RetryControls';
 import RepublishSection from './RepublishSection';
 import ShortsSection from './ShortsSection';
+import RegenerateCoverButton from './RegenerateCoverButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,7 @@ interface Episode {
   youtube_url: string | null;
   ig_caption: string | null;
   ig_post_id: string | null;
+  source_links: string | null;
   created_at: string;
   approved_at: string | null;
   published_at: string | null;
@@ -65,12 +67,14 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
+  sysdesign: '系統架構懶懶學',
 };
 
 const segmentColors: Record<string, string> = {
   daily: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
   weekly: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
   robot: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+  sysdesign: 'bg-teal-500/15 text-teal-400 border-teal-500/20',
 };
 
 const statusConfig: Record<string, { color: string; label: string }> = {
@@ -141,6 +145,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
+  const sourceLinks: { title: string; url: string }[] = episode.source_links ? JSON.parse(episode.source_links) : [];
 
   // Recover ig_caption from pipeline snapshot if not in episodes table
   let igCaption = episode.ig_caption || '';
@@ -171,7 +176,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     headlines_json: string | null; selected_headline_index: number | null;
   } | undefined;
 
-  const canEdit = episode.status === 'pending_review' || episode.status === 'failed';
+  const canEdit = episode.status === 'pending_review' || episode.status === 'failed' || episode.status === 'publishing';
   const sc = statusConfig[episode.status] || { color: 'bg-zinc-800 text-zinc-400', label: episode.status };
   const seg = segmentColors[episode.segment_type] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
   const headerLabel = formatEpisodeHeader(episode);
@@ -225,13 +230,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         {/* Cover + Audio row */}
         <div className="flex gap-4">
           {episode.cover_path && (
-            <div className="shrink-0">
-              <img
-                src={`/api/audio${episode.cover_path}`}
-                alt={`${headerLabel} cover`}
-                className="rounded-xl border border-brand/30 w-40 h-40 object-cover"
-              />
-            </div>
+            <RegenerateCoverButton
+              episodeId={episode.id}
+              coverPath={episode.cover_path}
+            />
           )}
           {episode.audio_path && (
             <div className="flex-1 flex flex-col justify-end">
@@ -322,8 +324,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           pipelineRunId={pipelineRun?.id}
         />
 
+        {/* Source Links (sysdesign) */}
+        {sourceLinks.length > 0 && (
+          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+            <h3 className="text-sm font-medium text-zinc-300 mb-3">參考資料連結</h3>
+            <div className="space-y-2">
+              {sourceLinks.map((link, i) => (
+                <a
+                  key={i}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-teal-400 hover:text-teal-300 transition-colors"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-1.135a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.5 8.25" />
+                  </svg>
+                  {link.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Retry Controls */}
-        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review') && (
+        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing') && (
           <RetryControls
             pipelineRunId={pipelineRun.id}
             failedStage={pipelineRun.status === 'failed' ? pipelineRun.current_stage : null}
@@ -331,9 +356,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Publish Status + Republish */}
-        {episode.status === 'published' && (
+        {(episode.status === 'published' || episode.status === 'publishing') && (
           <RepublishSection
             episodeId={episode.id}
+            episodeStatus={episode.status}
             soundonUrl={episode.soundon_url}
             youtubeUrl={episode.youtube_url}
             igPostId={episode.ig_post_id}
@@ -341,7 +367,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Shorts Generation */}
-        {(episode.status === 'published' || episode.status === 'pending_review') && (
+        {(episode.status === 'published' || episode.status === 'pending_review' || episode.status === 'publishing') && (
           <ShortsSection
             episodeId={episode.id}
             initialShorts={shortsRow ?? null}
