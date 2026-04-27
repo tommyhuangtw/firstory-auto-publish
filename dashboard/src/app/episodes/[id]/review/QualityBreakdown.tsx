@@ -10,6 +10,7 @@ interface QualityScore {
     tw_localization: number;
     clarity: number;
     word_count: number;
+    structure_flow?: number;
   };
   comments: {
     chat_feel: string;
@@ -17,6 +18,7 @@ interface QualityScore {
     tw_localization: string;
     clarity: string;
     word_count: string;
+    structure_flow?: string;
     summary: string;
   };
 }
@@ -28,16 +30,30 @@ interface Props {
   wordCount: number | null;
 }
 
-const DIMENSIONS = [
+type DimensionKey = 'chat_feel' | 'eng_mix' | 'tw_localization' | 'clarity' | 'word_count' | 'structure_flow';
+
+const BASE_DIMENSIONS: { key: DimensionKey; label: string; max: number; color: string }[] = [
   { key: 'chat_feel', label: '聊天感', max: 25, color: 'bg-violet-500' },
   { key: 'eng_mix', label: '中英夾雜', max: 20, color: 'bg-blue-500' },
   { key: 'tw_localization', label: '台灣用語', max: 20, color: 'bg-cyan-500' },
   { key: 'clarity', label: '具體性', max: 20, color: 'bg-emerald-500' },
   { key: 'word_count', label: '字數', max: 15, color: 'bg-amber-500' },
-] as const;
+];
+
+const SYSDESIGN_DIMENSIONS: { key: DimensionKey; label: string; max: number; color: string }[] = [
+  { key: 'chat_feel', label: '聊天感', max: 20, color: 'bg-violet-500' },
+  { key: 'eng_mix', label: '中英夾雜', max: 15, color: 'bg-blue-500' },
+  { key: 'tw_localization', label: '台灣用語', max: 15, color: 'bg-cyan-500' },
+  { key: 'clarity', label: '��體性', max: 15, color: 'bg-emerald-500' },
+  { key: 'word_count', label: '字數', max: 15, color: 'bg-amber-500' },
+  { key: 'structure_flow', label: '結構流暢', max: 20, color: 'bg-teal-500' },
+];
 
 export default function QualityBreakdown({ qualityScore, qualityIterations, totalCost, wordCount }: Props) {
   const [showComments, setShowComments] = useState(false);
+
+  const hasSysdesign = qualityScore.dimensions.structure_flow != null;
+  const dimensions = hasSysdesign ? SYSDESIGN_DIMENSIONS : BASE_DIMENSIONS;
 
   const overallColor =
     qualityScore.overall >= 88 ? 'text-emerald-400' :
@@ -71,8 +87,8 @@ export default function QualityBreakdown({ qualityScore, qualityIterations, tota
 
       {/* Dimension bars */}
       <div className="space-y-3">
-        {DIMENSIONS.map(({ key, label, max, color }) => {
-          const value = qualityScore.dimensions[key];
+        {dimensions.map(({ key, label, max, color }) => {
+          const value = qualityScore.dimensions[key] ?? 0;
           const pct = (value / max) * 100;
           return (
             <div key={key}>
@@ -96,12 +112,12 @@ export default function QualityBreakdown({ qualityScore, qualityIterations, tota
         onClick={() => setShowComments(!showComments)}
         className="mt-4 text-xs text-zinc-400 hover:text-zinc-300 transition-colors cursor-pointer"
       >
-        {showComments ? '隱藏評語' : '顯示評語'}
+        {showComments ? '���藏評語' : '顯示評���'}
       </button>
 
       {showComments && (
         <div className="mt-3 space-y-2">
-          {DIMENSIONS.map(({ key, label }) => {
+          {dimensions.map(({ key, label }) => {
             const comment = qualityScore.comments[key];
             if (!comment) return null;
             return (

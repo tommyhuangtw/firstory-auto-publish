@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS ad_presets (
 
 CREATE TABLE IF NOT EXISTS shorts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  episode_number INTEGER NOT NULL,
+  episode_number INTEGER,             -- nullable; episode_id is the primary reference
   status TEXT NOT NULL DEFAULT 'pending',
   -- Status: pending → beats_ready → headline_ready → generating → completed → published | failed
 

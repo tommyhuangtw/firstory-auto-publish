@@ -13,7 +13,7 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { reason } = body as { reason?: string };
+    const { reason, resetToReview } = body as { reason?: string; resetToReview?: boolean };
 
     const db = getDb();
     const episode = db.prepare('SELECT status FROM episodes WHERE id = ?').get(episodeId) as { status: string } | undefined;
@@ -22,18 +22,23 @@ export async function POST(
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
     }
 
-    if (episode.status !== 'pending_review') {
+    const allowedStatuses = ['pending_review', 'publishing', 'approved'];
+    if (!allowedStatuses.includes(episode.status)) {
       return NextResponse.json(
         { error: `Cannot reject episode with status: ${episode.status}` },
         { status: 400 }
       );
     }
 
-    db.prepare(
-      `UPDATE episodes SET status = 'rejected', description = CASE WHEN ? IS NOT NULL AND ? != '' THEN description || char(10) || '[Rejected: ' || ? || ']' ELSE description END WHERE id = ?`
-    ).run(reason, reason, reason, episodeId);
+    // resetToReview: go back to pending_review (e.g. stop a stuck publish)
+    // otherwise: reject the episode
+    const newStatus = resetToReview ? 'pending_review' : 'rejected';
 
-    return NextResponse.json({ message: 'Episode rejected', episodeId });
+    db.prepare(
+      `UPDATE episodes SET status = ?, description = CASE WHEN ? IS NOT NULL AND ? != '' THEN description || char(10) || '[' || ? || ': ' || ? || ']' ELSE description END WHERE id = ?`
+    ).run(newStatus, reason, reason, resetToReview ? 'Reset' : 'Rejected', reason, episodeId);
+
+    return NextResponse.json({ message: resetToReview ? 'Episode reset to review' : 'Episode rejected', episodeId });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }

@@ -30,7 +30,7 @@ export async function POST(
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
     }
 
-    if (episode.status !== 'published' && episode.status !== 'approved') {
+    if (episode.status !== 'published' && episode.status !== 'approved' && episode.status !== 'publishing') {
       return NextResponse.json(
         { error: `只有已發布或已核准的集數才能重新發布 (目前狀態: ${episode.status})` },
         { status: 403 }
@@ -87,6 +87,8 @@ export async function POST(
       youtubeUrl: (episode.youtube_url as string) || '',
       totalCostUsd: (episode.total_cost_usd as number) || 0,
       error: '',
+      manualVideoUrls: [],
+      sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     };
 
     const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; errors: string[] } = { errors: [] };

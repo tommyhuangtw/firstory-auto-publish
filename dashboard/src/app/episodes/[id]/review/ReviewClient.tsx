@@ -46,7 +46,7 @@ export default function ReviewClient({
   const [savedIgCaption, setSavedIgCaption] = useState(initialIgCaption);
 
   const canReview = status === 'pending_review';
-  const canEdit = status === 'pending_review' || status === 'published' || status === 'approved';
+  const canEdit = status === 'pending_review' || status === 'published' || status === 'approved' || status === 'publishing';
 
   const isDirty = useMemo(() =>
     title !== savedTitle ||

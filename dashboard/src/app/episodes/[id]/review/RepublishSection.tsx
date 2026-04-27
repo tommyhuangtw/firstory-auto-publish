@@ -5,16 +5,40 @@ import { useRouter } from 'next/navigation';
 
 interface Props {
   episodeId: number;
+  episodeStatus: string;
   soundonUrl: string | null;
   youtubeUrl: string | null;
   igPostId: string | null;
 }
 
-export default function RepublishSection({ episodeId, soundonUrl, youtubeUrl, igPostId }: Props) {
+export default function RepublishSection({ episodeId, episodeStatus, soundonUrl, youtubeUrl, igPostId }: Props) {
   const router = useRouter();
   const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  async function handleResetToReview() {
+    if (!confirm('確定要停止發布，退回待審核狀態？')) return;
+    setResetting(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch(`/api/episodes/${episodeId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: '從發布中退回待審核', resetToReview: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSuccess('已退回待審核');
+      router.refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function handleRepublish(platform: 'soundon' | 'youtube' | 'instagram') {
     const labels: Record<string, string> = { soundon: 'SoundOn', youtube: 'YouTube', instagram: 'Instagram' };
@@ -107,8 +131,8 @@ export default function RepublishSection({ episodeId, soundonUrl, youtubeUrl, ig
           </button>
         </div>
 
-        {/* Republish All */}
-        <div className="pt-2 border-t border-zinc-800">
+        {/* Republish All + Reset */}
+        <div className="pt-2 border-t border-zinc-800 space-y-2">
           <button
             onClick={async () => {
               if (!confirm('確定要重新發布到 SoundOn + YouTube + Instagram？')) return;
@@ -136,11 +160,22 @@ export default function RepublishSection({ episodeId, soundonUrl, youtubeUrl, ig
                 setLoadingPlatform(null);
               }
             }}
-            disabled={isLoading}
+            disabled={isLoading || resetting}
             className="w-full text-xs py-2 rounded-lg bg-blue-600/15 text-blue-400 hover:bg-blue-600/25 disabled:opacity-40 transition-colors cursor-pointer font-medium"
           >
             {loadingPlatform === 'all' ? '發布中...' : '全部重新發布'}
           </button>
+
+          {/* Reset to pending_review — only for publishing/stuck episodes */}
+          {episodeStatus !== 'published' && (
+            <button
+              onClick={handleResetToReview}
+              disabled={isLoading || resetting}
+              className="w-full text-xs py-2 rounded-lg bg-red-600/10 text-red-400 hover:bg-red-600/20 disabled:opacity-40 transition-colors cursor-pointer font-medium"
+            >
+              {resetting ? '退回中...' : '停止發布，退回待審核'}
+            </button>
+          )}
         </div>
       </div>
 
