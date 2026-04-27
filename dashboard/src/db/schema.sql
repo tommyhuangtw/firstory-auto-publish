@@ -192,6 +192,35 @@ CREATE TABLE IF NOT EXISTS ad_presets (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS shorts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  episode_number INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  -- Status: pending → beats_ready → headline_ready → generating → completed → published | failed
+
+  -- User selections
+  avatar_filename TEXT,             -- sloth_studio_V10-cozy.png
+  beats_json TEXT,                  -- JSON: [{text, reason}]
+  selected_beat_index INTEGER,
+  headlines_json TEXT,              -- JSON: ["headline1", ...]
+  selected_headline_index INTEGER,
+
+  -- Output
+  video_path TEXT,                  -- remotion/out/short_xxx.mp4
+  cover_path TEXT,                  -- remotion/out/cover_xxx.png
+  manifest_json TEXT,
+
+  -- IG
+  ig_caption TEXT,
+  ig_post_id TEXT,
+
+  -- Progress
+  current_stage TEXT,
+  error_log TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -204,3 +233,4 @@ CREATE INDEX IF NOT EXISTS idx_analytics_episode ON platform_analytics(episode_n
 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON pipeline_snapshots(pipeline_run_id);
 CREATE INDEX IF NOT EXISTS idx_robot_youtube_sources_video ON robot_youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_weekly_youtube_sources_video ON weekly_youtube_sources(video_id);
+CREATE INDEX IF NOT EXISTS idx_shorts_episode ON shorts(episode_number);

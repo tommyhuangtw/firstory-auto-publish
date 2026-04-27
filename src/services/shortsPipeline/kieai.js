@@ -189,6 +189,7 @@ async function generateSlothVideo({ outPath, avatarImagePath, prompt }) {
         prompt,
         image_urls: [publicUrl],
         duration: SLOTH_VIDEO_DURATION,
+        aspect_ratio: '9:16',
         sound: false,
       },
     }),

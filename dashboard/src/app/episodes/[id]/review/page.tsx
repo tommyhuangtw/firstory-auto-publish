@@ -10,6 +10,7 @@ import LlmCallsLog from './LlmCallsLog';
 import SourceVideos from './SourceVideos';
 import RetryControls from './RetryControls';
 import RepublishSection from './RepublishSection';
+import ShortsSection from './ShortsSection';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,6 +144,19 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       } catch { /* skip */ }
     }
   }
+
+  // Get latest shorts for this episode
+  const shortsRow = db.prepare(
+    `SELECT id, status, current_stage, error_log, video_path, cover_path,
+            ig_caption, ig_post_id, beats_json, selected_beat_index,
+            headlines_json, selected_headline_index
+     FROM shorts WHERE episode_number = ? ORDER BY id DESC LIMIT 1`
+  ).get(episodeNumber) as {
+    id: number; status: string; current_stage: string | null; error_log: string | null;
+    video_path: string | null; cover_path: string | null; ig_caption: string | null;
+    ig_post_id: string | null; beats_json: string | null; selected_beat_index: number | null;
+    headlines_json: string | null; selected_headline_index: number | null;
+  } | undefined;
 
   const canEdit = episode.status === 'pending_review' || episode.status === 'failed';
   const sc = statusConfig[episode.status] || { color: 'bg-zinc-800 text-zinc-400', label: episode.status };
@@ -308,6 +322,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             soundonUrl={episode.soundon_url}
             youtubeUrl={episode.youtube_url}
             igPostId={episode.ig_post_id}
+          />
+        )}
+
+        {/* Shorts Generation */}
+        {(episode.status === 'published' || episode.status === 'pending_review') && (
+          <ShortsSection
+            episodeNumber={episode.episode_number}
+            initialShorts={shortsRow ?? null}
           />
         )}
       </div>

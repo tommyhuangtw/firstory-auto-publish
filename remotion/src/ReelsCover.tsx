@@ -28,21 +28,21 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
         }}
       />
 
-      {/* Bottom gradient overlay for text contrast */}
+      {/* Gradient overlay shifted below center for text contrast */}
       <AbsoluteFill
         style={{
           background:
-            'linear-gradient(transparent 30%, rgba(50, 30, 15, 0.7) 100%)',
+            'linear-gradient(transparent 35%, rgba(20, 10, 5, 0.65) 55%, rgba(20, 10, 5, 0.65) 75%, transparent 92%)',
         }}
       />
 
-      {/* Headline */}
+      {/* Headline — slightly below center to avoid covering sloth's face */}
       <AbsoluteFill
         style={{
-          justifyContent: 'flex-end',
+          justifyContent: 'center',
           alignItems: 'center',
-          padding: '60px 80px',
-          paddingBottom: 180,
+          padding: '0 80px',
+          paddingTop: 400,
         }}
       >
         <div
@@ -53,7 +53,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
             color: '#FFFFFF',
             textAlign: 'center',
             lineHeight: 1.3,
-            textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+            textShadow: '0 2px 12px rgba(0,0,0,0.7)',
             letterSpacing: '0.02em',
           }}
         >

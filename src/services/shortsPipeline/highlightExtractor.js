@@ -99,7 +99,7 @@ ${podcastScript}
   try {
     console.log('🧠 [essence] Extracting today\'s essence beats from Airtable script...');
     const resp = await openRouter.generateContent(prompt, {
-      temperature: 0.4,
+      temperature: 0.6,
       maxTokens: 2048,
     });
     if (!resp.success || !resp.content) {
@@ -295,47 +295,68 @@ async function generateCoverHeadlines({ selectedBeat, narrationScript }) {
   const openRouter = new OpenRouterService();
 
   const prompt = `
-你是一位百萬粉絲 IG Reels 創作者，擅長用短短幾個字讓人停下滑動。根據下面的 podcast highlight 主題，幫我生成 5 個 IG Reels 封面標題。
+你是台灣最強的 IG Reels 封面文案專家。你的封面標題讓人在 0.3 秒內停下滑動。
+
+我給你一段 podcast 精華主題，請幫我生成 5 個 IG Reels 封面標題。
 
 【主題段落】
 ${selectedBeat.text}
-${selectedBeat.reason ? `\n【主題摘要】\n${selectedBeat.reason}` : ''}
+${selectedBeat.reason ? `\n【為什麼選這段】\n${selectedBeat.reason}` : ''}
 ${narrationScript ? `\n【旁白腳本（參考用）】\n${narrationScript}` : ''}
 
-【步驟】
-先找出主題中**最核心的產品名/工具名/模型名**（例如 Mythos、Claude Code、GPT-5）作為 core_keyword。
+【你的任務 — 分兩步】
 
-【標題風格指南 — 重要！】
-想像觀眾正在高速滑 IG，你的標題要讓他們「停下來」。好的標題會製造**情緒反應**或**好奇心缺口**：
+**Step 1**: 分析主題，找出最有衝擊力的**核心關鍵字**。
+- 如果有具體產品名/工具名（如 Claude Code、GPT-5），用它
+- 如果沒有，找最具體的**動作或現象**（如「AI 自動操盤」「寫反省日記」「月賺一萬美金」）
+- ⚠️ 絕對不要用「AI 助手」「AI 工具」「這個 AI」—— 這些太籠統，觀眾看到會直接滑掉
+- core_keyword 最多 6 個字，必須有畫面感或具體性
 
-✅ 好的範例（參考這種風格）：
-- 「Claude Code 嚇死我了」（情緒衝擊）
-- 「GPT-5 要搶你飯碗？」（恐懼 + 好奇）
-- 「這 AI 工具免費太扯」（驚訝 + 具體）
-- 「Cursor 讓我廢掉了」（自嘲 + 好奇）
-- 「3 分鐘做完一天的工作」（數字 + 反差）
+**Step 2**: 用下面的公式生成 5 個封面標題。
 
-❌ 不要這種（太正經、像新聞稿）：
-- 「Claude Design：你的專屬設計師」
-- 「AI 美感進化論」
-- 「○○○神助攻」
+【封面標題公式 — 每個標題必須用其中一個公式】
+
+1. **數字反差公式**：用具體數字製造「不可能」的反差感
+   ✅ 「月賺 10 萬的 AI 副業」「3 天學會的技術 年薪多 50 萬」「一個 Prompt 省下 8 小時」
+
+2. **結果前置公式**：先講結果，讓人好奇怎麼做到的
+   ✅ 「不寫程式 做出一個 App」「一個人管 500 支影片」「它自己學會了投資」
+
+3. **恐懼/FOMO 公式**：製造「不看就虧了」的焦慮
+   ✅ 「你的工作 3 年內會消失」「這功能免費多久不知道」「同事偷學的 AI 工具」
+
+4. **反常識公式**：打破認知，製造「怎麼可能？」的反應
+   ✅ 「AI 寫的日記 比我還誠實」「它考試考贏 99% 的人」「機器人面試 你敢不敢」
+
+5. **挑釁/自嘲公式**：用第一人稱的誇張反應吸引共鳴
+   ✅ 「用完這工具 我失業了」「我被 AI 嗆了一整天」「看完這集 我決定轉行」
+
+【絕對不要這樣寫 — 很重要！】
+❌ 太抽象模糊：「AI 助手幫我賺錢？」「AI 工具大揭秘」「AI 新突破」「AI 助手比我還會反省？」
+   → 問題：「AI 助手」「AI 工具」「這個 AI」太籠統沒有記憶點，必須換成具體的動作或結果
+   → 修正：「AI 助手幫我賺錢」→「AI 操盤手 月賺一萬美金」；「AI 助手比我還會反省」→「它收盤後自己寫檢討報告」
+❌ 像新聞標題：「Claude Design：你的專屬設計師」「AI 美感進化論」
+   → 問題：正經到沒人想點
+❌ 疑問句但沒有張力：「AI 助手會寫日記？！」「被 AI 助手財富自由」
+   → 問題：光是問問題不夠，要有具體的反差或結果
+❌ 用爛的套路詞：「你知道嗎」「必看」「震驚」「神助攻」「救星」「太狂了」
 
 【嚴格規則】
-1. 每個標題 4–12 字（中文 1 字 = 1，英文算字母數）
-2. 每個標題**必須包含 core_keyword 原文**（英文不翻譯）
-3. 語氣要像跟朋友聊天，不要像廣告文案或新聞標題
-4. 要有**情緒**（驚訝、害怕、興奮、自嘲、好奇）而不只是「介紹」
-5. 禁止用「你知道嗎」「必看」「震驚」「神助攻」「救星」「進化論」這些老套詞
-6. 5 個標題情緒要不同（驚嘆、疑問、自嘲、恐懼、興奮等）
+1. 每個標題 6–16 字（中文 1 字 = 1，英文單字算 1）— 最多兩行
+2. 每個標題用不同的公式（5 個標題 = 5 種公式各一個）
+3. 標題中要有**具體的東西**（數字、產品名、動作、結果）—— 不能全是抽象形容詞
+4. 語氣 = 你在 IG 限動跟朋友分享時會怎麼說
+5. 如果主題有具體產品名，至少 3 個標題要包含該產品名
+6. ⚠️ 5 個標題的**開頭必須不同**——禁止全部用同一個詞或短語開頭。如果核心關鍵字出現在標題裡，每次放在不同位置（開頭、中間、結尾交替使用）
 
 輸出嚴格 JSON（不要 markdown code fence、不要說明）：
-{ "core_keyword": "核心產品名", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5"] }
+{ "core_keyword": "核心關鍵字", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5"] }
 `.trim();
 
   try {
     console.log('🎨 [cover] Generating 5 cover headline candidates...');
     const resp = await openRouter.generateContent(prompt, {
-      temperature: 0.7,
+      temperature: 0.85,
       maxTokens: 512,
     });
     if (!resp.success || !resp.content) {

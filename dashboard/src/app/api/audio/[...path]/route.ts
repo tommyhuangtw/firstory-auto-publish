@@ -5,10 +5,12 @@ import path from 'path';
 const ALLOWED_DIRS = [
   path.resolve(process.cwd(), '..', 'output'),
   path.resolve(process.cwd(), '..', 'temp'),
+  path.resolve(process.cwd(), '..', 'remotion', 'out'),
+  path.resolve(process.cwd(), '..', 'remotion', 'public'),
   path.resolve(process.cwd(), 'data'),
 ];
 
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.png', '.jpg', '.jpeg', '.webp'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.mp4', '.png', '.jpg', '.jpeg', '.webp'];
 
 export async function GET(
   request: NextRequest,
@@ -38,6 +40,7 @@ export async function GET(
   const MIME_TYPES: Record<string, string> = {
     '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
     '.aac': 'audio/aac', '.ogg': 'audio/ogg',
+    '.mp4': 'video/mp4',
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   };
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
