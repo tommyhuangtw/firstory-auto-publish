@@ -215,6 +215,8 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     .run(episodeNumber, episodeId);
   db.prepare('UPDATE llm_calls SET episode_number = ? WHERE episode_id = ?')
     .run(episodeNumber, episodeId);
+  db.prepare('UPDATE service_costs SET episode_number = ? WHERE episode_id = ?')
+    .run(episodeNumber, episodeId);
 
   log.info({ episodeId, episodeNumber }, 'Episode number assigned at publish time');
 
@@ -444,6 +446,15 @@ function updateEpisodeFromState(
   state: PipelineState,
   episodeId: number
 ) {
+  // Calculate actual cost from DB tables instead of state.totalCostUsd (which is never updated)
+  const llmCost = (db.prepare(
+    'SELECT COALESCE(SUM(cost_usd), 0) as total FROM llm_calls WHERE episode_id = ?'
+  ).get(episodeId) as { total: number }).total;
+  const serviceCost = (db.prepare(
+    'SELECT COALESCE(SUM(cost_usd), 0) as total FROM service_costs WHERE episode_id = ?'
+  ).get(episodeId) as { total: number }).total;
+  const totalCostUsd = llmCost + serviceCost;
+
   db.prepare(
     `UPDATE episodes SET
       status = 'pending_review',
@@ -478,7 +489,7 @@ function updateEpisodeFromState(
     JSON.stringify(state.selectedVideos),
     JSON.stringify(state.sourceLinks),
     state.qualityScore?.overall ?? null,
-    state.totalCostUsd,
+    totalCostUsd,
     state.scriptWordCount,
     state.igPostId || null,
     episodeId

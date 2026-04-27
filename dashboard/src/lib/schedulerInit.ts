@@ -1,12 +1,11 @@
 /**
- * Scheduler Initialization — registers 3 podcast pipeline cron jobs.
+ * Scheduler Initialization — registers podcast pipeline cron jobs.
  *
- * Jobs:
- * - robot-weekly:  Thu 11am  (機器人觀察週報)
- * - weekly-report: Sun 11am  (AI精選週報)
- * - daily-report:  Mon/Wed/Fri/Sat 11am  (AI懶人報)
+ * On startup, reads `weekly_schedule` from the settings table.
+ * Falls back to hardcoded defaults if no DB config exists.
  *
- * Import this module at server startup to register all jobs.
+ * Call `reloadScheduleFromDb()` after updating the DB config to
+ * hot-reload cron jobs without a server restart.
  */
 
 import { getScheduler } from '@/services/scheduler';
@@ -20,29 +19,110 @@ const log = createChildLogger('scheduler-init');
 
 let initialized = false;
 
+export interface ScheduleSlot {
+  day: number;        // 0=Sun, 1=Mon, ..., 6=Sat (cron convention)
+  segment: SegmentType;
+  time: string;       // "HH:MM"
+}
+
+export interface WeeklyScheduleConfig {
+  slots: ScheduleSlot[];
+}
+
+const DEFAULT_SCHEDULE: WeeklyScheduleConfig = {
+  slots: [
+    { day: 1, segment: 'daily', time: '11:00' },
+    { day: 3, segment: 'daily', time: '11:00' },
+    { day: 4, segment: 'robot', time: '11:00' },
+    { day: 5, segment: 'daily', time: '11:00' },
+    { day: 6, segment: 'daily', time: '11:00' },
+    { day: 0, segment: 'weekly', time: '11:00' },
+  ],
+};
+
+/** Read weekly_schedule from DB settings, or return default */
+export function getScheduleConfig(): WeeklyScheduleConfig {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_schedule') as
+      { value: string } | undefined;
+    if (row) return JSON.parse(row.value) as WeeklyScheduleConfig;
+  } catch {
+    // DB not ready or parse error — use defaults
+  }
+  return DEFAULT_SCHEDULE;
+}
+
+/** Convert slots to cron jobs: group slots by segment, merge days */
+function slotsToCronJobs(slots: ScheduleSlot[]): Array<{ name: string; cron: string; segment: SegmentType }> {
+  // Group by segment+time → merge days
+  const groups = new Map<string, { segment: SegmentType; time: string; days: number[] }>();
+  for (const slot of slots) {
+    const key = `${slot.segment}:${slot.time}`;
+    const group = groups.get(key);
+    if (group) {
+      group.days.push(slot.day);
+    } else {
+      groups.set(key, { segment: slot.segment, time: slot.time, days: [slot.day] });
+    }
+  }
+
+  const jobs: Array<{ name: string; cron: string; segment: SegmentType }> = [];
+  const segmentCount = new Map<string, number>();
+
+  for (const { segment, time, days } of groups.values()) {
+    const [hour, minute] = time.split(':');
+    const dayStr = days.sort().join(',');
+    const cron = `${minute} ${hour} * * ${dayStr}`;
+
+    // Name: use segment name, append index if multiple groups for same segment
+    const count = (segmentCount.get(segment) ?? 0) + 1;
+    segmentCount.set(segment, count);
+    const name = count === 1 ? segment : `${segment}-${count}`;
+
+    jobs.push({ name, cron, segment });
+  }
+
+  return jobs;
+}
+
+function registerJobs(config: WeeklyScheduleConfig): void {
+  const scheduler = getScheduler();
+  const cronJobs = slotsToCronJobs(config.slots);
+
+  for (const { name, cron, segment } of cronJobs) {
+    scheduler.register(name, cron, async () => {
+      await runPipeline(segment);
+    });
+  }
+}
+
 export function initializeSchedulerJobs(): void {
   if (initialized) return;
   initialized = true;
 
   const scheduler = getScheduler();
+  const config = getScheduleConfig();
 
-  // Robot weekly — Thursday 11am
-  scheduler.register('robot-weekly', '0 11 * * 4', async () => {
-    await runPipeline('robot');
-  });
-
-  // Weekly report — Sunday 11am
-  scheduler.register('weekly-report', '0 11 * * 0', async () => {
-    await runPipeline('weekly');
-  });
-
-  // Daily report — Mon, Wed, Fri, Sat 11am
-  scheduler.register('daily-report', '0 11 * * 1,3,5,6', async () => {
-    await runPipeline('daily');
-  });
-
+  registerJobs(config);
   scheduler.start();
-  log.info('Scheduler jobs registered and started');
+  log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
+}
+
+/** Hot-reload: read DB config → stop all → re-register → start */
+export function reloadScheduleFromDb(): void {
+  const scheduler = getScheduler();
+
+  // Stop and unregister all existing jobs
+  const names = scheduler.getRegisteredNames();
+  for (const name of names) {
+    scheduler.unregister(name);
+  }
+
+  const config = getScheduleConfig();
+  registerJobs(config);
+  scheduler.start();
+  log.info({ slots: config.slots.length }, 'Scheduler reloaded from DB config');
 }
 
 async function runPipeline(segmentType: SegmentType): Promise<void> {

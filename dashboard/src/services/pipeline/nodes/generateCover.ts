@@ -63,8 +63,8 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
         (db.prepare("SELECT value FROM settings WHERE key = 'kieai_nano_banana_pro_usd'").get() as { value: string })?.value || '0.09'
       );
       db.prepare(
-        'INSERT INTO service_costs (episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(state.episodeNumber ?? null, 'kieai_cover', 'nano-banana-pro', 1, costUsd, Date.now() - coverStartMs);
+        'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(state.episodeId, state.episodeNumber ?? null, 'kieai_cover', 'nano-banana-pro', 1, costUsd, Date.now() - coverStartMs);
       log.info({ costUsd }, 'Cover image cost logged');
     } catch (err) {
       log.warn({ error: (err as Error).message }, 'Failed to log cover cost');

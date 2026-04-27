@@ -4,23 +4,27 @@ import { getDb } from '@/db';
 export async function GET() {
   const db = getDb();
 
-  // Cost per episode — combined LLM + service costs
+  // Cost per episode — combined LLM + service costs, using episode_id as primary key
   const costPerEpisode = db.prepare(`
-    SELECT episode_number,
-      SUM(CASE WHEN source = 'llm' THEN cost ELSE 0 END) as llm_cost,
-      SUM(CASE WHEN source = 'tts' THEN cost ELSE 0 END) as tts_cost,
-      SUM(CASE WHEN source = 'image' THEN cost ELSE 0 END) as image_cost,
-      SUM(cost) as total_cost,
-      COUNT(*) as call_count
-    FROM (
-      SELECT episode_number, cost_usd as cost, 'llm' as source FROM llm_calls WHERE episode_number IS NOT NULL
-      UNION ALL
-      SELECT episode_number, cost_usd as cost,
-        CASE WHEN service = 'voai_tts' THEN 'tts' ELSE 'image' END as source
-      FROM service_costs WHERE episode_number IS NOT NULL
-    )
-    GROUP BY episode_number
-    ORDER BY episode_number
+    SELECT COALESCE(e.episode_number, e.id) as episode_number,
+      COALESCE(lc.llm_cost, 0) as llm_cost,
+      COALESCE(sc.tts_cost, 0) as tts_cost,
+      COALESCE(sc.image_cost, 0) as image_cost,
+      COALESCE(lc.llm_cost, 0) + COALESCE(sc.tts_cost, 0) + COALESCE(sc.image_cost, 0) as total_cost
+    FROM episodes e
+    LEFT JOIN (
+      SELECT episode_id, SUM(cost_usd) as llm_cost
+      FROM llm_calls WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) lc ON lc.episode_id = e.id
+    LEFT JOIN (
+      SELECT episode_id,
+        SUM(CASE WHEN service = 'voai_tts' THEN cost_usd ELSE 0 END) as tts_cost,
+        SUM(CASE WHEN service != 'voai_tts' THEN cost_usd ELSE 0 END) as image_cost
+      FROM service_costs WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) sc ON sc.episode_id = e.id
+    ORDER BY e.id
   `).all();
 
   // Cost breakdown by stage (LLM stages + service types)
@@ -41,31 +45,41 @@ export async function GET() {
     ORDER BY total_cost DESC
   `).all();
 
-  // Quality score trend with cost overlay
+  // Quality score trend with full cost overlay (LLM + service costs)
   const qualityTrend = db.prepare(`
     SELECT e.episode_number, e.quality_score,
-      COALESCE(e.total_cost_usd, 0) + COALESCE(sc.service_cost, 0) as total_cost_usd
+      COALESCE(lc.llm_cost, 0) + COALESCE(sc.service_cost, 0) as total_cost_usd
     FROM episodes e
     LEFT JOIN (
-      SELECT episode_number, SUM(cost_usd) as service_cost
-      FROM service_costs
-      GROUP BY episode_number
-    ) sc ON sc.episode_number = e.episode_number
+      SELECT episode_id, SUM(cost_usd) as llm_cost
+      FROM llm_calls WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) lc ON lc.episode_id = e.id
+    LEFT JOIN (
+      SELECT episode_id, SUM(cost_usd) as service_cost
+      FROM service_costs WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) sc ON sc.episode_id = e.id
     WHERE e.quality_score IS NOT NULL
     ORDER BY e.episode_number
   `).all();
 
-  // Pipeline runs summary
+  // Pipeline runs summary — include both LLM and service costs
   const pipelineRuns = db.prepare(`
     SELECT pr.id, pr.episode_number, pr.segment_type, pr.status, pr.current_stage,
            pr.started_at, pr.completed_at, pr.error_log,
-           COALESCE(lc.llm_cost, 0) as run_cost
+           COALESCE(lc.llm_cost, 0) + COALESCE(sc.svc_cost, 0) as run_cost
     FROM pipeline_runs pr
     LEFT JOIN (
-      SELECT episode_number, SUM(cost_usd) as llm_cost
-      FROM llm_calls
-      GROUP BY episode_number
-    ) lc ON lc.episode_number = pr.episode_number
+      SELECT episode_id, SUM(cost_usd) as llm_cost
+      FROM llm_calls WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) lc ON lc.episode_id = pr.episode_id
+    LEFT JOIN (
+      SELECT episode_id, SUM(cost_usd) as svc_cost
+      FROM service_costs WHERE episode_id IS NOT NULL
+      GROUP BY episode_id
+    ) sc ON sc.episode_id = pr.episode_id
     ORDER BY pr.id DESC
     LIMIT 20
   `).all();
@@ -79,8 +93,13 @@ export async function GET() {
   const totalEpisodes = db.prepare('SELECT COUNT(*) as total FROM episodes').get() as { total: number };
 
   const totalCost = llmCost.total + ttsCost.total + imageCost.total;
-  const avgCostPerEpisode = totalEpisodes.total > 0 ? totalCost / totalEpisodes.total : 0;
-  const costPerQualityPoint = (avgQuality.avg ?? 0) > 0 ? totalCost / (avgQuality.avg ?? 1) : 0;
+  // Calculate avg from per-episode data (only episodes with attributed costs)
+  const episodes = costPerEpisode as { total_cost: number }[];
+  const episodesWithCost = episodes.filter(e => e.total_cost > 0);
+  const avgCostPerEpisode = episodesWithCost.length > 0
+    ? episodesWithCost.reduce((sum, e) => sum + e.total_cost, 0) / episodesWithCost.length
+    : 0;
+  const costPerQualityPoint = (avgQuality.avg ?? 0) > 0 ? avgCostPerEpisode / (avgQuality.avg ?? 1) : 0;
 
   // Most expensive stage
   const expensiveStage = db.prepare(`

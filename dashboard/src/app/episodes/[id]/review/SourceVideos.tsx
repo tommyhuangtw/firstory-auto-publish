@@ -26,7 +26,20 @@ export default function SourceVideos({ videos, canEdit, pipelineRunId }: Props) 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  const [copied, setCopied] = useState(false);
+
   if (videos.length === 0) return null;
+
+  function copyUrls() {
+    const urls = videos
+      .filter(v => v.videoId)
+      .map(v => `https://www.youtube.com/watch?v=${v.videoId}`)
+      .join('\n');
+    navigator.clipboard.writeText(urls).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   function toggleRemove(videoId: string) {
     setRemovedIds((prev) => {
@@ -71,7 +84,30 @@ export default function SourceVideos({ videos, canEdit, pipelineRunId }: Props) 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-zinc-300">Source Videos ({videos.length})</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-zinc-300">Source Videos ({videos.length})</h3>
+          <button
+            onClick={copyUrls}
+            className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            title="複製所有 YouTube URLs"
+          >
+            {copied ? (
+              <>
+                <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span className="text-emerald-400">已複製</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                </svg>
+                <span>複製 URLs</span>
+              </>
+            )}
+          </button>
+        </div>
         {canEdit && removedCount > 0 && (
           <button
             onClick={handleRegenerate}

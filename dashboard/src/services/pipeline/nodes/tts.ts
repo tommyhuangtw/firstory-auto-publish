@@ -91,7 +91,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     await synthesizeChunk(chunks[0], outPath, apiKey, audioConfig);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1) }, 'TTS complete (single chunk)');
-    logTtsCost(state.episodeNumber, text.length, Date.now() - ttsStartMs);
+    logTtsCost(state.episodeId, state.episodeNumber, text.length, Date.now() - ttsStartMs);
     return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
   }
 
@@ -126,7 +126,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     await concatMp3s(chunkPaths, outPath);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1), chunks: chunks.length }, 'TTS complete');
-    logTtsCost(state.episodeNumber, text.length, Date.now() - ttsStartMs);
+    logTtsCost(state.episodeId, state.episodeNumber, text.length, Date.now() - ttsStartMs);
 
     return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
   } finally {
@@ -272,7 +272,7 @@ async function makeSilentStub(text: string, outPath: string) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function logTtsCost(episodeNumber: number | null | undefined, charCount: number, latencyMs: number) {
+function logTtsCost(episodeId: number, episodeNumber: number | null | undefined, charCount: number, latencyMs: number) {
   try {
     const db = getDb();
     const usdToTwd = parseFloat(
@@ -283,8 +283,8 @@ function logTtsCost(episodeNumber: number | null | undefined, charCount: number,
     );
     const costUsd = (charCount * costPerCharTwd) / usdToTwd;
     db.prepare(
-      'INSERT INTO service_costs (episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(episodeNumber ?? null, 'voai_tts', 'neo', charCount, costUsd, latencyMs);
+      'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(episodeId, episodeNumber ?? null, 'voai_tts', 'neo', charCount, costUsd, latencyMs);
     log.info({ charCount, costUsd: costUsd.toFixed(4) }, 'TTS cost logged');
   } catch (err) {
     log.warn({ error: (err as Error).message }, 'Failed to log TTS cost');

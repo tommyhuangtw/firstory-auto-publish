@@ -157,6 +157,58 @@ export class Scheduler {
     log.info({ name }, 'Job unskipped');
   }
 
+  updateSchedule(name: string, newSchedule: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+    if (!cron.validate(newSchedule)) {
+      throw new Error(`Invalid cron expression: ${newSchedule}`);
+    }
+
+    // Stop existing task
+    if (job.task) {
+      job.task.stop();
+      job.task = null;
+    }
+
+    job.schedule = newSchedule;
+
+    // Restart if enabled
+    if (job.enabled) {
+      job.task = cron.schedule(job.schedule, async () => {
+        if (job.skippedUntil && new Date() >= job.skippedUntil) {
+          job.skippedUntil = null;
+        }
+        if (job.skippedUntil) return;
+        log.info({ name }, 'Job triggered');
+        try {
+          await job.handler();
+          job.lastRun = new Date();
+          job.lastError = null;
+        } catch (error) {
+          job.lastError = (error as Error).message;
+          log.error({ name, error: job.lastError }, 'Job failed');
+        }
+      });
+    }
+
+    log.info({ name, schedule: newSchedule }, 'Job schedule updated');
+  }
+
+  unregister(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) return;
+    if (job.task) {
+      job.task.stop();
+      job.task = null;
+    }
+    this.jobs.delete(name);
+    log.info({ name }, 'Job unregistered');
+  }
+
+  getRegisteredNames(): string[] {
+    return Array.from(this.jobs.keys());
+  }
+
   getStatus(): Array<{
     name: string;
     schedule: string;

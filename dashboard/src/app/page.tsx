@@ -1,5 +1,6 @@
 import { getDb } from '@/db';
 import { formatLocalDateTime, getLocalDayOfWeek } from '@/lib/formatDate';
+import VoaiUsageCard from '@/components/VoaiUsageCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* DB Status */}
         <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
           <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Database</h2>
@@ -54,6 +55,9 @@ export default function Dashboard() {
           <p className="text-2xl font-bold mt-2">{recentRuns.c}</p>
           <p className="text-zinc-400 text-sm mt-1">recent runs (7d)</p>
         </div>
+
+        {/* VoAI TTS Usage */}
+        <VoaiUsageCard />
       </div>
 
       {/* Recent Episodes */}
