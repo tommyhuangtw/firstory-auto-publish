@@ -60,7 +60,10 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
       const today = new Date().toISOString().split('T')[0];
       const isRobot = state.segmentType === 'robot';
       const isWeekly = state.segmentType === 'weekly';
-      const subject = isRobot
+      const isSysdesignEmail = state.segmentType === 'sysdesign';
+      const subject = isSysdesignEmail
+        ? `[${today}] AI懶人報：系統架構懶懶學`
+        : isRobot
         ? `[${today}] AI懶人報：機器人觀察週報`
         : isWeekly
         ? `[${today}] AI懶人精選週報`
@@ -104,6 +107,7 @@ export async function regenerateIgCaption(
 ): Promise<string> {
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
+  const isSysdesign = segmentType === 'sysdesign';
   const scenario = igScenario || '湯懶懶躺在沙發上用 AI 自動處理所有工作';
 
   // Prefer script summary (accurate Chinese content) over video titles (English, prone to hallucination)
@@ -139,7 +143,55 @@ export async function regenerateIgCaption(
 Podcast總結（IG貼文要用中文輸出 可保留重點公司或是工具名稱為英文）:
 ${podcastSummary}`;
 
-  const systemPrompt = isRobot
+  const sysdesignSystemPrompt = `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
+
+🎯 任務目標
+根據提供的系統設計 Podcast 內容摘要，生成一則以系統架構知識為主軸的貼文，適合吸引工程師、準備面試的人在 IG 上閱讀、收藏與互動。
+
+📝 貼文結構（用自然段落分隔，禁止使用 1. 2. 3. 編號）：
+
+開場 hook（1～2 句）
+用湯懶懶的口吻帶出本集的系統名稱或核心問題，引起好奇心。語氣慵懶、聰明、有點廢又可愛。
+範例：
+「Netflix 怎麼撐住全球兩億人同時追劇的？湯懶懶拆給你看 🦥」
+「面試官問你 Uber 怎麼設計，你是不是又腦袋空白了 🧠」
+
+一句鋪墊（1 句）
+簡短交代今天拆解了什麼 + 為什麼值得知道，讓讀者有心理準備接收技術重點。
+
+🏗️ 架構亮點
+用 3-5 個重點，每個重點以 emoji 開頭，直接接內容描述。
+保留英文術語（load balancer, consistent hashing, sharding, message queue, CDN 等）。
+每個重點控制在 1-2 句，用口語化的方式解釋，像在跟朋友聊天。
+✅ 重點應簡單、明確、有條理
+⛔ 禁止使用 **粗體標題** 或任何 markdown 格式（IG 不支援）
+⛔ 禁止「標題：說明」的格式（如「WebSocket 長連線取代輪詢：別再讓手機...」），直接寫成一段話
+⛔ 禁止廢話或轉場語
+
+好的範例：
+🚀 Uber 用 WebSocket 長連線讓伺服器主動推播司機位置，不用手機一直問「他到哪了」，省下超多無效流量
+📍 地理位置靠 Geohash 把二維座標壓成一維字串，毫秒內就能鎖定附近的司機
+
+不好的範例（禁止）：
+🚀 **WebSocket 長連線取代輪詢**：別再讓手機一直問「司機在哪」了...
+
+🎧 Podcast 導流句（1～2 句）
+用湯懶懶口吻推薦到主頁聽完整 Podcast，像朋友聊天不像廣告。
+範例：「完整拆解都在 Podcast 裡了，懶人教主幫你整理好了 🦥👉」
+
+互動引導（1 句 CTA）
+輕鬆互動句，引導留言或收藏。
+
+Hashtag（壓縮成一整段，禁止換行）
+請從下列混合挑選 8~12 個：
+#系統設計 #SystemDesign #軟體架構 #面試準備 #後端工程師 #分散式系統 #AI懶人報 #系統架構懶懶學 #湯懶懶日記 #SlothVibes #科技職涯 #工程師日常
+
+注意！！
+只需要輸出IG貼文內容，不需要其他不必要的文字`;
+
+  const systemPrompt = isSysdesign
+    ? sysdesignSystemPrompt
+    : isRobot
     ? `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
 
 🎯 任務目標
@@ -266,7 +318,28 @@ async function generateEmailHtml(state: PipelineState): Promise<string> {
   const podcastUrl = state.driveAudioUrl || '';
 
   // Step 1: Email content agent
-  const contentSystemPrompt = isRobot
+  const isSysdesignContent = state.segmentType === 'sysdesign';
+  const contentSystemPrompt = isSysdesignContent
+    ? `你是一位專業的系統設計教學內容編輯，擅長將系統架構概念轉換為結構清晰、有趣易讀的繁體中文摘要。在本任務中，你的角色是《系統架構懶懶學》的 Email 週報編輯助理。
+
+🎯 任務目標：
+請根據提供的 Podcast 內容摘要，撰寫一段結構清晰的繁體中文週報，介紹本集討論的系統設計主題。
+
+📤 請使用以下格式輸出週報：
+
+開場白段落：以勾起好奇心的語氣開場，帶出系統設計主題
+
+🎧 Podcast 連結: ${podcastUrl}
+
+🏗️ System Design Deep Dive 🔧✨
+
+核心架構重點（3-5 個 bullet points）
+
+📎 參考資料：
+列出原始影片連結
+
+✨ 語氣：像一位資深工程師朋友在幫你摘重點`
+    : isRobot
     ? `你是一位專業的中英雙語內容翻譯與在地化專家，專門處理 Robotics、AI 機器人與自動化技術相關內容，擅長將英文影片資訊轉換為自然、口語化且適合台灣讀者閱讀的繁體中文摘要。在本任務中，你的角色是《Robotics Power Plays：每週精選》的 Email 週報編輯助理。
 
 🎯 任務目標：
