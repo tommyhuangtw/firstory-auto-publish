@@ -23,7 +23,7 @@ interface Beat {
 }
 
 interface Props {
-  episodeNumber: number;
+  episodeId: number;
   initialShorts: ShortsData | null;
 }
 
@@ -39,7 +39,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const STAGES = Object.keys(STAGE_LABELS);
 
-export default function ShortsSection({ episodeNumber, initialShorts }: Props) {
+export default function ShortsSection({ episodeId, initialShorts }: Props) {
   const [shorts, setShorts] = useState<ShortsData | null>(initialShorts);
   const [step, setStep] = useState<'idle' | 'select_avatar' | 'loading_beats' | 'select_beat' | 'loading_headlines' | 'select_headline' | 'generating' | 'completed' | 'publishing' | 'published' | 'failed'>('idle');
   const [shortsId, setShortsId] = useState<number | null>(initialShorts?.id ?? null);
@@ -136,7 +136,7 @@ export default function ShortsSection({ episodeNumber, initialShorts }: Props) {
       const res = await fetch('/api/shorts/beats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeNumber, avatarFilename: selectedAvatar }),
+        body: JSON.stringify({ episodeId, avatarFilename: selectedAvatar }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -148,7 +148,7 @@ export default function ShortsSection({ episodeNumber, initialShorts }: Props) {
       setError((err as Error).message);
       setStep('idle');
     }
-  }, [episodeNumber, selectedAvatar]);
+  }, [episodeId, selectedAvatar]);
 
   const handleSelectBeat = useCallback(async () => {
     if (selectedBeatIdx === null || !shortsId) return;

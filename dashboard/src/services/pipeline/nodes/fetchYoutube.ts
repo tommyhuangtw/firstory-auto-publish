@@ -69,7 +69,7 @@ const SEARCH_QUERIES: Record<string, string[]> = {
 };
 
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber, segmentType: state.segmentType }, 'Fetching YouTube videos');
+  log.info({ episodeId: state.episodeId, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) {

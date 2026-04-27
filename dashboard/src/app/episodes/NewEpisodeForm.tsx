@@ -26,38 +26,39 @@ const STAGES = [
   { key: 'notify', label: '通知' },
 ] as const;
 
+const segmentLabels: Record<string, string> = {
+  daily: 'AI懶人報',
+  weekly: 'AI精選週報',
+  robot: '機器人週報',
+};
+
 interface PipelineRun {
   id: number;
-  episode_number: number;
+  episode_id: number;
   status: string;
   current_stage: string | null;
   error_log: string | null;
   completed_at: string | null;
 }
 
+interface TrackingState {
+  runId: number;
+  episodeId: number;
+  segmentType: string;
+  status: string;
+  current_stage: string | null;
+  error_log: string | null;
+}
+
 export default function NewEpisodeForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [episodeNumber, setEpisodeNumber] = useState('');
   const [segmentType, setSegmentType] = useState<string>('daily');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  const [tracking, setTracking] = useState<PipelineRun | null>(null);
+  const [tracking, setTracking] = useState<TrackingState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Auto-fetch next episode number from SoundOn RSS
-  useEffect(() => {
-    fetch('/api/soundon/latest')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.nextEpisodeNumber && !episodeNumber) {
-          setEpisodeNumber(String(data.nextEpisodeNumber));
-        }
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -65,14 +66,21 @@ export default function NewEpisodeForm() {
     };
   }, []);
 
-  function startPolling(runId: number) {
+  function startPolling(runId: number, episodeId: number, segType: string) {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/pipeline/status/${runId}`);
         if (!res.ok) return;
         const run: PipelineRun = await res.json();
-        setTracking(run);
+        setTracking({
+          runId,
+          episodeId,
+          segmentType: segType,
+          status: run.status,
+          current_stage: run.current_stage,
+          error_log: run.error_log,
+        });
         if (run.status === 'completed' || run.status === 'failed') {
           if (intervalRef.current) clearInterval(intervalRef.current);
           intervalRef.current = null;
@@ -86,11 +94,6 @@ export default function NewEpisodeForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const num = parseInt(episodeNumber);
-    if (isNaN(num) || num <= 0) {
-      setMessage('請輸入有效的集數');
-      return;
-    }
     setLoading(true);
     setMessage('');
     setTracking(null);
@@ -98,19 +101,19 @@ export default function NewEpisodeForm() {
       const res = await fetch('/api/pipeline/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeNumber: num, segmentType }),
+        body: JSON.stringify({ segmentType }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setTracking({
-        id: data.pipelineRunId,
-        episode_number: num,
+        runId: data.pipelineRunId,
+        episodeId: data.episodeId,
+        segmentType,
         status: 'running',
         current_stage: 'fetchYoutube',
         error_log: null,
-        completed_at: null,
       });
-      startPolling(data.pipelineRunId);
+      startPolling(data.pipelineRunId, data.episodeId, segmentType);
     } catch (err) {
       setMessage(`${(err as Error).message}`);
     } finally {
@@ -124,7 +127,6 @@ export default function NewEpisodeForm() {
     setTracking(null);
     setOpen(false);
     setMessage('');
-    setEpisodeNumber('');
   }
 
   // Collapsed button
@@ -149,6 +151,7 @@ export default function NewEpisodeForm() {
     const isCompleted = tracking.status === 'completed';
     const isFailed = tracking.status === 'failed';
     const progress = currentIdx >= 0 ? ((currentIdx + 1) / STAGES.length) * 100 : 0;
+    const segLabel = segmentLabels[tracking.segmentType] || tracking.segmentType;
 
     return (
       <div className="w-full mt-6">
@@ -172,7 +175,7 @@ export default function NewEpisodeForm() {
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
                 <span className="font-mono font-semibold text-zinc-200">
-                  EP {tracking.episode_number}
+                  {segLabel}
                 </span>
                 {isRunning && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-blue-400">
@@ -265,7 +268,7 @@ export default function NewEpisodeForm() {
               <div className="mt-5 flex items-center gap-3">
                 {isCompleted && (
                   <Link
-                    href={`/episodes/${tracking.episode_number}/review`}
+                    href={`/episodes/${tracking.episodeId}/review`}
                     className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
                   >
                     前往審核
@@ -316,17 +319,8 @@ export default function NewEpisodeForm() {
           })}
         </div>
 
-        {/* Input row */}
+        {/* Action row */}
         <div className="flex items-center gap-2">
-          <input
-            type="number"
-            value={episodeNumber}
-            onChange={(e) => setEpisodeNumber(e.target.value)}
-            placeholder="集數"
-            min="1"
-            required
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 w-28 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500/30 tabular-nums transition-colors"
-          />
           <button
             type="submit"
             disabled={loading}

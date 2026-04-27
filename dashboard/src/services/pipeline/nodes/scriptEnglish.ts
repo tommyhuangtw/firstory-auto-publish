@@ -163,7 +163,7 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   const videoTexts = state.selectedVideos.map((v) =>
     `${v.title} ${v.transcript?.slice(0, 500) || ''}`
   );
-  const memoryContext = buildMemoryContext(videoTexts, state.episodeNumber);
+  const memoryContext = buildMemoryContext(videoTexts, state.episodeId);
 
   if (memoryContext.knownToolNames.length > 0) {
     log.info(
@@ -194,7 +194,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ?
 
   const result = await llm.call({
     stage: 'script_en',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },

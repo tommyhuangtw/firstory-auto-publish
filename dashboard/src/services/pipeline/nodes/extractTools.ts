@@ -22,10 +22,10 @@ export async function extractTools(state: PipelineState): Promise<Partial<Pipeli
   let tools: ResolvedTool[] = [];
 
   try {
-    tools = await extractToolsFromScript(state.scriptEn, state.episodeNumber);
+    tools = await extractToolsFromScript(state.scriptEn, state.episodeId);
 
     if (tools.length > 0) {
-      await upsertTools(state.episodeNumber, tools);
+      await upsertTools(state.episodeId, tools);
     }
 
     log.info({ count: tools.length }, 'Tool extraction complete');

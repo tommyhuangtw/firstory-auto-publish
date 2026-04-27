@@ -15,36 +15,43 @@ const log = createChildLogger('pipeline:notify');
 const FLASH_MODEL = 'google/gemini-3-flash-preview';
 
 export async function notify(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber }, 'Sending notifications');
+  log.info({ episodeId: state.episodeId }, 'Sending notifications');
 
   const results: Partial<PipelineState> = { status: 'pending_review' };
 
-  // ── Instagram: Agent-generated caption + post ──
+  // ── Instagram: Generate caption only (posting happens at publish time) ──
   try {
-    if (state.coverUrl && process.env.INSTAGRAM_ACCESS_TOKEN) {
-      const caption = await generateIgCaption(state);
-      results.igCaption = caption;
+    const caption = await generateIgCaption(state);
+    results.igCaption = caption;
 
-      // Persist caption to DB
-      getDb().prepare('UPDATE episodes SET ig_caption = ? WHERE episode_number = ?')
-        .run(caption, state.episodeNumber);
-
-      const { postToInstagram } = await import('@/services/instagram');
-      const postId = await postToInstagram(state.coverUrl, caption);
-      results.igPostId = postId;
-      log.info({ postId }, 'Instagram posted');
-    } else {
-      log.info('Skipping Instagram (no cover URL or token)');
-    }
+    // Persist caption to DB for review
+    getDb().prepare('UPDATE episodes SET ig_caption = ? WHERE id = ?')
+      .run(caption, state.episodeId);
+    log.info({ captionLength: caption.length }, 'IG caption generated (will post at publish time)');
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'Instagram post failed');
+    log.error({ error: (error as Error).message }, 'IG caption generation failed');
   }
 
   // ── Email: Newsletter Agent + HTML Formatter Agent + send ──
   try {
     if (process.env.RECIPIENT_EMAIL) {
       const emailHtml = await generateEmailHtml(state);
-      results.emailHtml = emailHtml;
+
+      // Append IG cover image + caption to email for review
+      const coverImageSection = state.coverUrl
+        ? `<div style="margin-top:20px;text-align:center;">
+<h3 style="font-size:14px;color:#333;margin:0 0 8px;">IG 封面預覽</h3>
+<img src="${state.coverUrl}" width="300" style="border-radius:8px;" />
+</div>`
+        : '';
+      const igCaptionSection = results.igCaption
+        ? `<div style="background:#f5f5f5;padding:16px;border-radius:8px;margin-top:12px;">
+<h3 style="margin:0 0 8px;font-size:14px;color:#333;">IG 貼文預覽（待審核）</h3>
+<pre style="white-space:pre-wrap;font-size:13px;color:#555;margin:0;">${results.igCaption}</pre>
+</div>`
+        : '';
+      const fullEmailHtml = emailHtml + '<hr>' + coverImageSection + igCaptionSection;
+      results.emailHtml = fullEmailHtml;
 
       const { getGmailService } = await import('@/services/gmail');
       const gmail = getGmailService();
@@ -62,9 +69,9 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
       await gmail.sendRawHtml({
         to: process.env.RECIPIENT_EMAIL,
         subject,
-        html: emailHtml,
+        html: fullEmailHtml,
       });
-      log.info('Email newsletter sent');
+      log.info('Email newsletter sent (with IG caption preview)');
     } else {
       log.info('Skipping Gmail (RECIPIENT_EMAIL not set)');
     }
@@ -82,7 +89,7 @@ async function generateIgCaption(state: PipelineState): Promise<string> {
     state.segmentType,
     state.igScenario,
     videos,
-    state.episodeNumber,
+    state.episodeId,
     state.scriptSummary,
   );
 }
@@ -92,7 +99,7 @@ export async function regenerateIgCaption(
   segmentType: string,
   igScenario: string,
   selectedVideos: { title: string; viewCount: number }[],
-  episodeNumber: number,
+  episodeId: number,
   scriptSummary?: string,
 ): Promise<string> {
   const llm = getLLMService();
@@ -103,12 +110,12 @@ export async function regenerateIgCaption(
   let podcastSummary: string;
   if (scriptSummary) {
     podcastSummary = scriptSummary;
-  } else if (episodeNumber) {
+  } else if (episodeId) {
     // Try to load from DB
     try {
       const db = getDb();
-      const row = db.prepare('SELECT script_summary FROM episodes WHERE episode_number = ?')
-        .get(episodeNumber) as { script_summary: string | null } | undefined;
+      const row = db.prepare('SELECT script_summary FROM episodes WHERE id = ?')
+        .get(episodeId) as { script_summary: string | null } | undefined;
       if (row?.script_summary) {
         podcastSummary = row.script_summary;
       } else {
@@ -213,7 +220,7 @@ ${podcastSummary}`;
 
   const result = await llm.call({
     stage: 'ig_caption',
-    episodeNumber,
+    episodeId,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -230,7 +237,7 @@ ${podcastSummary}`;
   }
 
   // Fallback simple caption
-  return `AI懶人報 EP#${episodeNumber}\n\n#AI懶人報 #Podcast #AI工具`;
+  return `AI懶人報\n\n#AI懶人報 #Podcast #AI工具`;
 }
 
 // n8n exact prompts for Email週報內容產生Agent + HTML郵件格式化Agent
@@ -342,7 +349,7 @@ ${videoMetadata}`;
 
   const contentResult = await llm.call({
     stage: 'email_content',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [
       { role: 'system', content: contentSystemPrompt },
       { role: 'user', content: contentUserPrompt },
@@ -388,7 +395,7 @@ YouTube 連結直接顯示
 
   const htmlResult = await llm.call({
     stage: 'email_html',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [
       { role: 'system', content: htmlSystemPrompt },
       { role: 'user', content: `請處理這段輸入：${contentResult.content}` },
@@ -410,7 +417,7 @@ YouTube 連結直接顯示
 }
 
 function buildFallbackEmailHtml(state: PipelineState): string {
-  const title = state.selectedTitle || `EP${state.episodeNumber}`;
+  const title = state.selectedTitle || 'AI懶人報';
   const desc = state.description || '';
   const videos = (state.selectedVideos || []).slice(0, 5)
     .map((v) => `<p><strong>${v.title}</strong><br>${v.channelName} · ${v.viewCount.toLocaleString()} views</p>`)

@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
-  episodeNumber: number;
+  episodeId: number;
   soundonUrl: string | null;
   youtubeUrl: string | null;
   igPostId: string | null;
 }
 
-export default function RepublishSection({ episodeNumber, soundonUrl, youtubeUrl, igPostId }: Props) {
+export default function RepublishSection({ episodeId, soundonUrl, youtubeUrl, igPostId }: Props) {
   const router = useRouter();
   const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -25,7 +25,7 @@ export default function RepublishSection({ episodeNumber, soundonUrl, youtubeUrl
     setError('');
     setSuccess('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/republish`, {
+      const res = await fetch(`/api/episodes/${episodeId}/republish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform }),
@@ -116,7 +116,7 @@ export default function RepublishSection({ episodeNumber, soundonUrl, youtubeUrl
               setError('');
               setSuccess('');
               try {
-                const res = await fetch(`/api/episodes/${episodeNumber}/republish`, {
+                const res = await fetch(`/api/episodes/${episodeId}/republish`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ platform: 'all' }),

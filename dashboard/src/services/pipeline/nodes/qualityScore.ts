@@ -184,7 +184,7 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
 
     const scoreResponse = await llm.call({
       stage: 'scoring',
-      episodeNumber: state.episodeNumber,
+      episodeId: state.episodeId,
       messages: [
         { role: 'system', content: getScoringPrompt(segmentType) },
         { role: 'user', content: scoringUserPrompt },
@@ -266,7 +266,7 @@ ${currentScript}
 
     const rewriteResult = await llm.call({
       stage: 'script_refine',
-      episodeNumber: state.episodeNumber,
+      episodeId: state.episodeId,
       messages: [
         { role: 'system', content: getRewritePrompt(segmentType) },
         { role: 'user', content: rewriteUserPrompt },

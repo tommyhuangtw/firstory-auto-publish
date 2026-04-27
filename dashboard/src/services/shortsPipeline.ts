@@ -29,13 +29,13 @@ function loadModule(modulePath: string): any {
 /**
  * Extract 3-5 "essence" beat candidates from an episode's Chinese script.
  */
-export async function extractBeats(episodeNumber: number) {
+export async function extractBeats(episodeId: number) {
   const db = getDb();
-  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE episode_number = ?').get(episodeNumber) as
+  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE id = ?').get(episodeId) as
     { selected_title: string | null; script_zh: string | null } | undefined;
 
   if (!episode?.script_zh) {
-    throw new Error(`Episode ${episodeNumber} has no Chinese script`);
+    throw new Error(`Episode ${episodeId} has no Chinese script`);
   }
 
   const { extractEssence } = loadModule(path.join(SHORTS_PIPELINE_DIR, 'highlightExtractor'));
@@ -48,7 +48,7 @@ export async function extractBeats(episodeNumber: number) {
     openRouter,
   });
 
-  log.info({ episodeNumber, beatCount: beats.length }, 'Extracted beats');
+  log.info({ episodeId, beatCount: beats.length }, 'Extracted beats');
   return beats as Array<{ text: string; reason: string }>;
 }
 
@@ -69,6 +69,7 @@ export async function generateHeadlines(selectedBeat: { text: string; reason?: s
 export async function runShortsGeneration(shortsId: number) {
   const db = getDb();
   const shorts = db.prepare('SELECT * FROM shorts WHERE id = ?').get(shortsId) as {
+    episode_id: number;
     episode_number: number;
     beats_json: string;
     selected_beat_index: number;
@@ -77,7 +78,9 @@ export async function runShortsGeneration(shortsId: number) {
     avatar_filename: string | null;
   };
 
-  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE episode_number = ?').get(shorts.episode_number) as
+  // Use episode_id if available, fallback to episode_number for old data
+  const episodeId = shorts.episode_id || shorts.episode_number;
+  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE id = ?').get(episodeId) as
     { selected_title: string | null; script_zh: string | null };
 
   const beats = JSON.parse(shorts.beats_json);
@@ -106,7 +109,7 @@ export async function runShortsGeneration(shortsId: number) {
 
     // Generate IG caption
     const igCaption = await generateShortsIgCaption({
-      episodeNumber: shorts.episode_number,
+      episodeId,
       episodeTitle: episode.selected_title || '',
       beatText: selectedBeat.text,
       coverHeadline,
@@ -116,6 +119,9 @@ export async function runShortsGeneration(shortsId: number) {
       `UPDATE shorts SET status = 'completed', video_path = ?, cover_path = ?,
        manifest_json = ?, ig_caption = ?, completed_at = datetime('now') WHERE id = ?`
     ).run(outputPath, coverPath, JSON.stringify(manifest), igCaption, shortsId);
+
+    // Log Kie AI costs for shorts pipeline: 1 hero (veo3) + 2 sloth (kling) + 1 edit (nano-banana-edit)
+    logShortsCosts(db, episodeId, shortsId);
 
     log.info({ shortsId, outputPath }, 'Shorts generation completed');
   } catch (err) {
@@ -129,7 +135,7 @@ export async function runShortsGeneration(shortsId: number) {
  * Generate an IG caption for the shorts video, optimized for 引流 to the podcast.
  */
 async function generateShortsIgCaption(args: {
-  episodeNumber: number;
+  episodeId: number;
   episodeTitle: string;
   beatText: string;
   coverHeadline: string;
@@ -157,7 +163,7 @@ async function generateShortsIgCaption(args: {
 
     const resp = await llm.call({
       stage: 'shorts_ig_caption',
-      episodeNumber: args.episodeNumber,
+      episodeId: args.episodeId,
       messages: [{ role: 'user', content: prompt }],
       options: { temperature: 0.7, maxTokens: 512 },
     });
@@ -171,4 +177,28 @@ async function generateShortsIgCaption(args: {
 
   // Fallback
   return `${args.coverHeadline}\n\n完整集數連結在 bio！\n\n#AI懶人報 #AI #Podcast`;
+}
+
+function logShortsCosts(db: ReturnType<typeof getDb>, episodeId: number, shortsId: number) {
+  try {
+    const getSetting = (key: string, fallback: string) =>
+      parseFloat((db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string })?.value || fallback);
+
+    const insert = db.prepare(
+      'INSERT INTO service_costs (episode_id, shorts_id, service, model, units, cost_usd) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+
+    // 1 × Veo 3 Fast hero B-roll
+    insert.run(episodeId, shortsId, 'kieai_veo3', 'veo3_fast', 1, getSetting('kieai_veo3_fast_usd', '0.30'));
+    // 2 × Kling 2.6 sloth videos (hook + outro)
+    const klingCost = getSetting('kieai_kling_i2v_usd', '0.55');
+    insert.run(episodeId, shortsId, 'kieai_kling', 'kling-2.6', 1, klingCost);
+    insert.run(episodeId, shortsId, 'kieai_kling', 'kling-2.6', 1, klingCost);
+    // 1 × nano-banana-edit cover edit
+    insert.run(episodeId, shortsId, 'kieai_edit', 'nano-banana-edit', 1, getSetting('kieai_nano_banana_edit_usd', '0.04'));
+
+    log.info({ shortsId, episodeId }, 'Shorts costs logged');
+  } catch (err) {
+    log.warn({ error: (err as Error).message }, 'Failed to log shorts costs');
+  }
 }

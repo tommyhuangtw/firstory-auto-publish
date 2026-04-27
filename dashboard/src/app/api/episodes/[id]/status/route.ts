@@ -7,15 +7,15 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT episode_number, status, selected_title, soundon_url, youtube_url, published_at, approved_at FROM episodes WHERE episode_number = ?'
-    ).get(episodeNumber) as Record<string, unknown> | undefined;
+      'SELECT id, episode_number, status, selected_title, soundon_url, youtube_url, published_at, approved_at FROM episodes WHERE id = ?'
+    ).get(episodeId) as Record<string, unknown> | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });

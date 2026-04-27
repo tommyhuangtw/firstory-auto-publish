@@ -56,7 +56,7 @@ export interface ToolMentionRecord {
  * Save resolved tools to DB with family-aware canonical names.
  * Triggers summary compaction for tools that have been seen many times.
  */
-export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], airedDate?: string): Promise<void> {
+export async function upsertTools(episodeId: number, tools: ResolvedTool[], airedDate?: string): Promise<void> {
   const db = getDb();
   const dateStr = airedDate || new Date().toISOString().slice(0, 10);
 
@@ -77,7 +77,7 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], 
   `);
 
   const insertMention = db.prepare(`
-    INSERT INTO episode_tool_mentions (episode_number, tool_id, mention_type, context_snippet, significance, version_detail, aired_date)
+    INSERT INTO episode_tool_mentions (episode_id, tool_id, mention_type, context_snippet, significance, version_detail, aired_date)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -100,8 +100,8 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], 
         tool.canonicalName,
         JSON.stringify(tool.aliases),
         tool.category,
-        episodeNumber,
-        episodeNumber,
+        episodeId,
+        episodeId,
         tool.contextSnippet,
         tool.versionDetail || null,
         familyId,
@@ -113,7 +113,7 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], 
       const row = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number } | undefined;
       if (row) {
         insertMention.run(
-          episodeNumber,
+          episodeId,
           row.id,
           tool.mentionType,
           tool.contextSnippet,
@@ -135,7 +135,7 @@ export async function upsertTools(episodeNumber: number, tools: ResolvedTool[], 
   });
 
   transaction();
-  log.info({ episodeNumber, count: tools.length }, 'Tools upserted');
+  log.info({ episodeId, count: tools.length }, 'Tools upserted');
 
   // Phase 2: Async summary compaction (outside transaction)
   for (const item of toolsNeedingCompaction) {
@@ -211,7 +211,7 @@ export interface MemoryContext {
  */
 export function buildMemoryContext(
   videoTexts: string[],
-  episodeNumber: number
+  episodeId: number
 ): MemoryContext {
   const db = getDb();
   const empty: MemoryContext = { briefForScriptGen: '', briefForQualityCheck: '', knownToolNames: [] };
@@ -331,7 +331,7 @@ export function getToolMentions(toolId: number): (ToolMentionRecord & { segment_
   return db.prepare(`
     SELECT m.*, e.segment_type
     FROM episode_tool_mentions m
-    LEFT JOIN episodes e ON e.episode_number = m.episode_number
+    LEFT JOIN episodes e ON e.id = m.episode_id OR (m.episode_id IS NULL AND e.episode_number = m.episode_number)
     WHERE m.tool_id = ?
     ORDER BY m.aired_date DESC, m.id DESC
   `).all(toolId) as (ToolMentionRecord & { segment_type?: string })[];

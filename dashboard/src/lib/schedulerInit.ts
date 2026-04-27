@@ -18,9 +18,6 @@ import type { SegmentType } from '@/services/pipeline/state';
 
 const log = createChildLogger('scheduler-init');
 
-const PODCAST_ID = 'ca974d36-6fcc-46fc-a339-ba7ed8902c80';
-const RSS_URL = `https://feeds.soundon.fm/podcasts/${PODCAST_ID}.xml`;
-
 let initialized = false;
 
 export function initializeSchedulerJobs(): void {
@@ -63,53 +60,25 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
     return;
   }
 
-  // Determine next episode number from RSS feed (all segment types share the same podcast feed)
-  let nextEp: number;
-  try {
-    const res = await fetch(RSS_URL);
-    if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
-    const xml = await res.text();
-    const epMatch = xml.match(/<item>[\s\S]*?<title><!\[CDATA\[.*?EP\s*(\d+)/i);
-    const latestRssEp = epMatch ? parseInt(epMatch[1]) : null;
+  // Create episode (no episode_number — assigned at publish time)
+  const epResult = db.prepare(
+    `INSERT INTO episodes (segment_type, status) VALUES (?, 'generating')`
+  ).run(segmentType);
+  const episodeId = Number(epResult.lastInsertRowid);
 
-    if (latestRssEp) {
-      nextEp = latestRssEp + 1;
-      log.info({ segmentType, latestRssEp, nextEp }, 'Episode number from RSS feed');
-    } else {
-      // RSS parsed but no EP number found — fallback to DB max across all segment types
-      const latest = db.prepare(
-        'SELECT MAX(episode_number) as max_ep FROM episodes'
-      ).get() as { max_ep: number | null } | undefined;
-      nextEp = (latest?.max_ep || 0) + 1;
-      log.warn({ segmentType, nextEp }, 'No EP number in RSS — using DB fallback');
-    }
-  } catch (error) {
-    // RSS fetch failed entirely — fallback to DB
-    const latest = db.prepare(
-      'SELECT MAX(episode_number) as max_ep FROM episodes'
-    ).get() as { max_ep: number | null } | undefined;
-    nextEp = (latest?.max_ep || 0) + 1;
-    log.warn({ segmentType, nextEp, error: (error as Error).message }, 'RSS fetch failed — using DB fallback');
-  }
-
-  log.info({ segmentType, episodeNumber: nextEp }, 'Scheduler triggering pipeline');
-
-  // Create pipeline run and episode records
+  // Create pipeline run with episode_id
   const result = db.prepare(
-    `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
+    `INSERT INTO pipeline_runs (episode_id, segment_type, status, current_stage)
      VALUES (?, ?, 'running', 'fetchYoutube')`
-  ).run(nextEp, segmentType);
+  ).run(episodeId, segmentType);
   const pipelineRunId = Number(result.lastInsertRowid);
 
-  db.prepare(
-    `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
-     VALUES (?, ?, 'generating')`
-  ).run(nextEp, segmentType);
+  log.info({ segmentType, episodeId, pipelineRunId }, 'Scheduler triggering pipeline');
 
   // Fire and forget — with auto-retry and email notifications
-  startPipeline(nextEp, segmentType, pipelineRunId).catch(async (error) => {
+  startPipeline(episodeId, segmentType, pipelineRunId).catch(async (error) => {
     const errMsg = (error as Error).message;
-    log.error({ segmentType, episodeNumber: nextEp, error: errMsg }, 'Scheduled pipeline failed');
+    log.error({ segmentType, episodeId, error: errMsg }, 'Scheduled pipeline failed');
 
     // Get failed stage from DB
     const failedRun = db.prepare(
@@ -121,7 +90,7 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
     const gmail = getGmailService();
     try {
       await gmail.sendPipelineNotification({
-        episodeNumber: nextEp, segmentType, failedStage,
+        episodeNumber: episodeId, segmentType, failedStage,
         errorMessage: errMsg, type: 'failure',
       });
     } catch (emailErr) {
@@ -130,14 +99,14 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
 
     // 2. Auto retry once from the failed stage
     if (failedStage) {
-      log.info({ segmentType, episodeNumber: nextEp, failedStage }, 'Auto-retrying pipeline from failed stage');
+      log.info({ segmentType, episodeId, failedStage }, 'Auto-retrying pipeline from failed stage');
       try {
         await retryFromStage(pipelineRunId, failedStage);
 
         // 3a. Retry succeeded — send success email
         try {
           await gmail.sendPipelineNotification({
-            episodeNumber: nextEp, segmentType, failedStage,
+            episodeNumber: episodeId, segmentType, failedStage,
             errorMessage: errMsg, type: 'retry_success',
           });
         } catch (emailErr) {
@@ -145,12 +114,12 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
         }
       } catch (retryError) {
         const retryErrMsg = (retryError as Error).message;
-        log.error({ segmentType, episodeNumber: nextEp, error: retryErrMsg }, 'Auto-retry also failed');
+        log.error({ segmentType, episodeId, error: retryErrMsg }, 'Auto-retry also failed');
 
         // 3b. Retry failed — send retry-failure email
         try {
           await gmail.sendPipelineNotification({
-            episodeNumber: nextEp, segmentType, failedStage,
+            episodeNumber: episodeId, segmentType, failedStage,
             errorMessage: errMsg, type: 'retry_failure', retryError: retryErrMsg,
           });
         } catch (emailErr) {

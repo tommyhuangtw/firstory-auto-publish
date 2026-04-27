@@ -12,9 +12,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const body = await request.json().catch(() => ({}));
@@ -24,7 +24,7 @@ export async function POST(
     }
 
     const db = getDb();
-    const episode = db.prepare('SELECT * FROM episodes WHERE episode_number = ?').get(episodeNumber) as Record<string, unknown> | undefined;
+    const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as Record<string, unknown> | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -37,8 +37,17 @@ export async function POST(
       );
     }
 
+    const episodeNumber = episode.episode_number as number | null;
+    if (!episodeNumber) {
+      return NextResponse.json(
+        { error: '集數尚未分配 episode number，無法重新發布' },
+        { status: 400 }
+      );
+    }
+
     // Build minimal state for publish functions
     const state: PipelineState = {
+      episodeId,
       episodeNumber,
       segmentType: (episode.segment_type as SegmentType) || 'daily',
       pipelineRunId: 0,
@@ -87,12 +96,12 @@ export async function POST(
       try {
         const url = await publishToSoundOnPlatform(state);
         results.soundonUrl = url;
-        db.prepare('UPDATE episodes SET soundon_url = ? WHERE episode_number = ?').run(url, episodeNumber);
-        log.info({ episodeNumber, soundonUrl: url }, 'SoundOn republish succeeded');
+        db.prepare('UPDATE episodes SET soundon_url = ? WHERE id = ?').run(url, episodeId);
+        log.info({ episodeId, soundonUrl: url }, 'SoundOn republish succeeded');
       } catch (error) {
         const msg = (error as Error).message;
         results.errors.push(`SoundOn: ${msg}`);
-        log.error({ episodeNumber, error: msg }, 'SoundOn republish failed');
+        log.error({ episodeId, error: msg }, 'SoundOn republish failed');
       }
     }
 
@@ -100,12 +109,12 @@ export async function POST(
       try {
         const url = await publishToYouTubePlatform(state);
         results.youtubeUrl = url;
-        db.prepare('UPDATE episodes SET youtube_url = ? WHERE episode_number = ?').run(url, episodeNumber);
-        log.info({ episodeNumber, youtubeUrl: url }, 'YouTube republish succeeded');
+        db.prepare('UPDATE episodes SET youtube_url = ? WHERE id = ?').run(url, episodeId);
+        log.info({ episodeId, youtubeUrl: url }, 'YouTube republish succeeded');
       } catch (error) {
         const msg = (error as Error).message;
         results.errors.push(`YouTube: ${msg}`);
-        log.error({ episodeNumber, error: msg }, 'YouTube republish failed');
+        log.error({ episodeId, error: msg }, 'YouTube republish failed');
       }
     }
 
@@ -124,12 +133,12 @@ export async function POST(
         const { postToInstagram } = await import('@/services/instagram');
         const postId = await postToInstagram(publicUrl, caption);
         results.igPostId = postId;
-        db.prepare('UPDATE episodes SET ig_post_id = ? WHERE episode_number = ?').run(postId, episodeNumber);
-        log.info({ episodeNumber, igPostId: postId }, 'Instagram republish succeeded');
+        db.prepare('UPDATE episodes SET ig_post_id = ? WHERE id = ?').run(postId, episodeId);
+        log.info({ episodeId, igPostId: postId }, 'Instagram republish succeeded');
       } catch (error) {
         const msg = (error as Error).message;
         results.errors.push(`Instagram: ${msg}`);
-        log.error({ episodeNumber, error: msg }, 'Instagram republish failed');
+        log.error({ episodeId, error: msg }, 'Instagram republish failed');
       }
     }
 
@@ -139,7 +148,7 @@ export async function POST(
 
     return NextResponse.json({
       message: 'Republish completed',
-      episodeNumber,
+      episodeId,
       soundonUrl: results.soundonUrl || null,
       youtubeUrl: results.youtubeUrl || null,
       igPostId: results.igPostId || null,

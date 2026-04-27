@@ -4,7 +4,8 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
-  episodeNumber: number;
+  episodeId: number;
+  episodeNumber: number | null;
   status: string;
   segmentType: string;
   candidateTitles: string[];
@@ -17,9 +18,8 @@ interface Props {
 }
 
 export default function ReviewClient({
-  episodeNumber,
+  episodeId,
   status,
-  segmentType,
   candidateTitles: initialCandidates,
   selectedTitle: initialTitle,
   description: initialDescription,
@@ -58,7 +58,7 @@ export default function ReviewClient({
     setSaving(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/save-meta`, {
+      const res = await fetch(`/api/episodes/${episodeId}/save-meta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +85,7 @@ export default function ReviewClient({
     setLoading(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/approve`, {
+      const res = await fetch(`/api/episodes/${episodeId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selectedTitle: title, description, youtubeDescription: description }),
@@ -105,7 +105,7 @@ export default function ReviewClient({
     setLoading(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/reject`, {
+      const res = await fetch(`/api/episodes/${episodeId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: rejectReason }),
@@ -125,7 +125,7 @@ export default function ReviewClient({
     setRegenerating(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/regenerate-titles`, {
+      const res = await fetch(`/api/episodes/${episodeId}/regenerate-titles`, {
         method: 'POST',
       });
       const data = await res.json();
@@ -146,7 +146,7 @@ export default function ReviewClient({
     setRegeneratingDesc(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/regenerate-description`, {
+      const res = await fetch(`/api/episodes/${episodeId}/regenerate-description`, {
         method: 'POST',
       });
       const data = await res.json();
@@ -166,7 +166,7 @@ export default function ReviewClient({
     setRegeneratingIg(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/regenerate-ig`, {
+      const res = await fetch(`/api/episodes/${episodeId}/regenerate-ig`, {
         method: 'POST',
       });
       const data = await res.json();

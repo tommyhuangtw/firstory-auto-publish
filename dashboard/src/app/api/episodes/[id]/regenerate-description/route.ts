@@ -11,15 +11,15 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT segment_type, script_zh, script_en FROM episodes WHERE episode_number = ?'
-    ).get(episodeNumber) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
+      'SELECT segment_type, script_zh, script_en FROM episodes WHERE id = ?'
+    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -30,20 +30,20 @@ export async function POST(
       return NextResponse.json({ error: 'No script content available' }, { status: 400 });
     }
 
-    log.info({ episodeNumber, segmentType: episode.segment_type }, 'Regenerating description');
+    log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating description');
 
     const description = await regenerateDescription(
       episode.segment_type,
       scriptContent,
-      episodeNumber,
+      episodeId,
     );
 
     // Save to both description and youtube_description
     db.prepare(
-      'UPDATE episodes SET description = ?, youtube_description = ? WHERE episode_number = ?'
-    ).run(description, description, episodeNumber);
+      'UPDATE episodes SET description = ?, youtube_description = ? WHERE id = ?'
+    ).run(description, description, episodeId);
 
-    log.info({ episodeNumber, descLength: description.length }, 'Description regenerated');
+    log.info({ episodeId, descLength: description.length }, 'Description regenerated');
 
     return NextResponse.json({ description });
   } catch (error) {

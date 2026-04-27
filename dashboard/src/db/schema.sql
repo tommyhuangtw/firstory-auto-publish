@@ -221,6 +221,18 @@ CREATE TABLE IF NOT EXISTS shorts (
   completed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS service_costs (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER,
+  shorts_id INTEGER,              -- NULL for podcast, shorts.id for shorts
+  service TEXT NOT NULL,           -- 'voai_tts' | 'kieai_cover' | 'kieai_veo3' | 'kieai_kling' | 'kieai_edit'
+  model TEXT,                     -- 'neo' | 'nano-banana-pro' | 'veo3_fast' etc.
+  units INTEGER,                  -- char count for TTS, 1 for images/videos
+  cost_usd REAL,
+  latency_ms INTEGER,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -234,3 +246,5 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_run ON pipeline_snapshots(pipeline_run_
 CREATE INDEX IF NOT EXISTS idx_robot_youtube_sources_video ON robot_youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_weekly_youtube_sources_video ON weekly_youtube_sources(video_id);
 CREATE INDEX IF NOT EXISTS idx_shorts_episode ON shorts(episode_number);
+CREATE INDEX IF NOT EXISTS idx_service_costs_episode ON service_costs(episode_number);
+CREATE INDEX IF NOT EXISTS idx_service_costs_shorts ON service_costs(shorts_id);

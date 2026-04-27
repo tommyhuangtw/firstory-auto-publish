@@ -11,15 +11,15 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT episode_number, status, audio_path, cover_path FROM episodes WHERE episode_number = ?'
-    ).get(episodeNumber) as { episode_number: number; status: string; audio_path: string | null; cover_path: string | null } | undefined;
+      'SELECT id, status, audio_path, cover_path FROM episodes WHERE id = ?'
+    ).get(episodeId) as { id: number; status: string; audio_path: string | null; cover_path: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -34,10 +34,10 @@ export async function DELETE(
 
     // Cascade delete related records
     const tx = db.transaction(() => {
-      db.prepare('DELETE FROM episode_tool_mentions WHERE episode_number = ?').run(episodeNumber);
-      db.prepare('DELETE FROM llm_calls WHERE episode_number = ?').run(episodeNumber);
-      db.prepare('DELETE FROM pipeline_runs WHERE episode_number = ?').run(episodeNumber);
-      db.prepare('DELETE FROM episodes WHERE episode_number = ?').run(episodeNumber);
+      db.prepare('DELETE FROM episode_tool_mentions WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM llm_calls WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM pipeline_runs WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
     });
     tx();
 
@@ -48,9 +48,9 @@ export async function DELETE(
       }
     }
 
-    log.info({ episodeNumber, status: episode.status }, 'Episode deleted');
+    log.info({ episodeId, status: episode.status }, 'Episode deleted');
 
-    return NextResponse.json({ deleted: episodeNumber });
+    return NextResponse.json({ deleted: episodeId });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }

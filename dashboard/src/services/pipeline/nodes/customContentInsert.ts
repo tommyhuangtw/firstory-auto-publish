@@ -71,7 +71,7 @@ ${state.scriptZh}`;
 
   const result = await llm.call({
     stage: 'custom_content_insert',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },

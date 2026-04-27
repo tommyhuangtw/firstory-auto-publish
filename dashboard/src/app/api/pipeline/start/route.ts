@@ -6,14 +6,11 @@ import type { SegmentType } from '@/services/pipeline/state';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { episodeNumber, segmentType } = body as {
-      episodeNumber: number;
-      segmentType: SegmentType;
-    };
+    const { segmentType } = body as { segmentType: SegmentType };
 
-    if (!episodeNumber || !segmentType) {
+    if (!segmentType) {
       return NextResponse.json(
-        { error: 'episodeNumber and segmentType are required' },
+        { error: 'segmentType is required' },
         { status: 400 }
       );
     }
@@ -25,42 +22,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create pipeline_run + episode records first, then fire-and-forget
     const db = getDb();
 
-    // Guard: prevent duplicate running pipeline for same episode + segment
+    // Guard: prevent duplicate running pipeline for same segment type
     const running = db.prepare(
       `SELECT id FROM pipeline_runs
-       WHERE episode_number = ? AND segment_type = ? AND status = 'running'`
-    ).get(episodeNumber, segmentType) as { id: number } | undefined;
+       WHERE segment_type = ? AND status = 'running'`
+    ).get(segmentType) as { id: number } | undefined;
 
     if (running) {
       return NextResponse.json(
-        { error: `EP ${episodeNumber} (${segmentType}) 已有正在執行的 pipeline (run #${running.id})` },
+        { error: `${segmentType} 已有正在執行的 pipeline (run #${running.id})` },
         { status: 409 }
       );
     }
 
-    const result = db.prepare(
-      `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
-       VALUES (?, ?, 'running', 'fetchYoutube')`
-    ).run(episodeNumber, segmentType);
-    const pipelineRunId = Number(result.lastInsertRowid);
+    // Create episode record (no episode_number yet — assigned at publish)
+    const epResult = db.prepare(
+      `INSERT INTO episodes (segment_type, status) VALUES (?, 'generating')`
+    ).run(segmentType);
+    const episodeId = Number(epResult.lastInsertRowid);
 
-    db.prepare(
-      `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
-       VALUES (?, ?, 'generating')`
-    ).run(episodeNumber, segmentType);
+    // Create pipeline run
+    const runResult = db.prepare(
+      `INSERT INTO pipeline_runs (episode_id, segment_type, status, current_stage)
+       VALUES (?, ?, 'running', 'fetchYoutube')`
+    ).run(episodeId, segmentType);
+    const pipelineRunId = Number(runResult.lastInsertRowid);
 
     // Fire-and-forget: don't await
-    startPipeline(episodeNumber, segmentType, pipelineRunId).catch(() => {
+    startPipeline(episodeId, segmentType, pipelineRunId).catch(() => {
       // Error handling is inside startPipeline (updates DB)
     });
 
     return NextResponse.json({
       message: 'Pipeline started',
       pipelineRunId,
-      episodeNumber,
+      episodeId,
       segmentType,
     });
   } catch (error) {

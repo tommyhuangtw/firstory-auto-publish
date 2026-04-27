@@ -234,7 +234,7 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
 
   const result = await llm.call({
     stage: 'script_zh',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [
       { role: 'system', content: translatePrompt },
       { role: 'user', content: userPrompt },

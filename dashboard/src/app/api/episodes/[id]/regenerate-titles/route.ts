@@ -11,15 +11,15 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT segment_type, script_zh, script_en FROM episodes WHERE episode_number = ?'
-    ).get(episodeNumber) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
+      'SELECT segment_type, script_zh, script_en FROM episodes WHERE id = ?'
+    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -30,19 +30,19 @@ export async function POST(
       return NextResponse.json({ error: 'No script content available' }, { status: 400 });
     }
 
-    log.info({ episodeNumber, segmentType: episode.segment_type }, 'Regenerating titles');
+    log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating titles');
 
     const { candidateTitles, selectedTitle } = await regenerateTitles(
       episode.segment_type,
       scriptContent,
-      episodeNumber,
+      episodeId,
     );
 
     db.prepare(
-      'UPDATE episodes SET candidate_titles = ?, selected_title = ? WHERE episode_number = ?'
-    ).run(JSON.stringify(candidateTitles), selectedTitle, episodeNumber);
+      'UPDATE episodes SET candidate_titles = ?, selected_title = ? WHERE id = ?'
+    ).run(JSON.stringify(candidateTitles), selectedTitle, episodeId);
 
-    log.info({ episodeNumber, count: candidateTitles.length, selectedTitle: selectedTitle.slice(0, 50) }, 'Titles regenerated');
+    log.info({ episodeId, count: candidateTitles.length, selectedTitle: selectedTitle.slice(0, 50) }, 'Titles regenerated');
 
     return NextResponse.json({ candidateTitles, selectedTitle });
   } catch (error) {

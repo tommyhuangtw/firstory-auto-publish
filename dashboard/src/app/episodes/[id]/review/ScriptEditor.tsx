@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
-  episodeNumber: number;
+  episodeId: number;
   scriptEn: string;
   scriptZh: string;
   pipelineRunId: number | null;
   canEdit: boolean;
 }
 
-export default function ScriptEditor({ episodeNumber, scriptEn, scriptZh, pipelineRunId, canEdit }: Props) {
+export default function ScriptEditor({ episodeId, scriptEn, scriptZh, pipelineRunId, canEdit }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<'zh' | 'en'>('zh');
   const [editedZh, setEditedZh] = useState(scriptZh);
@@ -25,7 +25,7 @@ export default function ScriptEditor({ episodeNumber, scriptEn, scriptZh, pipeli
     setSaving(true);
     setMessage('');
     try {
-      const res = await fetch(`/api/episodes/${episodeNumber}/edit-script`, {
+      const res = await fetch(`/api/episodes/${episodeId}/edit-script`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scriptZh: editedZh }),
@@ -50,7 +50,7 @@ export default function ScriptEditor({ episodeNumber, scriptEn, scriptZh, pipeli
     try {
       // Save first if changed
       if (hasChanges) {
-        const saveRes = await fetch(`/api/episodes/${episodeNumber}/edit-script`, {
+        const saveRes = await fetch(`/api/episodes/${episodeId}/edit-script`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scriptZh: editedZh }),

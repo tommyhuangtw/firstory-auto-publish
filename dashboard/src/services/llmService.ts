@@ -44,7 +44,8 @@ interface LLMResponse {
 
 interface LLMCallParams {
   stage: string;
-  episodeNumber?: number;
+  episodeId?: number;
+  episodeNumber?: number | null;
   messages: LLMMessage[];
   options?: LLMOptions;
 }
@@ -76,7 +77,7 @@ export class LLMService {
    * Main entry point — calls LLM and auto-logs to llm_calls table
    */
   async call(params: LLMCallParams): Promise<LLMResponse> {
-    const { stage, episodeNumber, messages, options = {} } = params;
+    const { stage, episodeId, episodeNumber, messages, options = {} } = params;
     const {
       temperature = 0.7,
       maxTokens = 2048,
@@ -104,7 +105,8 @@ export class LLMService {
 
             // Auto-log to SQLite
             this.logCall({
-              episodeNumber,
+              episodeId,
+              episodeNumber: episodeNumber ?? undefined,
               stage,
               model,
               inputTokens: result.usage.prompt_tokens ?? 0,
@@ -131,7 +133,8 @@ export class LLMService {
 
     // All attempts failed — log failure
     this.logCall({
-      episodeNumber,
+      episodeId,
+      episodeNumber: episodeNumber ?? undefined,
       stage,
       model: modelsToTry[0],
       inputTokens: 0,
@@ -152,11 +155,12 @@ export class LLMService {
   async generate(
     prompt: string,
     stage: string,
-    options?: LLMOptions & { episodeNumber?: number }
+    options?: LLMOptions & { episodeId?: number; episodeNumber?: number | null }
   ): Promise<LLMResponse> {
-    const { episodeNumber, ...llmOptions } = options ?? {};
+    const { episodeId, episodeNumber, ...llmOptions } = options ?? {};
     return this.call({
       stage,
+      episodeId,
       episodeNumber,
       messages: [{ role: 'user', content: prompt }],
       options: llmOptions,
@@ -169,7 +173,7 @@ export class LLMService {
   async generateJSON<T = unknown>(
     prompt: string,
     stage: string,
-    options?: LLMOptions & { episodeNumber?: number }
+    options?: LLMOptions & { episodeId?: number; episodeNumber?: number | null }
   ): Promise<{ success: boolean; data?: T; error?: string; model: string | null }> {
     const result = await this.generate(prompt, stage, options);
     if (!result.success || !result.content) {
@@ -233,6 +237,7 @@ export class LLMService {
   }
 
   private logCall(params: {
+    episodeId?: number;
     episodeNumber?: number;
     stage: string;
     model: string;
@@ -247,10 +252,11 @@ export class LLMService {
     try {
       const db = getDb();
       db.prepare(
-        `INSERT INTO llm_calls (episode_number, stage, model, input_tokens, output_tokens,
+        `INSERT INTO llm_calls (episode_id, episode_number, stage, model, input_tokens, output_tokens,
          cost_usd, latency_ms, quality_score, success, error_message)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
+        params.episodeId ?? null,
         params.episodeNumber ?? null,
         params.stage,
         params.model,

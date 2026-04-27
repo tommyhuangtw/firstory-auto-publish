@@ -10,6 +10,7 @@
 import { getLLMService } from '@/services/llmService';
 import { generateCoverImage, downloadImage } from '@/services/kieai';
 import { uploadToCloudinary } from '@/services/cloudinary';
+import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import path from 'path';
 import type { PipelineState } from '../state';
@@ -29,7 +30,7 @@ const REFERENCE_IMAGES = [
 ];
 
 export async function generateCover(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber }, 'Generating cover image');
+  log.info({ episodeId: state.episodeId }, 'Generating cover image');
 
   if (!process.env.KIE_AI_API_KEY) {
     log.warn('KIE_AI_API_KEY not set, skipping cover generation');
@@ -46,21 +47,39 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
     const imagePrompt = buildImagePrompt(scenario, isRobot);
 
     // Step 3: kie.ai generates image with reference images
+    const coverStartMs = Date.now();
     const imageUrl = await generateCoverImage(imagePrompt, {
       model: 'nano-banana-pro',
       aspectRatio: '1:1',
       resolution: '2K',
       referenceImages: REFERENCE_IMAGES,
     });
+    // Log Kie AI cover cost
+    try {
+      const db = getDb();
+      const costUsd = parseFloat(
+        (db.prepare("SELECT value FROM settings WHERE key = 'kieai_nano_banana_pro_usd'").get() as { value: string })?.value || '0.09'
+      );
+      db.prepare(
+        'INSERT INTO service_costs (episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(state.episodeNumber ?? null, 'kieai_cover', 'nano-banana-pro', 1, costUsd, Date.now() - coverStartMs);
+      log.info({ costUsd }, 'Cover image cost logged');
+    } catch (err) {
+      log.warn({ error: (err as Error).message }, 'Failed to log cover cost');
+    }
 
     // Step 4: Download to local
-    const localPath = path.join(OUTPUT_DIR, `ep${state.episodeNumber}_cover.png`);
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+    const coverFilename = `${dateStr}_${timeStr}_${state.segmentType}_cover.png`;
+    const localPath = path.join(OUTPUT_DIR, coverFilename);
     await downloadImage(imageUrl, localPath);
 
     // Step 5: Upload to Cloudinary for public URL
     let publicUrl = imageUrl;
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_UPLOAD_PRESET) {
-      publicUrl = await uploadToCloudinary(localPath, `ep${state.episodeNumber}_cover.png`);
+      publicUrl = await uploadToCloudinary(localPath, coverFilename);
     }
 
     log.info({ coverPath: localPath, coverUrl: publicUrl }, 'Cover image ready');
@@ -127,7 +146,7 @@ AI 工具在其中的實際應用情節
 
   const result = await llm.call({
     stage: 'ig_scenario',
-    episodeNumber: state.episodeNumber,
+    episodeId: state.episodeId,
     messages: [{ role: 'user', content: prompt }],
     options: {
       preferredModel: SCENARIO_MODEL,

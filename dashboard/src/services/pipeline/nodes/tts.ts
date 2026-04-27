@@ -11,6 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
+import { getDb } from '@/db';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:tts');
@@ -42,7 +43,7 @@ function getAudioConfig(segmentType: string) {
 }
 
 export async function tts(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber }, 'Starting TTS synthesis');
+  log.info({ episodeId: state.episodeId }, 'Starting TTS synthesis');
 
   const audioConfig = getAudioConfig(state.segmentType);
   const rawText = state.scriptZh || '';
@@ -62,7 +63,10 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
 
   const apiKey = process.env.VOAI_API_KEY;
   await fs.ensureDir(OUTPUT_DIR);
-  const outPath = path.join(OUTPUT_DIR, `ep${state.episodeNumber}_audio.mp3`);
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+  const outPath = path.join(OUTPUT_DIR, `${dateStr}_${timeStr}_${state.segmentType}_audio.mp3`);
 
   if (!apiKey) {
     log.warn('VOAI_API_KEY not set, generating silent stub');
@@ -70,6 +74,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     return { audioPath: result.path, audioDurationSec: result.durationSec, status: 'pending_review' };
   }
 
+  const ttsStartMs = Date.now();
   const chunks = buildChunks(text, CHUNK_MAX_LEN);
   log.info({ textLength: text.length, chunks: chunks.length }, 'Text chunked');
 
@@ -78,6 +83,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     await synthesizeChunk(chunks[0], outPath, apiKey, audioConfig);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1) }, 'TTS complete (single chunk)');
+    logTtsCost(state.episodeNumber, text.length, Date.now() - ttsStartMs);
     return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
   }
 
@@ -112,6 +118,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     await concatMp3s(chunkPaths, outPath);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1), chunks: chunks.length }, 'TTS complete');
+    logTtsCost(state.episodeNumber, text.length, Date.now() - ttsStartMs);
 
     return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
   } finally {
@@ -256,3 +263,22 @@ async function makeSilentStub(text: string, outPath: string) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function logTtsCost(episodeNumber: number | null | undefined, charCount: number, latencyMs: number) {
+  try {
+    const db = getDb();
+    const usdToTwd = parseFloat(
+      (db.prepare("SELECT value FROM settings WHERE key = 'usd_to_twd'").get() as { value: string })?.value || '32.0'
+    );
+    const costPerCharTwd = parseFloat(
+      (db.prepare("SELECT value FROM settings WHERE key = 'voai_cost_per_char_twd'").get() as { value: string })?.value || '0.06'
+    );
+    const costUsd = (charCount * costPerCharTwd) / usdToTwd;
+    db.prepare(
+      'INSERT INTO service_costs (episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(episodeNumber ?? null, 'voai_tts', 'neo', charCount, costUsd, latencyMs);
+    log.info({ charCount, costUsd: costUsd.toFixed(4) }, 'TTS cost logged');
+  } catch (err) {
+    log.warn({ error: (err as Error).message }, 'Failed to log TTS cost');
+  }
+}

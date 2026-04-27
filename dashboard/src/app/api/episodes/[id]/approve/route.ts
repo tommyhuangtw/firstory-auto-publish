@@ -8,9 +8,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const episodeNumber = parseInt(id);
-    if (isNaN(episodeNumber)) {
-      return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+    const episodeId = parseInt(id);
+    if (isNaN(episodeId)) {
+      return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
 
     const body = await request.json().catch(() => ({}));
@@ -38,20 +38,21 @@ export async function POST(
 
       updates.push("status = 'approved'");
       updates.push("approved_at = datetime('now')");
-      values.push(episodeNumber);
+      values.push(episodeId);
 
-      db.prepare(`UPDATE episodes SET ${updates.join(', ')} WHERE episode_number = ?`).run(...values);
+      db.prepare(`UPDATE episodes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     } else {
-      db.prepare(`UPDATE episodes SET status = 'approved', approved_at = datetime('now') WHERE episode_number = ?`)
-        .run(episodeNumber);
+      db.prepare(`UPDATE episodes SET status = 'approved', approved_at = datetime('now') WHERE id = ?`)
+        .run(episodeId);
     }
 
-    // Start publishing
-    const result = await publishEpisode(episodeNumber);
+    // Start publishing (assigns episode number from RSS)
+    const result = await publishEpisode(episodeId);
 
     return NextResponse.json({
       message: 'Episode approved and publishing',
-      episodeNumber,
+      episodeId,
+      episodeNumber: result.episodeNumber,
       soundonUrl: result.soundonUrl,
       youtubeUrl: result.youtubeUrl,
     });

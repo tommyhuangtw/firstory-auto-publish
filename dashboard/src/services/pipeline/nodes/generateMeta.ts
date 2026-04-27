@@ -25,14 +25,14 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const isWeekly = state.segmentType === 'weekly';
 
   // Step 0: Summarize full script → used by all downstream prompts
-  const summary = await summarizeScript(content, state.segmentType, state.episodeNumber);
+  const summary = await summarizeScript(content, state.segmentType, state.episodeId);
   log.info({ summaryLength: summary.length }, 'Script summarized for meta generation');
 
   // Persist summary to DB
   try {
     const db = getDb();
-    db.prepare('UPDATE episodes SET script_summary = ? WHERE episode_number = ?')
-      .run(summary, state.episodeNumber);
+    db.prepare('UPDATE episodes SET script_summary = ? WHERE id = ?')
+      .run(summary, state.episodeId);
   } catch { /* non-critical */ }
 
   // Step 1: Generate 10 title candidates
@@ -42,7 +42,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const titlesResult = await llm.generateJSON<{ titles: string[] }>(
     titlePrompt,
     'title_gen',
-    { episodeNumber: state.episodeNumber, maxTokens: 2048, temperature: 0.7 }
+    { episodeId: state.episodeId, maxTokens: 2048, temperature: 0.7 }
   );
 
   const candidateTitles = titlesResult.success && titlesResult.data?.titles
@@ -55,7 +55,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
     buildTitleSelectionPrompt(candidateTitles, summary),
     'title_select',
-    { episodeNumber: state.episodeNumber, maxTokens: 512, temperature: 0.3 }
+    { episodeId: state.episodeId, maxTokens: 512, temperature: 0.3 }
   );
 
   let selectedTitle = candidateTitles[0];
@@ -75,7 +75,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,
     'description_gen',
-    { episodeNumber: state.episodeNumber, maxTokens: 1024, temperature: 0.7 }
+    { episodeId: state.episodeId, maxTokens: 1024, temperature: 0.7 }
   );
 
   const description = descResult.success && descResult.data?.description
@@ -92,7 +92,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const ytDescResult = await llm.generateJSON<{ youtubeDescription: string }>(
     ytDescPrompt,
     'youtube_description_gen',
-    { episodeNumber: state.episodeNumber, maxTokens: 1536, temperature: 0.7 }
+    { episodeId: state.episodeId, maxTokens: 1536, temperature: 0.7 }
   );
 
   const youtubeDescription = ytDescResult.success && ytDescResult.data?.youtubeDescription
@@ -103,7 +103,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const tagsResult = await llm.generateJSON<{ tags: string[] }>(
     buildTagsPrompt(summary, selectedTitle),
     'tags_gen',
-    { episodeNumber: state.episodeNumber, maxTokens: 512, temperature: 0.5 }
+    { episodeId: state.episodeId, maxTokens: 512, temperature: 0.5 }
   );
 
   const tags = tagsResult.success && tagsResult.data?.tags
@@ -128,7 +128,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 async function summarizeScript(
   content: string,
   segmentType: string,
-  episodeNumber?: number,
+  episodeId?: number,
 ): Promise<string> {
   const llm = getLLMService();
 
@@ -161,7 +161,7 @@ ${content}
   const result = await llm.generate(
     prompt,
     'script_summary',
-    { episodeNumber, maxTokens: 2048, temperature: 0.3 }
+    { episodeId, maxTokens: 2048, temperature: 0.3 }
   );
 
   if (result.success && result.content) {
@@ -516,14 +516,14 @@ ${summary}
 export async function regenerateTitles(
   segmentType: string,
   scriptContent: string,
-  episodeNumber?: number,
+  episodeId?: number,
 ): Promise<{ candidateTitles: string[]; selectedTitle: string }> {
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
 
   // Try to use saved summary, otherwise generate one
-  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeNumber);
+  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
   const titlePrompt = isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
@@ -532,7 +532,7 @@ export async function regenerateTitles(
   const titlesResult = await llm.generateJSON<{ titles: string[] }>(
     titlePrompt,
     'title_gen',
-    { episodeNumber, maxTokens: 2048, temperature: 0.7 }
+    { episodeId, maxTokens: 2048, temperature: 0.7 }
   );
 
   const candidateTitles = titlesResult.success && titlesResult.data?.titles
@@ -542,7 +542,7 @@ export async function regenerateTitles(
   const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
     buildTitleSelectionPrompt(candidateTitles, summary),
     'title_select',
-    { episodeNumber, maxTokens: 512, temperature: 0.3 }
+    { episodeId, maxTokens: 512, temperature: 0.3 }
   );
 
   let selectedTitle = candidateTitles[0];
@@ -561,14 +561,14 @@ export async function regenerateTitles(
 export async function regenerateDescription(
   segmentType: string,
   scriptContent: string,
-  episodeNumber?: number,
+  episodeId?: number,
 ): Promise<string> {
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
 
   // Try to use saved summary, otherwise generate one
-  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeNumber);
+  const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
   const descPrompt = isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
@@ -577,13 +577,13 @@ export async function regenerateDescription(
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,
     'description_gen',
-    { episodeNumber, maxTokens: 1024, temperature: 0.7 }
+    { episodeId, maxTokens: 1024, temperature: 0.7 }
   );
 
   if (descResult.success && descResult.data?.description) {
     return descResult.data.description
       .replace(/.*drive\.google\.com.*\n?/g, '')
-      .replace(/.*點擊這裡收聽.*\n?/g, '')
+      .replace(/.*點擊這裡收聯.*\n?/g, '')
       .trim();
   }
 
@@ -595,24 +595,24 @@ export async function regenerateDescription(
 async function getOrCreateSummary(
   scriptContent: string,
   segmentType: string,
-  episodeNumber?: number,
+  episodeId?: number,
 ): Promise<string> {
-  if (episodeNumber) {
+  if (episodeId) {
     try {
       const db = getDb();
-      const row = db.prepare('SELECT script_summary FROM episodes WHERE episode_number = ?')
-        .get(episodeNumber) as { script_summary: string | null } | undefined;
+      const row = db.prepare('SELECT script_summary FROM episodes WHERE id = ?')
+        .get(episodeId) as { script_summary: string | null } | undefined;
       if (row?.script_summary) return row.script_summary;
     } catch { /* non-critical */ }
   }
 
-  const summary = await summarizeScript(scriptContent, segmentType, episodeNumber);
+  const summary = await summarizeScript(scriptContent, segmentType, episodeId);
 
-  if (episodeNumber) {
+  if (episodeId) {
     try {
       const db = getDb();
-      db.prepare('UPDATE episodes SET script_summary = ? WHERE episode_number = ?')
-        .run(summary, episodeNumber);
+      db.prepare('UPDATE episodes SET script_summary = ? WHERE id = ?')
+        .run(summary, episodeId);
     } catch { /* non-critical */ }
   }
 

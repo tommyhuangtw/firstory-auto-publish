@@ -1,8 +1,10 @@
 /**
- * Stage 8: Publish to SoundOn + YouTube.
+ * Stage 8: Publish to SoundOn + YouTube + Instagram.
  *
  * This node is triggered after human review approval.
+ * Episode number is already assigned by publishEpisode() in graph.ts before this runs.
  * SoundOn uses Playwright, YouTube uses API (via video creator + upload).
+ * Instagram uses Facebook Graph API via Cloudinary upload.
  * Each platform is independent — one failure doesn't block the other.
  */
 
@@ -27,7 +29,10 @@ export function formatYoutubeTitle(episodeNumber: number, segmentType: string, t
 }
 
 export async function publish(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber }, 'Publishing episode');
+  const episodeNumber = state.episodeNumber;
+  if (!episodeNumber) throw new Error('Episode number must be assigned before publishing');
+
+  log.info({ episodeId: state.episodeId, episodeNumber }, 'Publishing episode');
 
   const results: Partial<PipelineState> = { status: 'completed' };
 
@@ -49,6 +54,20 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
     log.error({ error: (error as Error).message }, 'YouTube publish failed');
   }
 
+  // Instagram (cover image + caption)
+  try {
+    if (state.coverUrl && state.igCaption && process.env.INSTAGRAM_ACCESS_TOKEN) {
+      const { postToInstagram } = await import('@/services/instagram');
+      const postId = await postToInstagram(state.coverUrl, state.igCaption);
+      results.igPostId = postId;
+      log.info({ postId }, 'Instagram posted');
+    } else {
+      log.info('Skipping Instagram (no cover URL, caption, or token)');
+    }
+  } catch (error) {
+    log.error({ error: (error as Error).message }, 'Instagram post failed');
+  }
+
   // Update episode in DB
   const db = getDb();
   db.prepare(
@@ -56,15 +75,22 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
       status = 'published',
       soundon_url = ?,
       youtube_url = ?,
+      ig_post_id = ?,
       published_at = datetime('now')
-    WHERE episode_number = ?`
-  ).run(results.soundonUrl || null, results.youtubeUrl || null, state.episodeNumber);
+    WHERE id = ?`
+  ).run(
+    results.soundonUrl || null,
+    results.youtubeUrl || null,
+    results.igPostId || null,
+    state.episodeId
+  );
 
   return results;
 }
 
 export async function publishToSoundOnPlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
+  if (!state.episodeNumber) throw new Error('Episode number not assigned');
 
   const formattedTitle = formatSoundonTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to SoundOn');
@@ -81,6 +107,7 @@ export async function publishToSoundOnPlatform(state: PipelineState): Promise<st
 
 export async function publishToYouTubePlatform(state: PipelineState): Promise<string> {
   if (!state.audioPath) throw new Error('No audio file to publish');
+  if (!state.episodeNumber) throw new Error('Episode number not assigned');
 
   const formattedTitle = formatYoutubeTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to YouTube');

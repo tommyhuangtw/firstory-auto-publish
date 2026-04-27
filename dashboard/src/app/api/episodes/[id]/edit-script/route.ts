@@ -6,9 +6,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const episodeNumber = parseInt(id);
-  if (isNaN(episodeNumber)) {
-    return NextResponse.json({ error: 'Invalid episode number' }, { status: 400 });
+  const episodeId = parseInt(id);
+  if (isNaN(episodeId)) {
+    return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
   }
 
   try {
@@ -22,12 +22,12 @@ export async function POST(
     const db = getDb();
 
     if (scriptZh !== undefined) {
-      db.prepare('UPDATE episodes SET script_zh = ? WHERE episode_number = ?')
-        .run(scriptZh, episodeNumber);
+      db.prepare('UPDATE episodes SET script_zh = ? WHERE id = ?')
+        .run(scriptZh, episodeId);
     }
     if (scriptEn !== undefined) {
-      db.prepare('UPDATE episodes SET script_en = ? WHERE episode_number = ?')
-        .run(scriptEn, episodeNumber);
+      db.prepare('UPDATE episodes SET script_en = ? WHERE id = ?')
+        .run(scriptEn, episodeId);
     }
 
     return NextResponse.json({ success: true });

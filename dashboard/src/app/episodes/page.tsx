@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getDb } from '@/db';
+import { formatLocalDate, getLocalDayOfWeek } from '@/lib/formatDate';
 import NewEpisodeForm from './NewEpisodeForm';
 import ActivePipelines from './ActivePipelines';
 import DeleteButton from './DeleteButton';
@@ -8,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 interface Episode {
   id: number;
-  episode_number: number;
+  episode_number: number | null;
   segment_type: string;
   status: string;
   selected_title: string | null;
@@ -48,6 +49,19 @@ const STAGE_KEYS = [
   'generateCover', 'synthesizeTts', 'uploadAssets', 'notify',
 ];
 
+const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function formatEpisodeLabel(ep: Episode): string {
+  if (ep.episode_number) return `EP ${ep.episode_number}`;
+  // Show date + day of week for unpublished episodes (UTC-aware)
+  if (ep.created_at) {
+    const dateStr = formatLocalDate(ep.created_at);
+    const dayLabel = DAY_LABELS[getLocalDayOfWeek(ep.created_at)] || '';
+    return `${dateStr} (${dayLabel})`;
+  }
+  return `#${ep.id}`;
+}
+
 export default function EpisodesPage() {
   const db = getDb();
   const episodes = db.prepare(`
@@ -57,10 +71,10 @@ export default function EpisodesPage() {
     FROM episodes e
     LEFT JOIN pipeline_runs pr ON pr.id = (
       SELECT id FROM pipeline_runs
-      WHERE episode_number = e.episode_number
+      WHERE episode_id = e.id
       ORDER BY id DESC LIMIT 1
     )
-    ORDER BY e.episode_number DESC
+    ORDER BY e.id DESC
   `).all() as Episode[];
 
   // Separate running pipelines from completed episodes
@@ -94,7 +108,7 @@ export default function EpisodesPage() {
         <section className="mb-6">
           <ActivePipelines
             initialRuns={activePipelines.map((ep) => ({
-              episode_number: ep.episode_number,
+              episode_id: ep.id,
               segment_type: ep.segment_type,
               current_stage: ep.current_stage,
               pipeline_status: ep.pipeline_status,
@@ -123,19 +137,20 @@ export default function EpisodesPage() {
               : null;
             const sc = statusConfig[ep.status] || { color: 'bg-zinc-800 text-zinc-400', label: ep.status };
             const seg = segmentColors[ep.segment_type] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
+            const epLabel = formatEpisodeLabel(ep);
 
             return (
               <Link
                 key={ep.id}
-                href={`/episodes/${ep.episode_number}/review`}
+                href={`/episodes/${ep.id}/review`}
                 className="group block rounded-xl bg-zinc-900/60 border border-zinc-800/60 hover:border-brand/30 hover:bg-zinc-900 transition-all duration-200 cursor-pointer"
               >
                 <div className="p-4">
                   <div className="flex items-center justify-between gap-4">
-                    {/* Left: EP number + badges */}
+                    {/* Left: EP label + badges */}
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-base font-mono font-semibold text-zinc-200 tabular-nums shrink-0">
-                        EP {ep.episode_number}
+                        {epLabel}
                       </span>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
                         {segmentLabels[ep.segment_type] || ep.segment_type}
@@ -153,9 +168,9 @@ export default function EpisodesPage() {
                       {ep.total_cost_usd != null && (
                         <span className="tabular-nums">${ep.total_cost_usd.toFixed(3)}</span>
                       )}
-                      <span className="tabular-nums">{ep.created_at?.split('T')[0] || ep.created_at}</span>
+                      <span className="tabular-nums">{formatLocalDate(ep.created_at)}</span>
                       {ep.status !== 'published' && (
-                        <DeleteButton episodeNumber={ep.episode_number} />
+                        <DeleteButton episodeId={ep.id} />
                       )}
                       <svg className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

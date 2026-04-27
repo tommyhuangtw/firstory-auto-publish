@@ -43,6 +43,11 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN ig_caption TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN script_summary TEXT');
   safeAlter('ALTER TABLE shorts ADD COLUMN avatar_filename TEXT');
+  safeAlter('ALTER TABLE pipeline_runs ADD COLUMN episode_id INTEGER');
+  safeAlter('ALTER TABLE llm_calls ADD COLUMN episode_id INTEGER');
+  safeAlter('ALTER TABLE episode_tool_mentions ADD COLUMN episode_id INTEGER');
+  safeAlter('ALTER TABLE shorts ADD COLUMN episode_id INTEGER');
+  safeAlter('ALTER TABLE service_costs ADD COLUMN episode_id INTEGER');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {
@@ -74,6 +79,14 @@ Apple Podcast / Spotify / KKBOX
 💬 合作聯繫：ailanrenbao@gmail.com`);
   seedSetting('podcast_footer', `歡迎請我喝杯咖啡，幫助我繼續把節目做得更好唷～！
 👉 https://buymeacoffee.com/ailanrenbao`);
+
+  // Service cost pricing defaults
+  seedSetting('usd_to_twd', '32.0');
+  seedSetting('voai_cost_per_char_twd', '0.06');
+  seedSetting('kieai_nano_banana_pro_usd', '0.09');
+  seedSetting('kieai_veo3_fast_usd', '0.30');
+  seedSetting('kieai_kling_i2v_usd', '0.55');
+  seedSetting('kieai_nano_banana_edit_usd', '0.04');
 
   // Remove old youtube_ad_content setting (replaced by ad_presets table)
   _db!.prepare("DELETE FROM settings WHERE key = 'youtube_ad_content'").run();

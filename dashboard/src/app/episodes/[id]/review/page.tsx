@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 interface Episode {
   id: number;
-  episode_number: number;
+  episode_number: number | null;
   segment_type: string;
   status: string;
   script_en: string | null;
@@ -83,25 +83,38 @@ const statusConfig: Record<string, { color: string; label: string }> = {
   failed: { color: 'bg-red-500/15 text-red-400', label: '失敗' },
 };
 
+const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function formatEpisodeHeader(episode: Episode): string {
+  if (episode.episode_number) return `EP ${episode.episode_number}`;
+  const date = episode.created_at?.split('T')[0] || '';
+  if (date) {
+    const d = new Date(date);
+    const dayLabel = DAY_LABELS[d.getDay()] || '';
+    return `${date} (${dayLabel})`;
+  }
+  return `#${episode.id}`;
+}
+
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const episodeNumber = parseInt(id);
-  if (isNaN(episodeNumber)) notFound();
+  const episodeId = parseInt(id);
+  if (isNaN(episodeId)) notFound();
 
   const db = getDb();
-  const episode = db.prepare('SELECT * FROM episodes WHERE episode_number = ?').get(episodeNumber) as Episode | undefined;
+  const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as Episode | undefined;
   if (!episode) notFound();
 
   // Get latest pipeline run
   const pipelineRun = db.prepare(
     `SELECT id, error_log, current_stage, status FROM pipeline_runs
-     WHERE episode_number = ? ORDER BY id DESC LIMIT 1`
-  ).get(episodeNumber) as PipelineRun | undefined;
+     WHERE episode_id = ? ORDER BY id DESC LIMIT 1`
+  ).get(episodeId) as PipelineRun | undefined;
 
   // Get LLM calls for this episode
   const llmCalls = db.prepare(
-    `SELECT * FROM llm_calls WHERE episode_number = ? ORDER BY id ASC`
-  ).all(episodeNumber) as LlmCall[];
+    `SELECT * FROM llm_calls WHERE episode_id = ? ORDER BY id ASC`
+  ).all(episodeId) as LlmCall[];
 
   // Get quality score from latest snapshot if available
   let qualityScoreData = null;
@@ -150,8 +163,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     `SELECT id, status, current_stage, error_log, video_path, cover_path,
             ig_caption, ig_post_id, beats_json, selected_beat_index,
             headlines_json, selected_headline_index
-     FROM shorts WHERE episode_number = ? ORDER BY id DESC LIMIT 1`
-  ).get(episodeNumber) as {
+     FROM shorts WHERE episode_id = ? ORDER BY id DESC LIMIT 1`
+  ).get(episodeId) as {
     id: number; status: string; current_stage: string | null; error_log: string | null;
     video_path: string | null; cover_path: string | null; ig_caption: string | null;
     ig_post_id: string | null; beats_json: string | null; selected_beat_index: number | null;
@@ -161,6 +174,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const canEdit = episode.status === 'pending_review' || episode.status === 'failed';
   const sc = statusConfig[episode.status] || { color: 'bg-zinc-800 text-zinc-400', label: episode.status };
   const seg = segmentColors[episode.segment_type] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
+  const headerLabel = formatEpisodeHeader(episode);
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">
@@ -176,7 +190,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           Episodes
         </Link>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">EP {episode.episode_number}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{headerLabel}</h1>
           <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
             {segmentLabels[episode.segment_type] || episode.segment_type}
           </span>
@@ -214,7 +228,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             <div className="shrink-0">
               <img
                 src={`/api/audio${episode.cover_path}`}
-                alt={`EP ${episode.episode_number} cover`}
+                alt={`${headerLabel} cover`}
                 className="rounded-xl border border-brand/30 w-40 h-40 object-cover"
               />
             </div>
@@ -265,7 +279,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         {/* Script Editor */}
         {(episode.script_zh || episode.script_en) && (
           <ScriptEditor
-            episodeNumber={episode.episode_number}
+            episodeId={episode.id}
             scriptEn={episode.script_en || ''}
             scriptZh={episode.script_zh || ''}
             pipelineRunId={pipelineRun?.id ?? null}
@@ -275,6 +289,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
         {/* Interactive Review Section (title picker, description, approve/reject) */}
         <ReviewClient
+          episodeId={episode.id}
           episodeNumber={episode.episode_number}
           status={episode.status}
           segmentType={episode.segment_type}
@@ -318,7 +333,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         {/* Publish Status + Republish */}
         {episode.status === 'published' && (
           <RepublishSection
-            episodeNumber={episode.episode_number}
+            episodeId={episode.id}
             soundonUrl={episode.soundon_url}
             youtubeUrl={episode.youtube_url}
             igPostId={episode.ig_post_id}
@@ -328,7 +343,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         {/* Shorts Generation */}
         {(episode.status === 'published' || episode.status === 'pending_review') && (
           <ShortsSection
-            episodeNumber={episode.episode_number}
+            episodeId={episode.id}
             initialShorts={shortsRow ?? null}
           />
         )}

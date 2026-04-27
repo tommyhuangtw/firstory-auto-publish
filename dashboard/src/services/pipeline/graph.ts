@@ -43,7 +43,8 @@ const log = createChildLogger('pipeline');
  * LangGraph Annotation — defines state schema with "last writer wins" reducers.
  */
 const PipelineAnnotation = Annotation.Root({
-  episodeNumber: Annotation<number>,
+  episodeId: Annotation<number>,
+  episodeNumber: Annotation<number | null>,
   segmentType: Annotation<SegmentType>,
   pipelineRunId: Annotation<number>,
   videos: Annotation<VideoSource[]>,
@@ -132,7 +133,7 @@ function getCompiledGraph() {
  * Start a new pipeline run.
  */
 export async function startPipeline(
-  episodeNumber: number,
+  episodeId: number,
   segmentType: SegmentType,
   pipelineRunId?: number
 ): Promise<{ pipelineRunId: number; state: PipelineState }> {
@@ -140,21 +141,21 @@ export async function startPipeline(
 
   // If no pipelineRunId provided, create records (backward compat)
   if (!pipelineRunId) {
-    const result = db.prepare(
-      `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
-       VALUES (?, ?, 'running', 'fetchYoutube')`
-    ).run(episodeNumber, segmentType);
-    pipelineRunId = Number(result.lastInsertRowid);
+    const epResult = db.prepare(
+      `INSERT INTO episodes (segment_type, status) VALUES (?, 'generating')`
+    ).run(segmentType);
+    episodeId = Number(epResult.lastInsertRowid);
 
-    db.prepare(
-      `INSERT OR IGNORE INTO episodes (episode_number, segment_type, status)
-       VALUES (?, ?, 'generating')`
-    ).run(episodeNumber, segmentType);
+    const result = db.prepare(
+      `INSERT INTO pipeline_runs (episode_id, segment_type, status, current_stage)
+       VALUES (?, ?, 'running', 'fetchYoutube')`
+    ).run(episodeId, segmentType);
+    pipelineRunId = Number(result.lastInsertRowid);
   }
 
-  const initialState = createInitialState(episodeNumber, segmentType, pipelineRunId);
+  const initialState = createInitialState(episodeId, segmentType, pipelineRunId);
 
-  log.info({ episodeNumber, segmentType, pipelineRunId }, 'Pipeline started');
+  log.info({ episodeId, segmentType, pipelineRunId }, 'Pipeline started');
 
   try {
     const graph = getCompiledGraph();
@@ -167,9 +168,9 @@ export async function startPipeline(
     ).run(pipelineRunId);
 
     // Update episode
-    updateEpisodeFromState(db, finalState, episodeNumber);
+    updateEpisodeFromState(db, finalState, episodeId);
 
-    log.info({ episodeNumber, pipelineRunId }, 'Pipeline completed, awaiting review');
+    log.info({ episodeId, pipelineRunId }, 'Pipeline completed, awaiting review');
     return { pipelineRunId, state: finalState };
   } catch (error) {
     const errMsg = (error as Error).message;
@@ -178,7 +179,7 @@ export async function startPipeline(
        WHERE id = ?`
     ).run(errMsg, pipelineRunId);
 
-    log.error({ episodeNumber, pipelineRunId, error: errMsg }, 'Pipeline failed');
+    log.error({ episodeId, pipelineRunId, error: errMsg }, 'Pipeline failed');
     throw error;
   }
 }
@@ -186,18 +187,32 @@ export async function startPipeline(
 /**
  * Publish an approved episode (called after human review).
  */
-export async function publishEpisode(episodeNumber: number): Promise<Partial<PipelineState>> {
+export async function publishEpisode(episodeId: number): Promise<Partial<PipelineState>> {
   const db = getDb();
-  const episode = db.prepare('SELECT * FROM episodes WHERE episode_number = ?').get(episodeNumber) as Record<string, unknown> | undefined;
+  const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as Record<string, unknown> | undefined;
 
-  if (!episode) throw new Error(`Episode ${episodeNumber} not found`);
+  if (!episode) throw new Error(`Episode id=${episodeId} not found`);
   if (episode.status !== 'pending_review' && episode.status !== 'approved') {
-    throw new Error(`Episode ${episodeNumber} is not ready for publishing (status: ${episode.status})`);
+    throw new Error(`Episode id=${episodeId} is not ready for publishing (status: ${episode.status})`);
   }
 
-  db.prepare(`UPDATE episodes SET status = 'publishing' WHERE episode_number = ?`).run(episodeNumber);
+  // Assign episode number from RSS at publish time
+  const { getNextEpisodeNumber } = await import('@/lib/rssEpisodeNumber');
+  const episodeNumber = await getNextEpisodeNumber(db);
+
+  db.prepare(`UPDATE episodes SET episode_number = ?, status = 'publishing' WHERE id = ?`)
+    .run(episodeNumber, episodeId);
+
+  // Backfill episode_number in related tables
+  db.prepare('UPDATE pipeline_runs SET episode_number = ? WHERE episode_id = ?')
+    .run(episodeNumber, episodeId);
+  db.prepare('UPDATE llm_calls SET episode_number = ? WHERE episode_id = ?')
+    .run(episodeNumber, episodeId);
+
+  log.info({ episodeId, episodeNumber }, 'Episode number assigned at publish time');
 
   const state: PipelineState = {
+    episodeId,
     episodeNumber,
     segmentType: episode.segment_type as SegmentType,
     pipelineRunId: 0,
@@ -222,13 +237,13 @@ export async function publishEpisode(episodeNumber: number): Promise<Partial<Pip
     youtubeDescription: (episode.youtube_description as string) || '',
     tags: JSON.parse((episode.tags as string) || '[]'),
     coverPath: (episode.cover_path as string) || '',
-    coverUrl: '',
+    coverUrl: (episode.cover_url as string) || '',
     audioPath: (episode.audio_path as string) || '',
     audioDurationSec: 0,
     driveAudioUrl: '',
     driveImageUrl: '',
     igScenario: '',
-    igCaption: '',
+    igCaption: (episode.ig_caption as string) || '',
     emailHtml: '',
     igPostId: '',
     status: 'publishing',
@@ -277,9 +292,17 @@ export async function retryFromStage(
 
   // Get the original pipeline run info
   const originalRun = db.prepare(
-    'SELECT episode_number, segment_type FROM pipeline_runs WHERE id = ?'
-  ).get(pipelineRunId) as { episode_number: number; segment_type: string } | undefined;
+    'SELECT episode_id, episode_number, segment_type FROM pipeline_runs WHERE id = ?'
+  ).get(pipelineRunId) as { episode_id: number | null; episode_number: number | null; segment_type: string } | undefined;
   if (!originalRun) throw new Error(`Pipeline run ${pipelineRunId} not found`);
+
+  // Resolve episodeId: prefer episode_id column, fallback to lookup by episode_number (old data)
+  let episodeId = originalRun.episode_id;
+  if (!episodeId && originalRun.episode_number) {
+    const ep = db.prepare('SELECT id FROM episodes WHERE episode_number = ?').get(originalRun.episode_number) as { id: number } | undefined;
+    episodeId = ep?.id ?? null;
+  }
+  if (!episodeId) throw new Error(`Cannot resolve episode for pipeline run ${pipelineRunId}`);
 
   // Rebuild state from snapshots
   const snapshots = db.prepare(
@@ -289,7 +312,7 @@ export async function retryFromStage(
 
   // Create initial state, then layer snapshots up to (before) fromStage
   const state = createInitialState(
-    originalRun.episode_number,
+    episodeId,
     originalRun.segment_type as SegmentType,
     0 // will be updated below
   );
@@ -307,15 +330,15 @@ export async function retryFromStage(
 
   // Create new pipeline run
   const result = db.prepare(
-    `INSERT INTO pipeline_runs (episode_number, segment_type, status, current_stage)
-     VALUES (?, ?, 'running', ?)`
-  ).run(originalRun.episode_number, originalRun.segment_type, fromStage);
+    `INSERT INTO pipeline_runs (episode_id, episode_number, segment_type, status, current_stage)
+     VALUES (?, ?, ?, 'running', ?)`
+  ).run(episodeId, originalRun.episode_number, originalRun.segment_type, fromStage);
   const newRunId = Number(result.lastInsertRowid);
   state.pipelineRunId = newRunId;
 
   // Update episode status
-  db.prepare(`UPDATE episodes SET status = 'generating' WHERE episode_number = ?`)
-    .run(originalRun.episode_number);
+  db.prepare(`UPDATE episodes SET status = 'generating' WHERE id = ?`)
+    .run(episodeId);
 
   log.info({ pipelineRunId, newRunId, fromStage }, 'Retry started');
 
@@ -354,7 +377,7 @@ export async function retryFromStage(
        WHERE id = ?`
     ).run(newRunId);
 
-    updateEpisodeFromState(db, currentState, originalRun.episode_number);
+    updateEpisodeFromState(db, currentState, episodeId);
 
     log.info({ newRunId, fromStage }, 'Retry completed');
     return { newPipelineRunId: newRunId };
@@ -380,7 +403,7 @@ function wrapNode(
 ) {
   return async (state: AnnotatedState): Promise<Partial<AnnotatedState>> => {
     const start = Date.now();
-    log.info({ node: name, episodeNumber: state.episodeNumber }, 'Node started');
+    log.info({ node: name, episodeId: state.episodeId }, 'Node started');
 
     // Update current stage in pipeline_runs
     const db = getDb();
@@ -410,7 +433,7 @@ function wrapNode(
 function updateEpisodeFromState(
   db: ReturnType<typeof getDb>,
   state: PipelineState,
-  episodeNumber: number
+  episodeId: number
 ) {
   db.prepare(
     `UPDATE episodes SET
@@ -429,7 +452,7 @@ function updateEpisodeFromState(
       total_cost_usd = ?,
       script_word_count = ?,
       ig_post_id = ?
-    WHERE episode_number = ?`
+    WHERE id = ?`
   ).run(
     state.scriptEn,
     state.scriptZh,
@@ -445,6 +468,6 @@ function updateEpisodeFromState(
     state.totalCostUsd,
     state.scriptWordCount,
     state.igPostId || null,
-    episodeNumber
+    episodeId
   );
 }

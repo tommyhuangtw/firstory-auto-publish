@@ -65,7 +65,8 @@ export type PipelineStatus =
 
 export interface PipelineState {
   // ── Config ──
-  episodeNumber: number;
+  episodeId: number;              // DB episodes.id — internal identifier
+  episodeNumber: number | null;   // Assigned at publish time via RSS
   segmentType: SegmentType;
   pipelineRunId: number;
 
@@ -146,12 +147,13 @@ export interface PipelineState {
  * Default initial state for a new pipeline run.
  */
 export function createInitialState(
-  episodeNumber: number,
+  episodeId: number,
   segmentType: SegmentType,
   pipelineRunId: number
 ): PipelineState {
   return {
-    episodeNumber,
+    episodeId,
+    episodeNumber: null,
     segmentType,
     pipelineRunId,
     videos: [],

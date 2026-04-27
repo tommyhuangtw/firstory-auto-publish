@@ -13,7 +13,7 @@ import type { PipelineState } from '../state';
 const log = createChildLogger('pipeline:upload-assets');
 
 export async function uploadAssets(state: PipelineState): Promise<Partial<PipelineState>> {
-  log.info({ episodeNumber: state.episodeNumber }, 'Uploading assets to Google Drive');
+  log.info({ episodeId: state.episodeId }, 'Uploading assets to Google Drive');
 
   const audioFolderId = process.env.GDRIVE_PODCAST_FOLDER;
   const imageFolderId = process.env.GDRIVE_IMAGE_FOLDER;

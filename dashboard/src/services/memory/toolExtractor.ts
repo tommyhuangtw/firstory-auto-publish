@@ -38,7 +38,7 @@ export interface ResolvedTool extends ExtractedTool {
 
 export async function extractToolsFromScript(
   scriptEn: string,
-  episodeNumber: number
+  episodeId: number
 ): Promise<ResolvedTool[]> {
   if (!scriptEn || scriptEn.length < 100) {
     log.warn('Script too short for tool extraction');
@@ -96,7 +96,7 @@ Maximum 12 entities. Focus on entities with actual news or developments discusse
     prompt,
     'tool_extraction',
     {
-      episodeNumber,
+      episodeId,
       preferredModel: EXTRACTION_MODEL,
       maxTokens: 2048,
       temperature: 0.2,
@@ -115,10 +115,10 @@ Maximum 12 entities. Focus on entities with actual news or developments discusse
   log.info({ rawCount: rawTools.length }, 'Raw tools extracted');
 
   // Step 2: Post-processing pipeline
-  const resolved = postProcess(rawTools, episodeNumber);
+  const resolved = postProcess(rawTools, episodeId);
 
   log.info(
-    { rawCount: rawTools.length, resolvedCount: resolved.length, episodeNumber },
+    { rawCount: rawTools.length, resolvedCount: resolved.length, episodeId },
     'Tools extracted and resolved'
   );
 
@@ -127,7 +127,7 @@ Maximum 12 entities. Focus on entities with actual news or developments discusse
 
 // ── Post-Processing Pipeline ──
 
-function postProcess(tools: ExtractedTool[], episodeNumber: number): ResolvedTool[] {
+function postProcess(tools: ExtractedTool[], episodeId: number): ResolvedTool[] {
   const seen = new Set<string>();
   const resolved: ResolvedTool[] = [];
 
@@ -162,7 +162,7 @@ function postProcess(tools: ExtractedTool[], episodeNumber: number): ResolvedToo
     seen.add(canonicalName.toLowerCase());
 
     // Step 2d: Compute significance score
-    const significanceScore = computeSignificance(tool, canonicalName, episodeNumber);
+    const significanceScore = computeSignificance(tool, canonicalName, episodeId);
 
     resolved.push({
       ...tool,

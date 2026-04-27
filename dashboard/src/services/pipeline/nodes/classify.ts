@@ -49,7 +49,7 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
       const prompt = buildClassificationPrompt(video, isRobot);
       const result = await llm.call({
         stage: 'classify',
-        episodeNumber: state.episodeNumber,
+        episodeId: state.episodeId,
         messages: [{ role: 'user', content: prompt }],
         options: {
           preferredModel: CLASSIFICATION_MODEL,
@@ -247,7 +247,7 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
     ).run(
       video.videoId, video.title, video.channelName, video.publishedAt,
       video.viewCount, video.likeCount, video.commentCount, video.durationSeconds,
-      video.transcript, state.episodeNumber
+      video.transcript, state.episodeId
     );
 
     // Rate limit between Apify calls (matches n8n 等待8秒)

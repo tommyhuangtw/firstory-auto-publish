@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 const STAGES = [
   { key: 'fetchYoutube', label: '抓取' },
@@ -20,8 +19,14 @@ const STAGES = [
   { key: 'notify', label: '通知' },
 ] as const;
 
+const segmentLabels: Record<string, string> = {
+  daily: 'AI懶人報',
+  weekly: 'AI精選週報',
+  robot: '機器人週報',
+};
+
 interface PipelineInfo {
-  episode_number: number;
+  episode_id: number;
   segment_type: string;
   current_stage: string | null;
   pipeline_status: string | null;
@@ -56,7 +61,7 @@ export default function ActivePipelines({ initialRuns }: Props) {
 
         setRuns(
           active.map((r: Record<string, unknown>) => ({
-            episode_number: r.episode_number as number,
+            episode_id: (r.episode_id as number) || 0,
             segment_type: r.segment_type as string,
             current_stage: r.current_stage as string | null,
             pipeline_status: r.status as string,
@@ -80,10 +85,11 @@ export default function ActivePipelines({ initialRuns }: Props) {
       {runs.map((run) => {
         const currentIdx = STAGES.findIndex((s) => s.key === run.current_stage);
         const progress = currentIdx >= 0 ? ((currentIdx + 1) / STAGES.length) * 100 : 0;
+        const segLabel = segmentLabels[run.segment_type] || run.segment_type;
 
         return (
           <div
-            key={run.episode_number}
+            key={run.episode_id}
             className="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden"
           >
             {/* Progress bar */}
@@ -99,7 +105,7 @@ export default function ActivePipelines({ initialRuns }: Props) {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="font-mono font-semibold text-zinc-200">
-                    EP {run.episode_number}
+                    {segLabel}
                   </span>
                   <span className="inline-flex items-center gap-1.5 text-xs text-blue-400">
                     <span className="relative flex h-2 w-2">
