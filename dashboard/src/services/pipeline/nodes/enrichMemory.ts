@@ -17,6 +17,11 @@ import type { PipelineState } from '../state';
 const log = createChildLogger('pipeline:enrichMemory');
 
 export async function enrichMemory(state: PipelineState): Promise<Partial<PipelineState>> {
+  if (state.segmentType === 'sysdesign') {
+    log.info('Sysdesign: skipping memory enrichment');
+    return { memoryEnrichments: [] };
+  }
+
   const knownTools = state.memoryContext?.knownToolNames || [];
 
   if (knownTools.length === 0) {

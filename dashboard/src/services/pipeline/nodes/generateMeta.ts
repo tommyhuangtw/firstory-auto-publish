@@ -23,6 +23,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
   const isWeekly = state.segmentType === 'weekly';
+  const isSysdesign = state.segmentType === 'sysdesign';
 
   // Step 0: Summarize full script → used by all downstream prompts
   const summary = await summarizeScript(content, state.segmentType, state.episodeId);
@@ -36,7 +37,8 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   } catch { /* non-critical */ }
 
   // Step 1: Generate 10 title candidates
-  const titlePrompt = isRobot ? buildRobotTitlePrompt(summary)
+  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
+    : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
   const titlesResult = await llm.generateJSON<{ titles: string[] }>(
@@ -69,7 +71,11 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   log.info({ selectedTitle: selectedTitle.slice(0, 50) }, 'Title selected');
 
   // Step 3: Generate description
-  const descPrompt = isRobot ? buildRobotDescriptionPrompt(summary)
+  const sourceLinksText = (state.sourceLinks || []).length > 0
+    ? '\n\n📎 參考資料：\n' + state.sourceLinks.map(l => `• ${l.title}: ${l.url}`).join('\n')
+    : '';
+  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary, sourceLinksText)
+    : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);
   const descResult = await llm.generateJSON<{ description: string }>(
@@ -86,7 +92,8 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     : getFallbackDescription();
 
   // Step 3.5: Generate YouTube description (longer format with timestamps + CTA)
-  const ytDescPrompt = isRobot ? buildRobotYoutubeDescriptionPrompt(summary)
+  const ytDescPrompt = isSysdesign ? buildSysdesignYoutubeDescriptionPrompt(summary, sourceLinksText)
+    : isRobot ? buildRobotYoutubeDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyYoutubeDescriptionPrompt(summary)
     : buildYoutubeDescriptionPrompt(summary);
   const ytDescResult = await llm.generateJSON<{ youtubeDescription: string }>(
@@ -132,7 +139,9 @@ async function summarizeScript(
 ): Promise<string> {
   const llm = getLLMService();
 
-  const segmentContext = segmentType === 'robot'
+  const segmentContext = segmentType === 'sysdesign'
+    ? '系統架構懶懶學'
+    : segmentType === 'robot'
     ? '機器人觀察週報'
     : segmentType === 'weekly'
     ? 'AI懶人精選週報'
@@ -316,6 +325,91 @@ ${summary}
 
 以 JSON 格式回傳：
 { "titles": ["標題1", "標題2", ..., "標題10"] }`;
+}
+
+function buildSysdesignTitlePrompt(summary: string): string {
+  return `你是一位專注於系統設計教學的 Podcast 製作人，專門打造高下載量的標題。請根據以下「系統架構懶懶學」內容生成10個標題。
+
+內容摘要：
+${summary}
+
+── 高下載量的爆款模式（每個標題至少用 1 個）──
+
+模式A「面試必考句型」：直擊系統設計面試痛點
+  例：「面試必考！Uber 叫車系統背後的即時調度架構大揭密」
+  例：「Google 面試官最愛問的系統設計題：設計一個 URL Shortener」
+
+模式B「數字 + 規模衝擊」：用數字展現系統規模
+  例：「每秒處理 100 萬筆請求！Netflix 串流背後的架構有多狂？」
+  例：「10 億用戶的資料怎麼存？Google Drive 的分散式架構拆解」
+
+模式C「知名系統 + 拆解動詞」：用大品牌帶流量
+  例：「Spotify 推薦系統大拆解！為什麼它比你更懂你的音樂品味？」
+  例：「Tinder 的配對演算法怎麼運作？從 swipe 到 match 的架構設計」
+
+模式D「對比 / 選擇困境」：引發好奇心
+  例：「SQL vs NoSQL 到底怎麼選？看 Instagram 的選擇就知道了」
+  例：「微服務 vs 單體架構：Uber 用血淚教你怎麼選」
+
+── 必須避免 ──
+❌ 太學術或教科書感（如「分散式系統理論探討」）
+❌ 沒有具體系統的抽象標題
+❌ 純技術規格（如「CAP 定理推導」）
+
+── 基本規則 ──
+1. 標題長度 35-50 字
+2. 包含 1 個知名系統/品牌名
+3. 使用臺灣繁體中文用語
+4. 不要加 EPxx 集數編號
+5. 不要在標題中加入「懶懶學」（系統會自動加上）
+
+以 JSON 格式回傳：
+{ "titles": ["標題1", ..., "標題10"] }`;
+}
+
+function buildSysdesignDescriptionPrompt(summary: string, sourceLinksText: string): string {
+  return `根據以下「系統架構懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
+
+內容摘要：
+${summary}
+
+格式：
+開頭段落（用 1-2 句帶出本集要拆解的系統及其規模）🏗️
+
+接下來用 💡 和 👉 列出 3-5 個重點（可以是架構決策、設計模式、擴展策略等）：
+💡 一句話描述這個架構重點
+👉 為什麼這個設計決策重要
+
+⚠️ 注意：💡 後面直接寫一句完整的話
+❌ 錯誤：💡 Consistent Hashing：分散式系統的核心技術
+✅ 正確：💡 Uber 用 Consistent Hashing 解決了百萬司機的即時配對問題
+
+${sourceLinksText ? `最後附上參考資料連結：${sourceLinksText}` : ''}
+
+要求：200-400字、技術含量但口語化、不含外部連結（除了參考資料）
+
+以 JSON 格式回傳：
+{ "description": "完整描述" }`;
+}
+
+function buildSysdesignYoutubeDescriptionPrompt(summary: string, sourceLinksText: string): string {
+  return `根據以下「系統架構懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+
+內容摘要：
+${summary}
+
+格式要求：
+1. 開頭段落（2-3句帶出本集要拆解的系統架構）
+2. 本集架構重點（每個重點直接描述設計決策和 trade-off）
+
+${sourceLinksText ? `3. 參考資料連結：${sourceLinksText}` : ''}
+
+注意：
+- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
+- 200-400字、繁體中文、技術但易讀
+
+以 JSON 格式回傳：
+{ "youtubeDescription": "完整描述主體" }`;
 }
 
 function buildTitleSelectionPrompt(titles: string[], summary: string): string {
@@ -521,11 +615,13 @@ export async function regenerateTitles(
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
+  const isSysdesign = segmentType === 'sysdesign';
 
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const titlePrompt = isRobot ? buildRobotTitlePrompt(summary)
+  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
+    : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
 
@@ -566,11 +662,13 @@ export async function regenerateDescription(
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
+  const isSysdesign = segmentType === 'sysdesign';
 
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const descPrompt = isRobot ? buildRobotDescriptionPrompt(summary)
+  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary, '')
+    : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);
 

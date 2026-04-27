@@ -13,6 +13,7 @@ import {
   type PipelineState,
   type PipelineStatus,
   type SegmentType,
+  type SourceLink,
   type VideoSource,
   type QualityScore,
   type QualityIteration,
@@ -47,6 +48,8 @@ const PipelineAnnotation = Annotation.Root({
   episodeNumber: Annotation<number | null>,
   segmentType: Annotation<SegmentType>,
   pipelineRunId: Annotation<number>,
+  manualVideoUrls: Annotation<string[]>,
+  sourceLinks: Annotation<SourceLink[]>,
   videos: Annotation<VideoSource[]>,
   classifiedVideos: Annotation<VideoSource[]>,
   selectedVideos: Annotation<VideoSource[]>,
@@ -135,7 +138,8 @@ function getCompiledGraph() {
 export async function startPipeline(
   episodeId: number,
   segmentType: SegmentType,
-  pipelineRunId?: number
+  pipelineRunId?: number,
+  opts?: { manualVideoUrls?: string[] }
 ): Promise<{ pipelineRunId: number; state: PipelineState }> {
   const db = getDb();
 
@@ -154,6 +158,9 @@ export async function startPipeline(
   }
 
   const initialState = createInitialState(episodeId, segmentType, pipelineRunId);
+  if (opts?.manualVideoUrls?.length) {
+    initialState.manualVideoUrls = opts.manualVideoUrls;
+  }
 
   log.info({ episodeId, segmentType, pipelineRunId }, 'Pipeline started');
 
@@ -216,6 +223,8 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     episodeNumber,
     segmentType: episode.segment_type as SegmentType,
     pipelineRunId: 0,
+    manualVideoUrls: [],
+    sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     videos: [],
     classifiedVideos: [],
     selectedVideos: [],
@@ -447,7 +456,9 @@ function updateEpisodeFromState(
       tags = ?,
       audio_path = ?,
       cover_path = ?,
+      cover_url = ?,
       source_videos = ?,
+      source_links = ?,
       quality_score = ?,
       total_cost_usd = ?,
       script_word_count = ?,
@@ -463,7 +474,9 @@ function updateEpisodeFromState(
     JSON.stringify(state.tags),
     state.audioPath,
     state.coverPath || null,
+    state.coverUrl || null,
     JSON.stringify(state.selectedVideos),
+    JSON.stringify(state.sourceLinks),
     state.qualityScore?.overall ?? null,
     state.totalCostUsd,
     state.scriptWordCount,

@@ -27,6 +27,7 @@ export interface QualityScore {
     tw_localization: number;
     clarity: number;
     word_count: number;
+    structure_flow?: number; // sysdesign only
   };
   comments: {
     chat_feel: string;
@@ -34,6 +35,7 @@ export interface QualityScore {
     tw_localization: string;
     clarity: string;
     word_count: string;
+    structure_flow?: string; // sysdesign only
     summary: string;
   };
 }
@@ -44,7 +46,12 @@ export interface QualityIteration {
   scriptZh: string;
 }
 
-export type SegmentType = 'daily' | 'weekly' | 'robot';
+export interface SourceLink {
+  title: string;
+  url: string;
+}
+
+export type SegmentType = 'daily' | 'weekly' | 'robot' | 'sysdesign';
 
 export type PipelineStatus =
   | 'fetching'
@@ -69,6 +76,10 @@ export interface PipelineState {
   episodeNumber: number | null;   // Assigned at publish time via RSS
   segmentType: SegmentType;
   pipelineRunId: number;
+
+  // ── Manual input (sysdesign) ──
+  manualVideoUrls: string[];
+  sourceLinks: SourceLink[];
 
   // ── Stage 1: Fetch YouTube ──
   videos: VideoSource[];
@@ -156,6 +167,8 @@ export function createInitialState(
     episodeNumber: null,
     segmentType,
     pipelineRunId,
+    manualVideoUrls: [],
+    sourceLinks: [],
     videos: [],
     classifiedVideos: [],
     selectedVideos: [],

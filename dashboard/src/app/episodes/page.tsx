@@ -25,12 +25,14 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
+  sysdesign: '系統架構懶懶學',
 };
 
 const segmentColors: Record<string, string> = {
   daily: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
   weekly: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
   robot: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+  sysdesign: 'bg-teal-500/15 text-teal-400 border-teal-500/20',
 };
 
 const statusConfig: Record<string, { color: string; label: string }> = {

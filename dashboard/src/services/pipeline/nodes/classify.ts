@@ -15,7 +15,7 @@ import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
-import type { PipelineState, VideoSource } from '../state';
+import type { PipelineState, SourceLink, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:classify');
 
@@ -39,6 +39,12 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   const db = getDb();
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
+  const isSysdesign = state.segmentType === 'sysdesign';
+
+  // ── sysdesign: skip classification, fetch stats+transcripts for all ──
+  if (isSysdesign) {
+    return classifySysdesign(state, db);
+  }
 
   // ── Step 1: LLM Classification (title+desc only, parallel) ──
   log.info({ count: state.videos.length }, 'Step 1: LLM classification');
@@ -264,6 +270,89 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   return {
     classifiedVideos: classified,
     selectedVideos: topVideos,
+    status: 'scripting',
+  };
+}
+
+// ── Sysdesign: skip LLM classification, fetch stats + transcripts for all ──
+
+async function classifySysdesign(
+  state: PipelineState,
+  db: ReturnType<typeof getDb>,
+): Promise<Partial<PipelineState>> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  const videos = [...state.videos];
+
+  // Fetch stats to get titles, channel names, durations
+  if (apiKey) {
+    const videoIds = videos.map((v) => v.videoId);
+    for (let i = 0; i < videoIds.length; i += 50) {
+      const batch = videoIds.slice(i, i + 50);
+      try {
+        const detailUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+        detailUrl.searchParams.set('part', 'snippet,contentDetails,statistics');
+        detailUrl.searchParams.set('id', batch.join(','));
+        detailUrl.searchParams.set('key', apiKey);
+
+        const resp = await withRetry(
+          async () => {
+            const r = await fetch(detailUrl.toString());
+            if (!r.ok) throw new Error(`YouTube stats ${r.status}`);
+            return r;
+          },
+          { label: 'youtube-stats-sysdesign' },
+        );
+        const data = await resp.json();
+        for (const item of data.items || []) {
+          const video = videos.find((v) => v.videoId === item.id);
+          if (video) {
+            video.title = item.snippet.title;
+            video.channelName = item.snippet.channelTitle;
+            video.publishedAt = item.snippet.publishedAt;
+            video.viewCount = parseInt(item.statistics.viewCount || '0');
+            video.likeCount = parseInt(item.statistics.likeCount || '0');
+            video.commentCount = parseInt(item.statistics.commentCount || '0');
+            video.durationSeconds = parseDuration(item.contentDetails.duration);
+          }
+        }
+      } catch (error) {
+        log.error({ error: (error as Error).message }, 'Sysdesign stats fetch error');
+      }
+    }
+  }
+
+  // Fetch transcripts for all videos
+  log.info({ count: videos.length }, 'Sysdesign: fetching transcripts');
+  for (let i = 0; i < videos.length; i++) {
+    const video = videos[i];
+    try {
+      video.transcript = await fetchTranscript(video.videoId);
+      log.info(
+        { videoId: video.videoId, transcriptLen: video.transcript.length, title: video.title.slice(0, 60) },
+        'Transcript fetched'
+      );
+    } catch (error) {
+      log.warn({ videoId: video.videoId, error: (error as Error).message }, 'Transcript fetch failed');
+      video.transcript = '';
+    }
+    if (i < videos.length - 1) await sleep(TRANSCRIPT_DELAY_MS);
+  }
+
+  // Build sourceLinks for publishing (original video URLs + titles)
+  const sourceLinks: SourceLink[] = videos.map((v) => ({
+    title: v.title || v.videoId,
+    url: `https://www.youtube.com/watch?v=${v.videoId}`,
+  }));
+
+  log.info(
+    { selected: videos.map((v) => ({ id: v.videoId, title: v.title.slice(0, 40) })) },
+    'Sysdesign: all videos selected'
+  );
+
+  return {
+    classifiedVideos: videos,
+    selectedVideos: videos,
+    sourceLinks,
     status: 'scripting',
   };
 }

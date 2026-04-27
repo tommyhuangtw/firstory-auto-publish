@@ -6,7 +6,10 @@ import type { SegmentType } from '@/services/pipeline/state';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { segmentType } = body as { segmentType: SegmentType };
+    const { segmentType, manualVideoUrls } = body as {
+      segmentType: SegmentType;
+      manualVideoUrls?: string[];
+    };
 
     if (!segmentType) {
       return NextResponse.json(
@@ -15,11 +18,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['daily', 'weekly', 'robot'].includes(segmentType)) {
+    if (!['daily', 'weekly', 'robot', 'sysdesign'].includes(segmentType)) {
       return NextResponse.json(
-        { error: 'segmentType must be daily, weekly, or robot' },
+        { error: 'segmentType must be daily, weekly, robot, or sysdesign' },
         { status: 400 }
       );
+    }
+
+    if (segmentType === 'sysdesign') {
+      if (!manualVideoUrls?.length) {
+        return NextResponse.json(
+          { error: 'sysdesign requires at least one YouTube URL' },
+          { status: 400 }
+        );
+      }
     }
 
     const db = getDb();
@@ -51,7 +63,9 @@ export async function POST(request: NextRequest) {
     const pipelineRunId = Number(runResult.lastInsertRowid);
 
     // Fire-and-forget: don't await
-    startPipeline(episodeId, segmentType, pipelineRunId).catch(() => {
+    startPipeline(episodeId, segmentType, pipelineRunId, {
+      manualVideoUrls: manualVideoUrls || [],
+    }).catch(() => {
       // Error handling is inside startPipeline (updates DB)
     });
 

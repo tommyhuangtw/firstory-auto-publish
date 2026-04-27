@@ -8,6 +8,7 @@ const SEGMENTS = [
   { value: 'daily', label: 'AI懶人報', desc: '每日精選', color: 'border-blue-500/40 bg-blue-500/10 text-blue-400' },
   { value: 'weekly', label: 'AI精選週報', desc: '一週重點', color: 'border-violet-500/40 bg-violet-500/10 text-violet-400' },
   { value: 'robot', label: '機器人週報', desc: '自動化新聞', color: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
+  { value: 'sysdesign', label: '系統架構懶懶學', desc: '系統設計深潛', color: 'border-teal-500/40 bg-teal-500/10 text-teal-400' },
 ] as const;
 
 const STAGES = [
@@ -30,6 +31,7 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
+  sysdesign: '系統架構懶懶學',
 };
 
 interface PipelineRun {
@@ -54,6 +56,7 @@ export default function NewEpisodeForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [segmentType, setSegmentType] = useState<string>('daily');
+  const [manualUrls, setManualUrls] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -98,10 +101,20 @@ export default function NewEpisodeForm() {
     setMessage('');
     setTracking(null);
     try {
+      const body: Record<string, unknown> = { segmentType };
+      if (segmentType === 'sysdesign') {
+        const urls = manualUrls.split('\n').map(u => u.trim()).filter(Boolean);
+        if (urls.length === 0) {
+          setMessage('請至少貼入一個 YouTube URL');
+          setLoading(false);
+          return;
+        }
+        body.manualVideoUrls = urls;
+      }
       const res = await fetch('/api/pipeline/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ segmentType }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -298,7 +311,7 @@ export default function NewEpisodeForm() {
         <h3 className="text-sm font-semibold text-zinc-300 mb-4">建立新集數</h3>
 
         {/* Segment selector */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           {SEGMENTS.map((seg) => {
             const isSelected = segmentType === seg.value;
             return (
@@ -318,6 +331,27 @@ export default function NewEpisodeForm() {
             );
           })}
         </div>
+
+        {/* Manual URL input for sysdesign */}
+        {segmentType === 'sysdesign' && (
+          <div className="mb-4">
+            <label className="block text-xs text-zinc-400 mb-1.5">
+              YouTube URL（一行一個）
+              {manualUrls.trim() && (
+                <span className="ml-2 text-teal-400">
+                  {manualUrls.split('\n').filter(u => u.trim()).length} 個影片
+                </span>
+              )}
+            </label>
+            <textarea
+              value={manualUrls}
+              onChange={(e) => setManualUrls(e.target.value)}
+              placeholder={'https://www.youtube.com/watch?v=...\nhttps://youtu.be/...'}
+              rows={4}
+              className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-teal-500/50 resize-none"
+            />
+          </div>
+        )}
 
         {/* Action row */}
         <div className="flex items-center gap-2">

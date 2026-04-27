@@ -78,7 +78,7 @@ ${state.scriptZh}`;
     ],
     options: {
       preferredModel: MODEL,
-      maxTokens: 8192,
+      maxTokens: state.segmentType === 'sysdesign' ? 12288 : 8192,
       temperature: 0.7,
     },
   });

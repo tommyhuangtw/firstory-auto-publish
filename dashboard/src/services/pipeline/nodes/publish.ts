@@ -19,12 +19,14 @@ const log = createChildLogger('pipeline:publish');
 export function formatSoundonTitle(episodeNumber: number, segmentType: string, title: string): string {
   if (segmentType === 'weekly') return `EP${episodeNumber} ｜ AI懶人精選週報 – ${title}`;
   if (segmentType === 'robot') return `EP${episodeNumber} ｜ 機器人觀察週報 – ${title}`;
+  if (segmentType === 'sysdesign') return `EP${episodeNumber} ｜ 系統架構懶懶學 – ${title}`;
   return `EP${episodeNumber} – ${title}`;
 }
 
 export function formatYoutubeTitle(episodeNumber: number, segmentType: string, title: string): string {
   if (segmentType === 'weekly') return `AI懶人報Podcast ｜ EP${episodeNumber} AI懶人精選週報 - ${title}`;
   if (segmentType === 'robot') return `AI懶人報Podcast ｜ EP${episodeNumber} 機器人觀察週報 - ${title}`;
+  if (segmentType === 'sysdesign') return `AI懶人報Podcast ｜ EP${episodeNumber} 系統架構懶懶學 - ${title}`;
   return `AI懶人報Podcast ｜ EP${episodeNumber} - ${title}`;
 }
 
@@ -95,11 +97,18 @@ export async function publishToSoundOnPlatform(state: PipelineState): Promise<st
   const formattedTitle = formatSoundonTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to SoundOn');
 
+  // Append source links for sysdesign
+  let description = state.description;
+  if (state.segmentType === 'sysdesign' && state.sourceLinks?.length) {
+    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
+    description += `\n\n---\n📎 參考資料：\n${linksText}`;
+  }
+
   // Lazy import to avoid crash if playwright not installed
   const { publishToSoundOn } = await import('@/services/soundon');
   return publishToSoundOn({
     title: formattedTitle,
-    description: state.description,
+    description,
     audioPath: state.audioPath,
     coverPath: state.coverPath,
   });
@@ -129,11 +138,13 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   });
 
   // Step 3: Assemble final YouTube description (ad + main + footer + hashtags)
+  let ytDesc = state.youtubeDescription || state.description;
+  if (state.segmentType === 'sysdesign' && state.sourceLinks?.length) {
+    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
+    ytDesc += `\n\n---\n📎 參考資料：\n${linksText}`;
+  }
   const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
-  const finalDescription = assembleYoutubeDescription(
-    state.youtubeDescription || state.description,
-    state.tags,
-  );
+  const finalDescription = assembleYoutubeDescription(ytDesc, state.tags);
 
   // Step 4: Upload to YouTube with composite thumbnail
   const { YouTubeService } = await import('@/services/youtube');

@@ -71,6 +71,32 @@ const SEARCH_QUERIES: Record<string, string[]> = {
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
+  // sysdesign: skip search, parse manual URLs into VideoSource stubs
+  if (state.segmentType === 'sysdesign') {
+    const urls = state.manualVideoUrls || [];
+    log.info({ count: urls.length }, 'Sysdesign: using manual video URLs');
+    const videos: VideoSource[] = [];
+    for (const url of urls) {
+      const videoId = extractVideoId(url);
+      if (videoId) {
+        videos.push({
+          videoId,
+          title: '',
+          channelName: '',
+          publishedAt: '',
+          viewCount: 0,
+          likeCount: 0,
+          commentCount: 0,
+          durationSeconds: 0,
+          transcript: '',
+        });
+      } else {
+        log.warn({ url }, 'Could not extract videoId from URL');
+      }
+    }
+    return { videos, status: 'classifying' };
+  }
+
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) {
     log.warn('YOUTUBE_API_KEY not set, skipping fetch');
@@ -144,6 +170,20 @@ export async function fetchYoutube(state: PipelineState): Promise<Partial<Pipeli
 
 function getDateDaysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function extractVideoId(url: string): string | null {
+  // Handles youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
+  const patterns = [
+    /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  // Maybe a bare video ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(url.trim())) return url.trim();
+  return null;
 }
 
 function deduplicateByVideoId(videos: VideoSource[]): VideoSource[] {

@@ -32,6 +32,12 @@ const WEEKLY_AUDIO_CONFIG = {
   style_weight: 0.8,
   breath_pause: 0.15,
 };
+const SYSDESIGN_AUDIO_CONFIG = {
+  speed: 1.07,
+  pitch_shift: 1.5,
+  style_weight: 0.8,
+  breath_pause: 0.15,
+};
 const CHUNK_MAX_LEN = 190;
 const BATCH_SIZE = 5;
 const BATCH_WAIT_MS = 1500;
@@ -39,7 +45,9 @@ const BATCH_WAIT_MS = 1500;
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
 function getAudioConfig(segmentType: string) {
-  return segmentType === 'weekly' ? WEEKLY_AUDIO_CONFIG : DAILY_AUDIO_CONFIG;
+  if (segmentType === 'weekly') return WEEKLY_AUDIO_CONFIG;
+  if (segmentType === 'sysdesign') return SYSDESIGN_AUDIO_CONFIG;
+  return DAILY_AUDIO_CONFIG;
 }
 
 export async function tts(state: PipelineState): Promise<Partial<PipelineState>> {

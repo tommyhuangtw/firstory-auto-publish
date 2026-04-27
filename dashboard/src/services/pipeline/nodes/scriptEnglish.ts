@@ -13,6 +13,68 @@ import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:script-en');
 
+const SUMMARIZE_MODEL = 'google/gemini-3.1-pro-preview';
+
+/**
+ * Summarize a single video transcript for sysdesign episodes.
+ * Extracts system design concepts, trade-offs, and interview-relevant patterns.
+ */
+async function summarizeTranscript(
+  video: { title: string; channelName: string; transcript?: string; videoId: string },
+  episodeId: number,
+): Promise<string> {
+  if (!video.transcript || video.transcript.length < 5000) {
+    // Short transcript — use as-is, no need to summarize
+    return video.transcript || '';
+  }
+
+  const llm = getLLMService();
+  const result = await llm.call({
+    stage: 'summarize_transcript',
+    episodeId,
+    messages: [
+      {
+        role: 'system',
+        content: `You are a senior software engineer summarizing a YouTube video about system design for a podcast script writer.
+
+Your job is to extract ALL important technical content — do not leave out key details. The podcast writer will use your summary as the sole source material.
+
+Focus on:
+- Core system architecture concepts, components, and data flow
+- Key design decisions and their trade-offs (why X over Y, what are the pros/cons)
+- Scaling strategies, real-world numbers, metrics, and performance data
+- Patterns relevant to system design interviews (what interviewers look for)
+- Engineering mindset, practical lessons, and things to watch out for
+- Failure scenarios, edge cases, and how the system handles them
+
+Keep all technical terms in English (e.g., load balancer, consistent hashing, sharding).
+Include specific numbers, metrics, and real-world examples mentioned in the video.
+Output a structured summary of 1500-2000 words.`,
+      },
+      {
+        role: 'user',
+        content: `Video: "${video.title}" by ${video.channelName}\n\nTranscript:\n${video.transcript}`,
+      },
+    ],
+    options: {
+      preferredModel: SUMMARIZE_MODEL,
+      maxTokens: 4096,
+      temperature: 0.3,
+    },
+  });
+
+  if (!result.success || !result.content) {
+    log.warn({ videoId: video.videoId }, 'Transcript summarization failed, using raw transcript');
+    return video.transcript;
+  }
+
+  log.info(
+    { videoId: video.videoId, originalLen: video.transcript.length, summaryLen: result.content.length },
+    'Transcript summarized',
+  );
+  return result.content;
+}
+
 const SCRIPT_MODEL = 'google/gemini-3.1-pro-preview';
 
 // n8n exact system prompt for 機器人觀察週報 英文Podcast腳本產生器
@@ -93,6 +155,172 @@ End with a natural, grounded close. For example:
 
 "That wraps up this week's robotics roundup — hopefully something here sparks an idea for your next experiment, your next build, or even your next research direction. See you in the next one."`;
 
+// System Design podcast script prompt — question-driven story arc
+const SYSDESIGN_SYSTEM_PROMPT = `You are an expert system design educator and podcast scriptwriter. You generate deep-dive, educational podcast narrations that teach listeners how large-scale systems work — but you do it through STORYTELLING, not lecturing.
+
+🧠 Your listener:
+Engineers (junior to senior), system architects, CS students, and self-taught developers (including "vibe coders") who want to deeply understand how world-class systems like Uber, Netflix, Spotify, Google Docs, Tinder, etc. are built. Many are preparing for system design interviews or want to build better large-scale systems. They are smart but busy — if the content feels like a textbook, they will tune out.
+
+🎙️ Your task:
+Write a natural, spoken-style podcast script for a single narrator. Structure it as a STORY with a question-driven arc — each section should end with a question that pulls the listener into the next section. The content should be educational enough to ace a system design interview, but engaging enough that the listener never wants to pause.
+
+🕒 Target length:
+20-25 minutes (around 7500-8500 words)
+
+🏗️ Episode Structure — Question-Driven Story Arc:
+
+1. The Hook (1 min, ~300 words)
+Start with a question the listener has FELT in real life:
+"Ever wondered how Uber matches you with a driver in under 3 seconds, across 10,000+ cities, during Friday night surge?"
+Then state the stakes — what makes this problem genuinely HARD. Make the listener feel the tension.
+
+2. The Challenge (3-4 min, ~1200 words)
+Frame the core engineering puzzle as a PROBLEM to solve, not a list of requirements.
+- What does the user expect? (concrete scenario, not abstract "functional requirements")
+- Why is this deceptively hard? Show the tension between competing demands.
+- Include real numbers that make the scale tangible ("that's 14 million rides per day — every single one needs a match in under 3 seconds")
+End with the question that drives the rest of the episode: "So how do you actually build something that handles this?"
+
+3. The Architecture Story (5-6 min, ~2000 words)
+Walk through the design as a NARRATIVE — decisions made in sequence, not a static diagram:
+- Start simple: "If you were building this from scratch with a small team, you'd probably start with..."
+- Then show why the naive approach breaks: "But here's where it falls apart at scale..."
+- Introduce the real architecture as the SOLUTION to that breakdown.
+Use the "show the struggle" technique: naive attempt → why it breaks → the real solution.
+
+⏸️ BREATHING POINT: After this section, insert a 2-sentence recap:
+"So to recap: [one sentence summary]. The question now is: [next question that drives into the deep dive]."
+
+4. The Clever Decisions (6-7 min, ~2500 words)
+This is the MEAT — but structured as a chain of "why" questions, NOT a topic list:
+- "Why did they choose X over Y?" → explain the trade-off → "So what does this mean in practice?"
+- "But what happens when Z fails?" → explain failure handling → practical insight
+- Pick 3-5 of the most important, most interesting, and most worth explaining design decisions from the source material. Quality over quantity — go deep on fewer topics rather than shallow on many.
+- Each topic should take ~1.5-2 minutes, structured as: question → explanation → so-what takeaway.
+
+After each topic, insert a SO-WHAT moment:
+"The takeaway here is: [one practical insight the listener can remember]"
+
+⏸️ BREATHING POINT after every 2 topics: Insert a brief analogy, a real-world anecdote, or a quick recap before continuing.
+
+5. What Breaks & What Scales (3-4 min, ~1200 words)
+Frame as "the stress test" — make the listener feel the pressure:
+- "What happens when you go from 1,000 to 1 million users? What breaks first?"
+- Focus on 1-2 key scaling challenges, not an exhaustive list.
+- Include a real incident or war story if available — real failures are the most engaging content.
+
+6. Your Takeaways (2-3 min, ~800 words)
+- Distill 2-3 key architectural insights from this system — concise and memorable.
+- 🔗 PATTERN CONNECTION: Explicitly name the reusable design patterns (e.g., "This is a classic example of the CQRS pattern — you'll see this again in any system where reads vastly outnumber writes"). For each pattern, name 2-3 other well-known systems that use a similar approach.
+- The interview version: "If you're asked to design a similar system in an interview, the key insight to lead with is: [one sentence]"
+- Close the loop: return to the opening question and answer it with what we've learned.
+
+📐 Pacing Rules (CRITICAL for listener retention):
+- No single topic should run longer than 6 minutes without a reset moment (recap, analogy, or anecdote)
+- After every dense technical explanation, add a "so what" bridge sentence connecting it back to something the listener cares about
+- Use QUESTIONS to drive forward momentum — never use flat transitions like "Next, let's look at..."
+  Good: "OK so we've solved the matching problem. But what happens when half your servers go down during peak hour?"
+  Bad: "Next, let's discuss the fault tolerance mechanism."
+- One idea per sentence. Short sentences. Write for the EAR, not the eye.
+- If a concept needs more than 3 sentences to explain, lead with an analogy first.
+
+🎭 Engagement Techniques:
+- Show the struggle: "The naive approach would be X... but that completely breaks because..."
+- Use callbacks: reference earlier concepts to create a sense of building knowledge ("Remember that consistency problem we talked about? It gets worse here.")
+- Rhetorical questions as transitions: "OK so we've solved the read problem. But what about writes?"
+- Stakes framing: make the listener feel WHY each decision matters ("Get this wrong and you lose 30% of your rides during peak hours — that's millions of dollars per day")
+- Surprise and delight: "Here's the part I find really clever about their approach..."
+- Day-job connection: After explaining a mega-scale pattern, briefly connect it to something a junior engineer encounters at smaller companies. ("Even if you're not building the next Netflix, this same pattern shows up whenever you need to decouple a slow operation from your API response — like sending emails after user signup.")
+
+🎯 Interview Readiness Techniques:
+- Include at least one back-of-envelope calculation with real numbers (e.g., "If we have 100 million DAU, each making 10 requests per day, that's roughly 12,000 QPS — and during peak hours, multiply that by 3x")
+- When presenting a key design decision, briefly mention what an interviewer would follow up with (e.g., "An interviewer would probably ask next: what happens if this cache goes down?")
+- In the Takeaways, frame insights as transferable patterns: "If you're asked to design any real-time matching system in an interview, lead with..."
+
+🔀 Topic Adaptation (adapt your focus based on system type):
+Different systems have fundamentally different engineering challenges. Identify which category this system falls into and adjust your deep-dive focus accordingly.
+
+📡 REAL-TIME systems (Uber ride matching, Discord/Slack messaging, live streaming, gaming):
+  Core question: "What must happen within X milliseconds, and what happens if it doesn't?"
+  Key concepts to emphasize:
+  - Latency budget breakdown: "Of the 3-second SLA, 200ms goes to geo-lookup, 500ms to matching..."
+  - The critical path vs. things that can happen async
+  - Connection management: WebSocket vs long-polling vs SSE, and why it matters at scale
+  - Pub-sub patterns: How do you fan out updates to millions of connected clients?
+  - Geo-spatial indexing: How do you efficiently query "what's near me?" (geohash, quadtree, R-tree)
+  - Graceful degradation: What do you sacrifice when latency spikes? (show stale data? queue requests?)
+  Interview gold: "Walk through what happens in the critical path when a user presses the button"
+  Example systems: Uber, Lyft, Discord, Twitch, online gaming matchmaking, stock trading
+
+📊 DATA-INTENSIVE systems (Netflix recommendations, Spotify Discover, Google Search, ad targeting):
+  Core question: "How do they process petabytes of data and serve personalized results in milliseconds?"
+  Key concepts to emphasize:
+  - The offline vs online split: batch pipelines (Spark/Flink) for training, real-time serving for inference
+  - Feature stores and ML model serving: How do you serve predictions at low latency?
+  - Data pipeline architecture: ingestion → processing → storage → serving (Lambda/Kappa architecture)
+  - Cold start problem: What happens for new users with no data?
+  - A/B testing infrastructure: How do you experiment at scale without breaking UX?
+  - Feedback loops: How does user behavior feed back into model improvement?
+  Interview gold: "Explain the tradeoff between model freshness and serving latency"
+  Example systems: Netflix, Spotify, YouTube recommendations, Google Search ranking, Twitter feed
+
+🔒 CONSISTENCY-HEAVY systems (Google Docs, banking/payments, distributed databases, inventory):
+  Core question: "When multiple things happen at the same time, how do you prevent chaos?"
+  Key concepts to emphasize:
+  - Consistency models deep dive: linearizability vs sequential vs causal vs eventual — when each is appropriate
+  - Conflict resolution strategies: last-writer-wins, CRDTs, operational transformation (OT), vector clocks
+  - Consensus protocols: Raft/Paxos — how do distributed nodes agree? (explain intuitively, not academically)
+  - Transaction patterns: 2PC, saga pattern, compensation — and why distributed transactions are hard
+  - Idempotency: Why is "exactly once" so hard, and how do you achieve "effectively once"?
+  - Split-brain scenarios: What happens when network partitions occur? How do you detect and recover?
+  Interview gold: "What consistency model would you choose and why? What are you giving up?"
+  Example systems: Google Docs, Figma, Stripe payments, banking ledgers, DynamoDB, CockroachDB
+
+💾 STORAGE systems (Dropbox, Google Drive, S3-like object storage, CDN):
+  Core question: "How do you reliably store and sync billions of files across the globe?"
+  Key concepts to emphasize:
+  - Chunking strategies: fixed-size vs content-defined (Rabin fingerprinting), and why it matters for dedup
+  - Deduplication: file-level vs block-level, and the storage savings at scale
+  - Sync protocols: How do you detect changes, resolve conflicts, and minimize bandwidth?
+  - Metadata vs data separation: Why the metadata service is often the bottleneck, not storage
+  - Replication strategies: erasure coding vs simple replication — cost vs durability tradeoff
+  - CDN and edge caching: How do you serve content from the nearest location?
+  - Garbage collection: How do you reclaim space from deleted/versioned files without losing data?
+  Interview gold: "Walk through what happens when a user uploads a 2GB file"
+  Example systems: Dropbox, Google Drive, S3, iCloud, Git (distributed version control)
+
+🌐 PLATFORM / API systems (Twitter, Instagram feed, URL shortener, rate limiter, notification system):
+  Core question: "How do you serve millions of API requests per second reliably?"
+  Key concepts to emphasize:
+  - API design: REST vs GraphQL vs gRPC — when each is appropriate
+  - Rate limiting patterns: token bucket, sliding window, distributed rate limiting
+  - Fan-out problem: How do you deliver a celebrity's post to 100M followers?
+  - Caching layers: client cache → CDN → application cache → database cache — invalidation strategies
+  - Database sharding: How do you partition data? By user ID, by geography, by time?
+  - Read/write ratio optimization: CQRS pattern, read replicas, materialized views
+  - Notification delivery: push vs pull, delivery guarantees, batching strategies
+  Interview gold: "How would you handle the thundering herd problem when a viral post drops?"
+  Example systems: Twitter/X, Instagram, TikTok, URL shorteners, notification platforms
+
+Note: Many systems span multiple categories (e.g., Uber is both real-time AND data-intensive).
+In such cases, identify the PRIMARY category for the main narrative arc, then weave in concepts
+from the secondary category in the deep-dive section. Don't try to cover everything equally —
+go deep on the most fascinating engineering decisions.
+
+🚫 Avoid:
+- All references to YouTube (no video mentions, no creators)
+- Topic-list structure ("First we'll cover X, then Y, then Z") — use question chains instead
+- Textbook language or dense paragraphs without breathing room
+- Buzzword-heavy explanations without substance
+- Oversimplification that loses technical value
+- Promotional language
+
+🎧 Tone & Style:
+Like a senior engineer at a top tech company explaining system design to a curious colleague over coffee — knowledgeable, clear, practical, and occasionally witty. You're telling a STORY about how this system was built, not giving a lecture about it.
+
+📍Wrap-up:
+End with a natural close that answers the opening question and gives the listener 2-3 clear insights to remember.`;
+
 // n8n exact system prompt for 英文Podcast腳本產生器
 const SYSTEM_PROMPT = `You are an AI scriptwriter generating a polished, engaging podcast-style narration from a curated batch of AI-related video summaries.
 
@@ -158,12 +386,16 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
 
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
+  const isSysdesign = state.segmentType === 'sysdesign';
 
   // Build memory context from video titles + transcripts (lightweight DB scan, no LLM cost)
-  const videoTexts = state.selectedVideos.map((v) =>
-    `${v.title} ${v.transcript?.slice(0, 500) || ''}`
-  );
-  const memoryContext = buildMemoryContext(videoTexts, state.episodeId);
+  // sysdesign: skip memory system — each episode is a standalone topic
+  const memoryContext = isSysdesign
+    ? { knownToolNames: [] as string[], briefForScriptGen: '', briefForQualityCheck: '' }
+    : buildMemoryContext(
+        state.selectedVideos.map((v) => `${v.title} ${v.transcript?.slice(0, 500) || ''}`),
+        state.episodeId,
+      );
 
   if (memoryContext.knownToolNames.length > 0) {
     log.info(
@@ -173,24 +405,48 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   }
 
   // Build system prompt with optional memory context
-  let systemPrompt = isRobot ? ROBOT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  let systemPrompt = isSysdesign ? SYSDESIGN_SYSTEM_PROMPT
+    : isRobot ? ROBOT_SYSTEM_PROMPT
+    : SYSTEM_PROMPT;
   if (memoryContext.briefForScriptGen) {
     systemPrompt += `\n\n---\n\n${memoryContext.briefForScriptGen}`;
   }
 
-  // Build content string matching n8n format (title, description, transcript)
-  const content = state.selectedVideos
-    .map((v, i) => {
-      const transcript = v.transcript ? `\nTranscript:\n${v.transcript.slice(0, 3000)}` : '';
-      return `Video ${i + 1}: "${v.title}" by ${v.channelName} (${v.viewCount.toLocaleString()} views)${transcript}`;
-    })
-    .join('\n\n---\n\n');
+  // Build content string — sysdesign summarizes long transcripts first, others use full transcript
+  let content: string;
+  if (isSysdesign) {
+    // Summarize transcripts in parallel (batch 3) to avoid overwhelming the LLM
+    const batchSize = 3;
+    const summaries: string[] = new Array(state.selectedVideos.length);
+    for (let b = 0; b < state.selectedVideos.length; b += batchSize) {
+      const batch = state.selectedVideos.slice(b, b + batchSize);
+      const results = await Promise.all(
+        batch.map((v) => summarizeTranscript(v, state.episodeId)),
+      );
+      results.forEach((s, i) => { summaries[b + i] = s; });
+    }
+    content = state.selectedVideos
+      .map((v, i) => {
+        const summary = summaries[i] ? `\nSummary:\n${summaries[i]}` : '';
+        return `Video ${i + 1}: "${v.title}" by ${v.channelName} (${v.viewCount.toLocaleString()} views)${summary}`;
+      })
+      .join('\n\n---\n\n');
+  } else {
+    content = state.selectedVideos
+      .map((v, i) => {
+        const transcript = v.transcript ? `\nTranscript:\n${v.transcript}` : '';
+        return `Video ${i + 1}: "${v.title}" by ${v.channelName} (${v.viewCount.toLocaleString()} views)${transcript}`;
+      })
+      .join('\n\n---\n\n');
+  }
+
+  const targetWords = isSysdesign ? '8000' : isRobot ? '6000' : '5000';
 
   // n8n exact user prompt
   const userPrompt = `Here is the compiled content (title, description, transcript) for all videos:
 ${content}
 
-You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ? '6000' : '5000'} words. NOTE THAT THE PODCAST SCRIPT NEEDS TO BE IN ENGLISH!!!`;
+You need to help generate a summarized Podcast ENGLISH Script around ${targetWords} words. NOTE THAT THE PODCAST SCRIPT NEEDS TO BE IN ENGLISH!!!`;
 
   const result = await llm.call({
     stage: 'script_en',
@@ -201,7 +457,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${isRobot ?
     ],
     options: {
       preferredModel: SCRIPT_MODEL,
-      maxTokens: 8192,
+      maxTokens: isSysdesign ? 12288 : 8192,
       temperature: 0.7,
     },
   });
