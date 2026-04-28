@@ -59,16 +59,28 @@ export async function POST(
 
     const result = await generateCover(minimalState);
 
-    // Update episode with new cover
-    db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ? WHERE id = ?')
-      .run(result.coverPath || null, result.coverUrl || null, episodeId);
+    // Append to cover_candidates and set as active cover
+    const row = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
+    const candidates: { path: string; url: string; createdAt: string; source: string }[] = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
+    if (result.coverPath) {
+      candidates.push({
+        path: result.coverPath,
+        url: result.coverUrl || '',
+        createdAt: new Date().toISOString(),
+        source: 'generated',
+      });
+    }
 
-    log.info({ episodeId, coverUrl: result.coverUrl }, 'Cover image regenerated');
+    db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ?, cover_candidates = ? WHERE id = ?')
+      .run(result.coverPath || null, result.coverUrl || null, JSON.stringify(candidates), episodeId);
+
+    log.info({ episodeId, coverUrl: result.coverUrl, totalCandidates: candidates.length }, 'Cover image regenerated');
 
     return NextResponse.json({
       coverPath: result.coverPath,
       coverUrl: result.coverUrl,
       igScenario: result.igScenario,
+      candidates,
     });
   } catch (error) {
     log.error({ error: (error as Error).message }, 'Cover regeneration failed');

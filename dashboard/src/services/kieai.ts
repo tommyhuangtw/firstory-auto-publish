@@ -1,7 +1,7 @@
 /**
  * kie.ai Image Generation Service
  *
- * Generates podcast cover images using nano-banana-pro model.
+ * Generates podcast cover images via kie.ai (GPT Image 2).
  * Ported from src/services/kieAi.js
  */
 
@@ -56,7 +56,7 @@ export async function generateCoverImage(prompt: string, options: {
   resolution?: string;
   referenceImages?: string[];
 } = {}): Promise<string> {
-  const model = options.model || 'nano-banana-pro';
+  const model = options.model || 'gpt-image-2-image-to-image';
   log.info({ model }, 'Creating kie.ai image task');
 
   const input: Record<string, unknown> = {
@@ -66,10 +66,8 @@ export async function generateCoverImage(prompt: string, options: {
   };
 
   if (options.referenceImages?.length) {
-    input.image_input = options.referenceImages;
+    input.input_urls = options.referenceImages;
   }
-
-  input.output_format = 'jpg';
 
   const result = await request('POST', '/api/v1/jobs/createTask', { model, input });
   const taskId = result.taskId;

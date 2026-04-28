@@ -29,7 +29,7 @@ function loadModule(modulePath: string): any {
 /**
  * Extract 3-5 "essence" beat candidates from an episode's Chinese script.
  */
-export async function extractBeats(episodeId: number) {
+export async function extractBeats(episodeId: number, segmentType?: string) {
   const db = getDb();
   const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE id = ?').get(episodeId) as
     { selected_title: string | null; script_zh: string | null } | undefined;
@@ -46,6 +46,7 @@ export async function extractBeats(episodeId: number) {
     podcastScript: episode.script_zh,
     episodeTitle: episode.selected_title || '',
     openRouter,
+    segmentType,
   });
 
   log.info({ episodeId, beatCount: beats.length }, 'Extracted beats');
@@ -55,9 +56,9 @@ export async function extractBeats(episodeId: number) {
 /**
  * Generate 5 cover headline candidates for a selected beat.
  */
-export async function generateHeadlines(selectedBeat: { text: string; reason?: string }) {
+export async function generateHeadlines(selectedBeat: { text: string; reason?: string }, segmentType?: string) {
   const { generateCoverHeadlines } = loadModule(path.join(SHORTS_PIPELINE_DIR, 'highlightExtractor'));
-  const headlines = await generateCoverHeadlines({ selectedBeat, narrationScript: null });
+  const headlines = await generateCoverHeadlines({ selectedBeat, narrationScript: null, segmentType });
   log.info({ headlineCount: headlines.length }, 'Generated headlines');
   return headlines as string[];
 }
@@ -80,8 +81,8 @@ export async function runShortsGeneration(shortsId: number) {
 
   // Use episode_id if available, fallback to episode_number for old data
   const episodeId = shorts.episode_id || shorts.episode_number;
-  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE id = ?').get(episodeId) as
-    { selected_title: string | null; script_zh: string | null };
+  const episode = db.prepare('SELECT selected_title, script_zh, segment_type FROM episodes WHERE id = ?').get(episodeId) as
+    { selected_title: string | null; script_zh: string | null; segment_type: string };
 
   const beats = JSON.parse(shorts.beats_json);
   const selectedBeat = beats[shorts.selected_beat_index];
@@ -105,6 +106,7 @@ export async function runShortsGeneration(shortsId: number) {
       coverHeadline,
       onStageChange,
       avatarFilename: shorts.avatar_filename || undefined,
+      segmentType: episode.segment_type,
     });
 
     // Generate IG caption
@@ -113,6 +115,7 @@ export async function runShortsGeneration(shortsId: number) {
       episodeTitle: episode.selected_title || '',
       beatText: selectedBeat.text,
       coverHeadline,
+      segmentType: episode.segment_type,
     });
 
     db.prepare(
@@ -139,14 +142,22 @@ async function generateShortsIgCaption(args: {
   episodeTitle: string;
   beatText: string;
   coverHeadline: string;
+  segmentType?: string;
 }): Promise<string> {
   try {
     const { getLLMService } = await import('@/services/llmService');
     const llm = getLLMService();
 
-    const prompt = `你是 AI 懶人報的 IG 小編。請為這則 Reels 短影音寫一段 Instagram 貼文文案，主要目的是引流觀眾去聽完整的 Podcast。
+    const isSysdesign = args.segmentType === 'sysdesign';
+    const showName = isSysdesign ? '系統架構懶懶學（系統設計拆解 Podcast）' : 'AI 懶人報（每日 AI 精華 Podcast）';
+    const requiredHashtag = isSysdesign ? '#系統架構懶懶學' : '#AI懶人報';
+    const extraHashtags = isSysdesign
+      ? '（#系統設計 #SystemDesign #架構 #SoftwareEngineering #系統架構懶懶學 必須包含）'
+      : '（#AI懶人報 必須包含）';
 
-【節目】AI 懶人報（每日 AI 精華 Podcast）
+    const prompt = `你是${isSysdesign ? '系統架構懶懶學' : 'AI 懶人報'}的 IG 小編。請為這則 Reels 短影音寫一段 Instagram 貼文文案，主要目的是引流觀眾去聽完整的 Podcast。
+
+【節目】${showName}
 【本集標題】${args.episodeTitle}
 【Shorts 主題】${args.beatText.slice(0, 300)}
 【封面標題】${args.coverHeadline}
@@ -155,7 +166,7 @@ async function generateShortsIgCaption(args: {
 1. 開頭用 1-2 句吸睛的 hook（呼應 Shorts 內容）
 2. 用 3-5 個 emoji bullet points 列出本集重點
 3. 結尾 CTA：引導去聽完整集數（「完整集數連結在 bio」或「連結在限動」）
-4. 加 10-15 個相關 hashtags（#AI懶人報 必須包含）
+4. 加 10-15 個相關 hashtags${extraHashtags}
 5. 總長度 150-300 字
 6. 語氣要像跟朋友聊天，不要太正式
 
@@ -176,7 +187,8 @@ async function generateShortsIgCaption(args: {
   }
 
   // Fallback
-  return `${args.coverHeadline}\n\n完整集數連結在 bio！\n\n#AI懶人報 #AI #Podcast`;
+  const fallbackTag = args.segmentType === 'sysdesign' ? '#系統架構懶懶學 #系統設計 #SystemDesign' : '#AI懶人報 #AI';
+  return `${args.coverHeadline}\n\n完整集數連結在 bio！\n\n${fallbackTag} #Podcast`;
 }
 
 function logShortsCosts(db: ReturnType<typeof getDb>, episodeId: number, shortsId: number) {

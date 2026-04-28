@@ -4,7 +4,7 @@ import { extractBeats } from '@/services/shortsPipeline';
 
 export async function POST(request: NextRequest) {
   try {
-    const { episodeId, avatarFilename } = await request.json() as { episodeId: number; avatarFilename?: string };
+    const { episodeId, avatarFilename, segmentType } = await request.json() as { episodeId: number; avatarFilename?: string; segmentType?: string };
     if (!episodeId) {
       return NextResponse.json({ error: 'episodeId is required' }, { status: 400 });
     }
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Episode ${episodeId} not found or has no script` }, { status: 404 });
     }
 
-    const beats = await extractBeats(episodeId);
+    const beats = await extractBeats(episodeId, segmentType);
     if (!beats || beats.length === 0) {
       return NextResponse.json({ error: 'No beats extracted from script' }, { status: 422 });
     }

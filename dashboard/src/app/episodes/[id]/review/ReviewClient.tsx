@@ -39,6 +39,7 @@ export default function ReviewClient({
   const [message, setMessage] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
@@ -196,7 +197,7 @@ export default function ReviewClient({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Title Picker */}
       {candidateTitles.length > 0 && (
         <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
@@ -235,68 +236,7 @@ export default function ReviewClient({
         </section>
       )}
 
-      {/* Description */}
-      <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Description</h2>
-          {canEdit && regenerateButton(handleRegenerateDescription, regeneratingDesc, '重新生成描述', '生成中...')}
-        </div>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={10}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
-        />
-        <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{description.length} 字</p>
-      </section>
-
-      {/* Tags */}
-      {tags.length > 0 && (
-        <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-2">Tags</h2>
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag, i) => (
-              <span key={i} className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-300">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* IG Caption */}
-      <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">IG Caption</h2>
-          {canEdit && regenerateButton(handleRegenerateIg, regeneratingIg, '重新生成 IG 貼文', '生成中...')}
-        </div>
-        {igCaption ? (
-          <div>
-            <textarea
-              value={igCaption}
-              onChange={(e) => setIgCaption(e.target.value)}
-              rows={12}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
-            />
-            <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{igCaption.length} 字</p>
-          </div>
-        ) : (
-          <p className="text-sm text-zinc-500">尚未生成 IG 貼文</p>
-        )}
-      </section>
-
-      {/* Save Button — shown when any field has been edited */}
-      {isDirty && (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full text-sm py-2.5 rounded-lg bg-brand hover:bg-brand-light disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium transition-colors cursor-pointer"
-        >
-          {saving ? '儲存中...' : '儲存修改'}
-        </button>
-      )}
-
-      {/* Approve / Reject Actions */}
+      {/* Approve / Reject Actions — placed right after title for quick workflow */}
       {canReview && (
         <section className="space-y-3">
           <div className="flex gap-3">
@@ -337,11 +277,112 @@ export default function ReviewClient({
         </section>
       )}
 
+      {/* Save Button — shown when any field has been edited */}
+      {isDirty && (
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full text-sm py-2.5 rounded-lg bg-brand hover:bg-brand-light disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium transition-colors cursor-pointer"
+        >
+          {saving ? '儲存中...' : '儲存修改'}
+        </button>
+      )}
+
+      {/* Status message */}
       {message && (
         <p className={`text-sm ${message.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
           {message}
         </p>
       )}
+
+      {/* Content Details — collapsible preview */}
+      <div className="bg-zinc-900 rounded-lg border border-zinc-800">
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className="w-full flex items-center justify-between p-4 cursor-pointer"
+        >
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">內容詳情</h2>
+          <svg
+            className={`w-4 h-4 text-zinc-400 transition-transform ${showDetails ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+
+        {/* Collapsed preview */}
+        {!showDetails && (
+          <div className="px-4 pb-4 -mt-1 space-y-2">
+            {description && (
+              <div>
+                <p className="text-[11px] text-zinc-500 mb-0.5">Description</p>
+                <p className="text-xs text-zinc-400 line-clamp-2">{description}</p>
+              </div>
+            )}
+            {igCaption && (
+              <div>
+                <p className="text-[11px] text-zinc-500 mb-0.5">IG Caption</p>
+                <p className="text-xs text-zinc-400 line-clamp-2">{igCaption}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Expanded full editor */}
+        {showDetails && (
+          <div className="px-4 pb-4 space-y-4">
+            {/* Description */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Description</p>
+                {canEdit && regenerateButton(handleRegenerateDescription, regeneratingDesc, '重新生成描述', '生成中...')}
+              </div>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={10}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
+              />
+              <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{description.length} 字</p>
+            </div>
+
+            {/* Tags */}
+            {tags.length > 0 && (
+              <div>
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Tags</p>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag, i) => (
+                    <span key={i} className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-300">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* IG Caption */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider">IG Caption</p>
+                {canEdit && regenerateButton(handleRegenerateIg, regeneratingIg, '重新生成 IG 貼文', '生成中...')}
+              </div>
+              {igCaption ? (
+                <div>
+                  <textarea
+                    value={igCaption}
+                    onChange={(e) => setIgCaption(e.target.value)}
+                    rows={12}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
+                  />
+                  <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{igCaption.length} 字</p>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-500">尚未生成 IG 貼文</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

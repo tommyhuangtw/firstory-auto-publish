@@ -87,6 +87,7 @@ export async function POST(
       youtubeUrl: (episode.youtube_url as string) || '',
       totalCostUsd: (episode.total_cost_usd as number) || 0,
       error: '',
+      coverError: '',
       manualVideoUrls: [],
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     };

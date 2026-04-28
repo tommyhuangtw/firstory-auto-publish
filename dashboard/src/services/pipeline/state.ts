@@ -152,6 +152,7 @@ export interface PipelineState {
 
   // ── Error ──
   error: string;
+  coverError: string;
 }
 
 /**
@@ -205,5 +206,6 @@ export function createInitialState(
     youtubeUrl: '',
     totalCostUsd: 0,
     error: '',
+    coverError: '',
   };
 }

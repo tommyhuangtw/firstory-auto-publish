@@ -38,58 +38,89 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
     return { coverPath: '', coverUrl: '', igScenario: '', status: 'tts' };
   }
 
+  // Step 1: IG Scenario Agent — generate scene description
+  let scenario = '';
   try {
-    // Step 1: IG Scenario Agent — generate scene description
-    const scenario = await generateScenario(state);
+    scenario = await generateScenario(state);
     log.info({ scenario: scenario.slice(0, 100) }, 'Scenario generated');
-
-    // Step 2: Build full 湯懶懶 image prompt with scenario
-    const isRobot = state.segmentType === 'robot';
-    const isSysdesign = state.segmentType === 'sysdesign';
-    const imagePrompt = buildImagePrompt(scenario, isRobot, isSysdesign);
-
-    // Step 3: kie.ai generates image with reference images
-    const coverStartMs = Date.now();
-    const imageUrl = await generateCoverImage(imagePrompt, {
-      model: 'nano-banana-pro',
-      aspectRatio: '1:1',
-      resolution: '2K',
-      referenceImages: REFERENCE_IMAGES,
-    });
-    // Log Kie AI cover cost
-    try {
-      const db = getDb();
-      const costUsd = parseFloat(
-        (db.prepare("SELECT value FROM settings WHERE key = 'kieai_nano_banana_pro_usd'").get() as { value: string })?.value || '0.09'
-      );
-      db.prepare(
-        'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(state.episodeId, state.episodeNumber ?? null, 'kieai_cover', 'nano-banana-pro', 1, costUsd, Date.now() - coverStartMs);
-      log.info({ costUsd }, 'Cover image cost logged');
-    } catch (err) {
-      log.warn({ error: (err as Error).message }, 'Failed to log cover cost');
-    }
-
-    // Step 4: Download to local
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-    const coverFilename = `${dateStr}_${timeStr}_${state.segmentType}_cover.png`;
-    const localPath = path.join(OUTPUT_DIR, coverFilename);
-    await downloadImage(imageUrl, localPath);
-
-    // Step 5: Upload to Cloudinary for public URL
-    let publicUrl = imageUrl;
-    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_UPLOAD_PRESET) {
-      publicUrl = await uploadToCloudinary(localPath, coverFilename);
-    }
-
-    log.info({ coverPath: localPath, coverUrl: publicUrl }, 'Cover image ready');
-    return { coverPath: localPath, coverUrl: publicUrl, igScenario: scenario, status: 'tts' };
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'Cover generation failed, continuing without cover');
-    return { coverPath: '', coverUrl: '', igScenario: '', status: 'tts' };
+    log.error({ error: (error as Error).message }, 'Scenario generation failed');
+    return { coverPath: '', coverUrl: '', igScenario: '', coverError: (error as Error).message, status: 'tts' };
   }
+
+  // Step 2: Build image prompt
+  const isRobot = state.segmentType === 'robot';
+  const isSysdesign = state.segmentType === 'sysdesign';
+  const imagePrompt = buildImagePrompt(scenario, isRobot, isSysdesign);
+
+  // Step 3: kie.ai image generation with retry (max 3 attempts, 15s apart)
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = 15_000;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const coverStartMs = Date.now();
+      const imageUrl = await generateCoverImage(imagePrompt, {
+        model: 'gpt-image-2-image-to-image',
+        aspectRatio: '1:1',
+        resolution: '1K',
+        referenceImages: REFERENCE_IMAGES,
+      });
+
+      // Log cost
+      try {
+        const db = getDb();
+        const costUsd = parseFloat(
+          (db.prepare("SELECT value FROM settings WHERE key = 'kieai_gpt_image_2_1k_usd'").get() as { value: string })?.value || '0.03'
+        );
+        db.prepare(
+          'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(state.episodeId, state.episodeNumber ?? null, 'kieai_cover', 'gpt-image-2', 1, costUsd, Date.now() - coverStartMs);
+        log.info({ costUsd }, 'Cover image cost logged');
+      } catch (err) {
+        log.warn({ error: (err as Error).message }, 'Failed to log cover cost');
+      }
+
+      // Download to local
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+      const coverFilename = `${dateStr}_${timeStr}_${state.segmentType}_cover.png`;
+      const localPath = path.join(OUTPUT_DIR, coverFilename);
+      await downloadImage(imageUrl, localPath);
+
+      // Upload to Cloudinary
+      let publicUrl = imageUrl;
+      if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_UPLOAD_PRESET) {
+        publicUrl = await uploadToCloudinary(localPath, coverFilename);
+      }
+
+      // Append to cover_candidates
+      try {
+        const db2 = getDb();
+        const row = db2.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(state.episodeId) as { cover_candidates: string | null } | undefined;
+        const candidates: { path: string; url: string; createdAt: string; source: string }[] = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
+        candidates.push({ path: localPath, url: publicUrl, createdAt: new Date().toISOString(), source: 'generated' });
+        db2.prepare('UPDATE episodes SET cover_candidates = ? WHERE id = ?').run(JSON.stringify(candidates), state.episodeId);
+      } catch (err) {
+        log.warn({ error: (err as Error).message }, 'Failed to update cover_candidates');
+      }
+
+      log.info({ coverPath: localPath, coverUrl: publicUrl, attempt }, 'Cover image ready');
+      return { coverPath: localPath, coverUrl: publicUrl, igScenario: scenario, coverError: '', status: 'tts' };
+    } catch (error) {
+      lastError = (error as Error).message;
+      log.warn({ attempt, maxAttempts: MAX_ATTEMPTS, error: lastError }, 'Cover generation attempt failed');
+      if (attempt < MAX_ATTEMPTS) {
+        log.info({ delayMs: RETRY_DELAY_MS }, 'Retrying cover generation...');
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  log.error({ error: lastError, attempts: MAX_ATTEMPTS }, 'Cover generation failed after all retries');
+  return { coverPath: '', coverUrl: '', igScenario: scenario, coverError: lastError, status: 'tts' };
 }
 
 // Step 1: Extract scenario candidates from podcast script summary

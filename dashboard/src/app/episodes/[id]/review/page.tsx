@@ -147,6 +147,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
   const sourceLinks: { title: string; url: string }[] = episode.source_links ? JSON.parse(episode.source_links) : [];
 
+  // Cover candidates
+  const coverCandidatesRaw = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
+  const coverCandidates: { path: string; url: string; createdAt: string; source: string }[] = coverCandidatesRaw?.cover_candidates ? JSON.parse(coverCandidatesRaw.cover_candidates) : [];
+
   // Recover ig_caption from pipeline snapshot if not in episodes table
   let igCaption = episode.ig_caption || '';
   if (!igCaption && pipelineRun) {
@@ -229,12 +233,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
         {/* Cover + Audio row */}
         <div className="flex gap-4">
-          {episode.cover_path && (
-            <RegenerateCoverButton
-              episodeId={episode.id}
-              coverPath={episode.cover_path}
-            />
-          )}
+          <RegenerateCoverButton
+            episodeId={episode.id}
+            coverPath={episode.cover_path}
+            candidates={coverCandidates}
+          />
           {episode.audio_path && (
             <div className="flex-1 flex flex-col justify-end">
               <p className="text-[11px] text-zinc-400 mb-1.5">Audio</p>
@@ -247,6 +250,49 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             </div>
           )}
         </div>
+
+        {/* Interactive Review Section (title picker, approve/reject, collapsible details) */}
+        <ReviewClient
+          episodeId={episode.id}
+          episodeNumber={episode.episode_number}
+          status={episode.status}
+          segmentType={episode.segment_type}
+          candidateTitles={candidateTitles}
+          selectedTitle={episode.selected_title || ''}
+          description={episode.description || ''}
+          igCaption={igCaption}
+          tags={tags}
+          soundonUrl={episode.soundon_url}
+          youtubeUrl={episode.youtube_url}
+        />
+
+        {/* Retry Controls — quick access for failed episodes */}
+        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing') && (
+          <RetryControls
+            pipelineRunId={pipelineRun.id}
+            failedStage={pipelineRun.status === 'failed' ? pipelineRun.current_stage : null}
+          />
+        )}
+
+        {/* Publish Status + Republish */}
+        {(episode.status === 'published' || episode.status === 'publishing') && (
+          <RepublishSection
+            episodeId={episode.id}
+            episodeStatus={episode.status}
+            soundonUrl={episode.soundon_url}
+            youtubeUrl={episode.youtube_url}
+            igPostId={episode.ig_post_id}
+          />
+        )}
+
+        {/* Shorts Generation */}
+        {(episode.status === 'published' || episode.status === 'pending_review' || episode.status === 'publishing') && (
+          <ShortsSection
+            episodeId={episode.id}
+            initialShorts={shortsRow ?? null}
+            segmentType={episode.segment_type}
+          />
+        )}
 
         {/* Quality Breakdown */}
         {qualityScoreData && (
@@ -289,21 +335,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           />
         )}
 
-        {/* Interactive Review Section (title picker, description, approve/reject) */}
-        <ReviewClient
-          episodeId={episode.id}
-          episodeNumber={episode.episode_number}
-          status={episode.status}
-          segmentType={episode.segment_type}
-          candidateTitles={candidateTitles}
-          selectedTitle={episode.selected_title || ''}
-          description={episode.description || ''}
-          igCaption={igCaption}
-          tags={tags}
-          soundonUrl={episode.soundon_url}
-          youtubeUrl={episode.youtube_url}
-        />
-
         {/* Pipeline Timeline */}
         {pipelineRun && (
           <PipelineTimeline
@@ -345,33 +376,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               ))}
             </div>
           </div>
-        )}
-
-        {/* Retry Controls */}
-        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing') && (
-          <RetryControls
-            pipelineRunId={pipelineRun.id}
-            failedStage={pipelineRun.status === 'failed' ? pipelineRun.current_stage : null}
-          />
-        )}
-
-        {/* Publish Status + Republish */}
-        {(episode.status === 'published' || episode.status === 'publishing') && (
-          <RepublishSection
-            episodeId={episode.id}
-            episodeStatus={episode.status}
-            soundonUrl={episode.soundon_url}
-            youtubeUrl={episode.youtube_url}
-            igPostId={episode.ig_post_id}
-          />
-        )}
-
-        {/* Shorts Generation */}
-        {(episode.status === 'published' || episode.status === 'pending_review' || episode.status === 'publishing') && (
-          <ShortsSection
-            episodeId={episode.id}
-            initialShorts={shortsRow ?? null}
-          />
         )}
       </div>
     </div>

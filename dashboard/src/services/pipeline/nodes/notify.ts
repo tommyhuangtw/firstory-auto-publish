@@ -43,7 +43,9 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
 <h3 style="font-size:14px;color:#333;margin:0 0 8px;">IG 封面預覽</h3>
 <img src="${state.coverUrl}" width="300" style="border-radius:8px;" />
 </div>`
-        : '';
+        : `<div style="margin-top:20px;padding:12px 16px;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;">
+<p style="margin:0;font-size:13px;color:#856404;">&#9888;&#65039; 封面圖片本次未能成功生成，請到 Review 頁面手動點擊「生成封面」。</p>
+</div>`;
       const igCaptionSection = results.igCaption
         ? `<div style="background:#f5f5f5;padding:16px;border-radius:8px;margin-top:12px;">
 <h3 style="margin:0 0 8px;font-size:14px;color:#333;">IG 貼文預覽（待審核）</h3>

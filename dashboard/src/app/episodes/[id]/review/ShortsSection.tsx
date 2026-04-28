@@ -25,6 +25,7 @@ interface Beat {
 interface Props {
   episodeId: number;
   initialShorts: ShortsData | null;
+  segmentType?: string;
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -39,7 +40,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const STAGES = Object.keys(STAGE_LABELS);
 
-export default function ShortsSection({ episodeId, initialShorts }: Props) {
+export default function ShortsSection({ episodeId, initialShorts, segmentType }: Props) {
   const [shorts, setShorts] = useState<ShortsData | null>(initialShorts);
   const [step, setStep] = useState<'idle' | 'select_avatar' | 'loading_beats' | 'select_beat' | 'loading_headlines' | 'select_headline' | 'generating' | 'completed' | 'publishing' | 'published' | 'failed'>('idle');
   const [shortsId, setShortsId] = useState<number | null>(initialShorts?.id ?? null);
@@ -136,7 +137,7 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
       const res = await fetch('/api/shorts/beats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeId, avatarFilename: selectedAvatar }),
+        body: JSON.stringify({ episodeId, avatarFilename: selectedAvatar, segmentType }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -148,27 +149,31 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
       setError((err as Error).message);
       setStep('idle');
     }
-  }, [episodeId, selectedAvatar]);
+  }, [episodeId, selectedAvatar, segmentType]);
 
   const handleSelectBeat = useCallback(async () => {
-    if (selectedBeatIdx === null || !shortsId) return;
+    if (selectedBeatIdx === null) return;
+    if (!shortsId) {
+      setError('Shorts session lost — please regenerate beats');
+      return;
+    }
     setError('');
     setStep('loading_headlines');
     try {
       const res = await fetch('/api/shorts/headlines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shortsId, selectedBeatIndex: selectedBeatIdx }),
+        body: JSON.stringify({ shortsId, selectedBeatIndex: selectedBeatIdx, segmentType }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || 'Failed to generate headlines');
       setHeadlines(data.headlines);
       setStep('select_headline');
     } catch (err) {
-      setError((err as Error).message);
+      setError((err as Error).message || 'Unknown error');
       setStep('select_beat');
     }
-  }, [selectedBeatIdx, shortsId]);
+  }, [selectedBeatIdx, shortsId, segmentType]);
 
   const handleRegenerateHeadlines = useCallback(async () => {
     if (selectedBeatIdx === null || !shortsId) return;
@@ -180,17 +185,17 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
       const res = await fetch('/api/shorts/headlines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shortsId, selectedBeatIndex: selectedBeatIdx }),
+        body: JSON.stringify({ shortsId, selectedBeatIndex: selectedBeatIdx, segmentType }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || 'Failed to generate headlines');
       setHeadlines(data.headlines);
       setStep('select_headline');
     } catch (err) {
-      setError((err as Error).message);
+      setError((err as Error).message || 'Unknown error');
       setStep('select_headline');
     }
-  }, [selectedBeatIdx, shortsId]);
+  }, [selectedBeatIdx, shortsId, segmentType]);
 
   const handleGenerate = useCallback(async () => {
     if (selectedHeadlineIdx === null || !shortsId) return;
@@ -235,9 +240,8 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
 
   const handleRestart = useCallback(() => {
     // Reuse existing beats — same script always produces same highlights.
-    // Keep avatar selection, just reset beat/headline choices.
+    // Keep avatar selection and shortsId, just reset beat/headline choices.
     const existingBeats = beats;
-    setShortsId(null);
     setShorts(null);
     setSelectedBeatIdx(null);
     setHeadlines([]);
@@ -250,6 +254,7 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
       setStep('select_beat');
       setExpanded(true);
     } else {
+      setShortsId(null);
       setStep('idle');
     }
   }, [beats]);
@@ -411,12 +416,12 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
                   <p className="text-xs text-zinc-400 leading-relaxed">{beats[selectedBeatIdx].text.slice(0, 100)}...</p>
                 </div>
               )}
-              <p className="text-xs text-zinc-400">選擇 Reels 封面標題：</p>
+              <p className="text-xs text-zinc-400">選擇或編輯 Reels 封面標題：</p>
               <div className="grid grid-cols-1 gap-2">
                 {headlines.map((headline, i) => (
-                  <label
+                  <div
                     key={i}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
                       selectedHeadlineIdx === i
                         ? 'border-violet-500/50 bg-violet-500/10'
                         : 'border-zinc-700 hover:border-zinc-600'
@@ -426,25 +431,31 @@ export default function ShortsSection({ episodeId, initialShorts }: Props) {
                       type="radio"
                       name="headline"
                       checked={selectedHeadlineIdx === i}
-                      onChange={() => { setSelectedHeadlineIdx(i); setCustomHeadline(headline); }}
-                      className="accent-violet-500"
+                      onChange={() => { setSelectedHeadlineIdx(i); setCustomHeadline(headlines[i]); }}
+                      className="accent-violet-500 cursor-pointer shrink-0"
                     />
-                    <span className="text-sm text-zinc-300">{headline}</span>
-                  </label>
+                    <input
+                      type="text"
+                      value={selectedHeadlineIdx === i ? customHeadline : headline}
+                      onChange={(e) => {
+                        if (selectedHeadlineIdx !== i) {
+                          setSelectedHeadlineIdx(i);
+                        }
+                        setCustomHeadline(e.target.value);
+                        // Also update the headlines array so edits persist when switching
+                        setHeadlines(prev => prev.map((h, idx) => idx === i ? e.target.value : h));
+                      }}
+                      onFocus={() => {
+                        if (selectedHeadlineIdx !== i) {
+                          setSelectedHeadlineIdx(i);
+                          setCustomHeadline(headline);
+                        }
+                      }}
+                      className="flex-1 bg-transparent text-sm text-zinc-300 focus:outline-none focus:text-zinc-100 cursor-text"
+                    />
+                  </div>
                 ))}
               </div>
-              {/* Editable headline input */}
-              {selectedHeadlineIdx !== null && (
-                <div>
-                  <p className="text-[10px] text-zinc-500 mb-1">微調封面標題</p>
-                  <input
-                    type="text"
-                    value={customHeadline}
-                    onChange={(e) => setCustomHeadline(e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
-                  />
-                </div>
-              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => handleRestart()}

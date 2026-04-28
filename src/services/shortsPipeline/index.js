@@ -73,6 +73,7 @@ async function runShortsPipeline({
   coverHeadline,
   onStageChange,
   avatarFilename,
+  segmentType,
 }) {
   const reportStage = onStageChange || (() => {});
 
@@ -118,7 +119,7 @@ async function runShortsPipeline({
   // ── Stage 1: Highlight extraction (narration script) ────────────────────
   reportStage('extractHighlight');
   console.log('\n━━━ Stage 1/7: Generate narration script ━━━');
-  const plan = await extractHighlight({ episodeTitle, podcastScript, selectedBeat });
+  const plan = await extractHighlight({ episodeTitle, podcastScript, selectedBeat, segmentType });
   await fs.writeJSON(path.join(workDir, '01_plan.json'), plan, { spaces: 2 });
   manifest.stages.highlight = { stub: !!plan._stub, ...plan };
   console.log(`   hook: ${plan.hook_script}`);

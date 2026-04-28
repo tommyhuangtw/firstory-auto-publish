@@ -263,6 +263,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     youtubeUrl: '',
     totalCostUsd: (episode.total_cost_usd as number) || 0,
     error: '',
+    coverError: '',
   };
 
   return publish(state);

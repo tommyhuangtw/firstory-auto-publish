@@ -4,9 +4,10 @@ import { generateHeadlines } from '@/services/shortsPipeline';
 
 export async function POST(request: NextRequest) {
   try {
-    const { shortsId, selectedBeatIndex } = await request.json() as {
+    const { shortsId, selectedBeatIndex, segmentType } = await request.json() as {
       shortsId: number;
       selectedBeatIndex: number;
+      segmentType?: string;
     };
     if (!shortsId || selectedBeatIndex == null) {
       return NextResponse.json({ error: 'shortsId and selectedBeatIndex are required' }, { status: 400 });
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const selectedBeat = beats[selectedBeatIndex];
-    const headlines = await generateHeadlines(selectedBeat);
+    const headlines = await generateHeadlines(selectedBeat, segmentType);
 
     db.prepare(
       `UPDATE shorts SET status = 'headline_ready', selected_beat_index = ?, headlines_json = ? WHERE id = ?`
