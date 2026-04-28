@@ -11,6 +11,7 @@ import SourceVideos from './SourceVideos';
 import RetryControls from './RetryControls';
 import RepublishSection from './RepublishSection';
 import ShortsSection from './ShortsSection';
+import IgCaptionSection from './IgCaptionSection';
 import RegenerateCoverButton from './RegenerateCoverButton';
 
 export const dynamic = 'force-dynamic';
@@ -67,7 +68,7 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
-  sysdesign: '系統架構懶懶學',
+  sysdesign: '系統設計懶懶學',
 };
 
 const segmentColors: Record<string, string> = {
@@ -260,10 +261,18 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           candidateTitles={candidateTitles}
           selectedTitle={episode.selected_title || ''}
           description={episode.description || ''}
-          igCaption={igCaption}
           tags={tags}
           soundonUrl={episode.soundon_url}
           youtubeUrl={episode.youtube_url}
+        />
+
+        {/* Podcast IG 貼文 — independent section */}
+        <IgCaptionSection
+          episodeId={episode.id}
+          igCaption={igCaption}
+          igPostId={episode.ig_post_id}
+          coverPath={episode.cover_path}
+          canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         />
 
         {/* Retry Controls — quick access for failed episodes */}
@@ -281,7 +290,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             episodeStatus={episode.status}
             soundonUrl={episode.soundon_url}
             youtubeUrl={episode.youtube_url}
-            igPostId={episode.ig_post_id}
           />
         )}
 

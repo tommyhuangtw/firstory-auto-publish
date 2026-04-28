@@ -70,11 +70,8 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   log.info({ selectedTitle: selectedTitle.slice(0, 50) }, 'Title selected');
 
-  // Step 3: Generate description
-  const sourceLinksText = (state.sourceLinks || []).length > 0
-    ? '\n\n📎 參考資料：\n' + state.sourceLinks.map(l => `• ${l.title}: ${l.url}`).join('\n')
-    : '';
-  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary, sourceLinksText)
+  // Step 3: Generate description (source links appended deterministically after LLM generation)
+  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);
@@ -92,7 +89,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     : getFallbackDescription();
 
   // Step 3.5: Generate YouTube description (longer format with timestamps + CTA)
-  const ytDescPrompt = isSysdesign ? buildSysdesignYoutubeDescriptionPrompt(summary, sourceLinksText)
+  const ytDescPrompt = isSysdesign ? buildSysdesignYoutubeDescriptionPrompt(summary)
     : isRobot ? buildRobotYoutubeDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyYoutubeDescriptionPrompt(summary)
     : buildYoutubeDescriptionPrompt(summary);
@@ -117,14 +114,24 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     ? tagsResult.data.tags
     : getFallbackTags();
 
-  log.info({ descLength: description.length, ytDescLength: youtubeDescription.length, tagCount: tags.length }, 'Meta generation complete');
+  // Append source links (sysdesign only) — deterministic, not LLM-generated
+  let finalDescription = description;
+  let finalYtDescription = youtubeDescription;
+  if (isSysdesign && (state.sourceLinks || []).length > 0) {
+    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
+    const linksBlock = `\n\n---\n📎 參考資料：\n\n${linksText}`;
+    finalDescription += linksBlock;
+    finalYtDescription += linksBlock;
+  }
+
+  log.info({ descLength: finalDescription.length, ytDescLength: finalYtDescription.length, tagCount: tags.length }, 'Meta generation complete');
 
   return {
     scriptSummary: summary,
     candidateTitles,
     selectedTitle,
-    description,
-    youtubeDescription,
+    description: finalDescription,
+    youtubeDescription: finalYtDescription,
     tags,
     status: 'tts',
   };
@@ -140,7 +147,7 @@ async function summarizeScript(
   const llm = getLLMService();
 
   const segmentContext = segmentType === 'sysdesign'
-    ? '系統架構懶懶學'
+    ? '系統設計懶懶學'
     : segmentType === 'robot'
     ? '機器人觀察週報'
     : segmentType === 'weekly'
@@ -328,7 +335,7 @@ ${summary}
 }
 
 function buildSysdesignTitlePrompt(summary: string): string {
-  return `你是一位專注於系統設計教學的 Podcast 製作人，專門打造高下載量的標題。請根據以下「系統架構懶懶學」內容生成10個標題。
+  return `你是一位專注於系統設計教學的 Podcast 製作人，專門打造高下載量的標題。請根據以下「系統設計懶懶學」內容生成10個標題。
 
 內容摘要：
 ${summary}
@@ -367,8 +374,8 @@ ${summary}
 { "titles": ["標題1", ..., "標題10"] }`;
 }
 
-function buildSysdesignDescriptionPrompt(summary: string, sourceLinksText: string): string {
-  return `根據以下「系統架構懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
+function buildSysdesignDescriptionPrompt(summary: string): string {
+  return `根據以下「系統設計懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
 
 內容摘要：
 ${summary}
@@ -384,16 +391,14 @@ ${summary}
 ❌ 錯誤：💡 Consistent Hashing：分散式系統的核心技術
 ✅ 正確：💡 Uber 用 Consistent Hashing 解決了百萬司機的即時配對問題
 
-${sourceLinksText ? `最後附上參考資料連結：${sourceLinksText}` : ''}
-
-要求：200-400字、技術含量但口語化、不含外部連結（除了參考資料）
+要求：200-400字、技術含量但口語化、不含外部連結（參考資料會由系統自動附加）
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
-function buildSysdesignYoutubeDescriptionPrompt(summary: string, sourceLinksText: string): string {
-  return `根據以下「系統架構懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+function buildSysdesignYoutubeDescriptionPrompt(summary: string): string {
+  return `根據以下「系統設計懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
 
 內容摘要：
 ${summary}
@@ -402,10 +407,9 @@ ${summary}
 1. 開頭段落（2-3句帶出本集要拆解的系統架構）
 2. 本集架構重點（每個重點直接描述設計決策和 trade-off）
 
-${sourceLinksText ? `3. 參考資料連結：${sourceLinksText}` : ''}
-
 注意：
 - 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
+- 不要附上參考資料連結，系統會自動附加
 - 200-400字、繁體中文、技術但易讀
 
 以 JSON 格式回傳：
@@ -667,7 +671,7 @@ export async function regenerateDescription(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary, '')
+  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);

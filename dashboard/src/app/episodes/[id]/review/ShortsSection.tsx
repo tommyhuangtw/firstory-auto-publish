@@ -563,7 +563,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                   {step === 'publishing' ? '發布中...' : 'Publish to Instagram'}
                 </button>
                 <button
-                  onClick={() => handleRestart()}
+                  onClick={() => handleGenerate()}
                   className="px-4 py-2.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-sm transition-colors cursor-pointer"
                 >
                   重新製作
@@ -585,7 +585,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 <p className="text-[10px] text-zinc-500">Post ID: {shorts.ig_post_id}</p>
               )}
               <button
-                onClick={() => handleRestart()}
+                onClick={() => handleGenerate()}
                 className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
               >
                 重新製作

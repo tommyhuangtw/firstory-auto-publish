@@ -18,8 +18,8 @@ export async function POST(
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT segment_type, source_videos, script_summary FROM episodes WHERE id = ?'
-    ).get(episodeId) as { segment_type: string; source_videos: string | null; script_summary: string | null } | undefined;
+      'SELECT segment_type, source_videos, script_summary, episode_number, selected_title, created_at FROM episodes WHERE id = ?'
+    ).get(episodeId) as { segment_type: string; source_videos: string | null; script_summary: string | null; episode_number: number | null; selected_title: string | null; created_at: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -62,12 +62,22 @@ export async function POST(
 
     log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating IG caption');
 
+    // Format date as M/D
+    let episodeDate: string | undefined;
+    if (episode.created_at) {
+      const d = new Date(episode.created_at);
+      episodeDate = `${d.getMonth() + 1}/${d.getDate()}`;
+    }
+
     const igCaption = await regenerateIgCaption(
       episode.segment_type,
       igScenario,
       sourceVideos,
       episodeId,
       episode.script_summary || undefined,
+      episode.selected_title || undefined,
+      episode.episode_number || undefined,
+      episodeDate,
     );
 
     db.prepare('UPDATE episodes SET ig_caption = ? WHERE id = ?')

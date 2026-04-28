@@ -8,7 +8,7 @@ const SEGMENTS = [
   { value: 'daily', label: 'AI懶人報', desc: '每日精選', color: 'border-blue-500/40 bg-blue-500/10 text-blue-400' },
   { value: 'weekly', label: 'AI精選週報', desc: '一週重點', color: 'border-violet-500/40 bg-violet-500/10 text-violet-400' },
   { value: 'robot', label: '機器人週報', desc: '自動化新聞', color: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
-  { value: 'sysdesign', label: '系統架構懶懶學', desc: '系統設計深潛', color: 'border-teal-500/40 bg-teal-500/10 text-teal-400' },
+  { value: 'sysdesign', label: '系統設計懶懶學', desc: '系統設計深潛', color: 'border-teal-500/40 bg-teal-500/10 text-teal-400' },
 ] as const;
 
 const STAGES = [
@@ -31,7 +31,7 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
-  sysdesign: '系統架構懶懶學',
+  sysdesign: '系統設計懶懶學',
 };
 
 interface PipelineRun {

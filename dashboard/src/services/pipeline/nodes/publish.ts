@@ -19,14 +19,14 @@ const log = createChildLogger('pipeline:publish');
 export function formatSoundonTitle(episodeNumber: number, segmentType: string, title: string): string {
   if (segmentType === 'weekly') return `EP${episodeNumber} ｜ AI懶人精選週報 – ${title}`;
   if (segmentType === 'robot') return `EP${episodeNumber} ｜ 機器人觀察週報 – ${title}`;
-  if (segmentType === 'sysdesign') return `EP${episodeNumber} ｜ 系統架構懶懶學 – ${title}`;
+  if (segmentType === 'sysdesign') return `EP${episodeNumber} ｜ 系統設計懶懶學 – ${title}`;
   return `EP${episodeNumber} – ${title}`;
 }
 
 export function formatYoutubeTitle(episodeNumber: number, segmentType: string, title: string): string {
   if (segmentType === 'weekly') return `AI懶人報Podcast ｜ EP${episodeNumber} AI懶人精選週報 - ${title}`;
   if (segmentType === 'robot') return `AI懶人報Podcast ｜ EP${episodeNumber} 機器人觀察週報 - ${title}`;
-  if (segmentType === 'sysdesign') return `AI懶人報Podcast ｜ EP${episodeNumber} 系統架構懶懶學 - ${title}`;
+  if (segmentType === 'sysdesign') return `AI懶人報Podcast ｜ EP${episodeNumber} 系統設計懶懶學 - ${title}`;
   return `AI懶人報Podcast ｜ EP${episodeNumber} - ${title}`;
 }
 
@@ -97,18 +97,16 @@ export async function publishToSoundOnPlatform(state: PipelineState): Promise<st
   const formattedTitle = formatSoundonTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to SoundOn');
 
-  // Append source links for sysdesign
-  let description = state.description;
-  if (state.segmentType === 'sysdesign' && state.sourceLinks?.length) {
-    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
-    description += `\n\n---\n📎 參考資料：\n${linksText}`;
-  }
+  // Assemble final description with ad content + footer (buymeacoffee)
+  // Source links are already included by generateMeta via LLM prompt
+  const { assemblePodcastDescription } = await import('@/services/descriptionAssembler');
+  const finalDescription = assemblePodcastDescription(state.description);
 
   // Lazy import to avoid crash if playwright not installed
   const { publishToSoundOn } = await import('@/services/soundon');
   return publishToSoundOn({
     title: formattedTitle,
-    description,
+    description: finalDescription,
     audioPath: state.audioPath,
     coverPath: state.coverPath,
   });
@@ -130,19 +128,16 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
     segmentType: state.segmentType,
   });
 
-  // Step 2: Create video from audio + cover image
+  // Step 2: Create video from audio + composite thumbnail (title + IG cover)
   const { createVideoFromAudio } = await import('@/services/videoCreator');
   const videoPath = await createVideoFromAudio({
     audioPath: state.audioPath,
-    coverPath: state.coverPath,
+    coverPath: thumbnailPath,
   });
 
   // Step 3: Assemble final YouTube description (ad + main + footer + hashtags)
-  let ytDesc = state.youtubeDescription || state.description;
-  if (state.segmentType === 'sysdesign' && state.sourceLinks?.length) {
-    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
-    ytDesc += `\n\n---\n📎 參考資料：\n${linksText}`;
-  }
+  // Source links are already included by generateMeta via LLM prompt
+  const ytDesc = state.youtubeDescription || state.description;
   const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
   const finalDescription = assembleYoutubeDescription(ytDesc, state.tags);
 

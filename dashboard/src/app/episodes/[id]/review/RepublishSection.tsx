@@ -8,10 +8,9 @@ interface Props {
   episodeStatus: string;
   soundonUrl: string | null;
   youtubeUrl: string | null;
-  igPostId: string | null;
 }
 
-export default function RepublishSection({ episodeId, episodeStatus, soundonUrl, youtubeUrl, igPostId }: Props) {
+export default function RepublishSection({ episodeId, episodeStatus, soundonUrl, youtubeUrl }: Props) {
   const router = useRouter();
   const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -111,31 +110,11 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
           </button>
         </div>
 
-        {/* Instagram */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${igPostId ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            <span className="text-sm text-zinc-300">Instagram</span>
-            {igPostId && (
-              <span className="text-xs text-zinc-500 truncate max-w-[200px]">
-                {igPostId}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => handleRepublish('instagram')}
-            disabled={isLoading}
-            className="text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
-          >
-            {loadingPlatform === 'instagram' ? '發布中...' : igPostId ? '重新發布' : '發布'}
-          </button>
-        </div>
-
         {/* Republish All + Reset */}
         <div className="pt-2 border-t border-zinc-800 space-y-2">
           <button
             onClick={async () => {
-              if (!confirm('確定要重新發布到 SoundOn + YouTube + Instagram？')) return;
+              if (!confirm('確定要重新發布到 SoundOn + YouTube？')) return;
               setLoadingPlatform('all');
               setError('');
               setSuccess('');
@@ -150,7 +129,8 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
                 const msgs: string[] = [];
                 if (data.soundonUrl) msgs.push('SoundOn');
                 if (data.youtubeUrl) msgs.push('YouTube');
-                if (data.igPostId) msgs.push('Instagram');
+
+
                 setSuccess(msgs.length > 0 ? `${msgs.join(' + ')} 發布成功` : '發布完成');
                 if (data.errors?.length) setError(data.errors.join('; '));
                 router.refresh();

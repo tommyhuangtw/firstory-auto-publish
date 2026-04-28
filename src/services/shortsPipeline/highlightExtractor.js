@@ -24,7 +24,7 @@ const SEGMENT_SHOW_NAMES = {
   daily: 'AI 懶人報（每日 AI 精華）',
   weekly: 'AI 精選週報',
   robot: '機器人週報',
-  sysdesign: '系統架構懶懶學（系統設計拆解 Podcast）',
+  sysdesign: '系統設計懶懶學（系統設計拆解 Podcast）',
 };
 
 const HIGHLIGHT_PROMPT_TEMPLATE = ({ episodeTitle, podcastScript, essenceBeats, segmentType }) => {

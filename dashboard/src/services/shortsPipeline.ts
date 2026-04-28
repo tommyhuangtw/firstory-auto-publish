@@ -113,6 +113,7 @@ export async function runShortsGeneration(shortsId: number) {
     const igCaption = await generateShortsIgCaption({
       episodeId,
       episodeTitle: episode.selected_title || '',
+      episodeNumber: shorts.episode_number,
       beatText: selectedBeat.text,
       coverHeadline,
       segmentType: episode.segment_type,
@@ -140,6 +141,7 @@ export async function runShortsGeneration(shortsId: number) {
 async function generateShortsIgCaption(args: {
   episodeId: number;
   episodeTitle: string;
+  episodeNumber?: number;
   beatText: string;
   coverHeadline: string;
   segmentType?: string;
@@ -149,16 +151,19 @@ async function generateShortsIgCaption(args: {
     const llm = getLLMService();
 
     const isSysdesign = args.segmentType === 'sysdesign';
-    const showName = isSysdesign ? '系統架構懶懶學（系統設計拆解 Podcast）' : 'AI 懶人報（每日 AI 精華 Podcast）';
-    const requiredHashtag = isSysdesign ? '#系統架構懶懶學' : '#AI懶人報';
+    const showName = isSysdesign ? '系統設計懶懶學（系統設計拆解 Podcast）' : 'AI 懶人報（每日 AI 精華 Podcast）';
+    const requiredHashtag = isSysdesign ? '#系統設計懶懶學' : '#AI懶人報';
     const extraHashtags = isSysdesign
-      ? '（#系統設計 #SystemDesign #架構 #SoftwareEngineering #系統架構懶懶學 必須包含）'
+      ? '（#系統設計 #SystemDesign #架構 #SoftwareEngineering #系統設計懶懶學 必須包含）'
       : '（#AI懶人報 必須包含）';
 
-    const prompt = `你是${isSysdesign ? '系統架構懶懶學' : 'AI 懶人報'}的 IG 小編。請為這則 Reels 短影音寫一段 Instagram 貼文文案，主要目的是引流觀眾去聽完整的 Podcast。
+    const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+    const epLabel = args.episodeNumber ? `EP${args.episodeNumber} ` : '';
+
+    const prompt = `你是${isSysdesign ? '系統設計懶懶學' : 'AI 懶人報'}的 IG 小編。請為這則 Reels 短影音寫一段 Instagram 貼文文案，主要目的是引流觀眾去聽完整的 Podcast。
 
 【節目】${showName}
-【本集標題】${args.episodeTitle}
+【本集標題】${epLabel}${args.episodeTitle}（${today}）
 【Shorts 主題】${args.beatText.slice(0, 300)}
 【封面標題】${args.coverHeadline}
 
@@ -187,7 +192,7 @@ async function generateShortsIgCaption(args: {
   }
 
   // Fallback
-  const fallbackTag = args.segmentType === 'sysdesign' ? '#系統架構懶懶學 #系統設計 #SystemDesign' : '#AI懶人報 #AI';
+  const fallbackTag = args.segmentType === 'sysdesign' ? '#系統設計懶懶學 #系統設計 #SystemDesign' : '#AI懶人報 #AI';
   return `${args.coverHeadline}\n\n完整集數連結在 bio！\n\n${fallbackTag} #Podcast`;
 }
 

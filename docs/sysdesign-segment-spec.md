@@ -1,4 +1,4 @@
-# 系統架構懶懶學 — 完整規格文件
+# 系統設計懶懶學 — 完整規格文件
 
 > segmentType: `sysdesign` | 手動觸發 | 20-25 分鐘 | TTS speed: 1.07x
 
@@ -57,7 +57,7 @@
 
 ## 2. 輸入方式
 
-- **觸發**: 完全手動（Dashboard UI 選「系統架構懶懶學」→ 貼 YouTube URL）
+- **觸發**: 完全手動（Dashboard UI 選「系統設計懶懶學」→ 貼 YouTube URL）
 - **URL 輸入**: textarea，一行一個 URL
 - **支援格式**: `youtube.com/watch?v=xxx`, `youtu.be/xxx`, `youtube.com/shorts/xxx`, 或純 11 字元 video ID
 - **驗證**: 至少 1 個 URL，API 端驗證 `manualVideoUrls.length >= 1`
@@ -366,13 +366,13 @@ sysdesign 專屬重寫保護規則（防止重寫 agent 壓平故事弧）：
 
 ### Step 0: 摘要（所有單元共用）
 
-先將完整腳本濃縮為 ~800 字結構化摘要，segmentContext 為「系統架構懶懶學」。
+先將完整腳本濃縮為 ~800 字結構化摘要，segmentContext 為「系統設計懶懶學」。
 
 ### Step 1: 標題生成 — sysdesign 版
 
 ```
 你是一位專注於系統設計教學的 Podcast 製作人，專門打造高下載量的標題。
-請根據以下「系統架構懶懶學」內容生成10個標題。
+請根據以下「系統設計懶懶學」內容生成10個標題。
 
 ── 高下載量的爆款模式（每個標題至少用 1 個）──
 
@@ -412,7 +412,7 @@ sysdesign 專屬重寫保護規則（防止重寫 agent 壓平故事弧）：
 ### Step 3: SoundOn 描述 — sysdesign 版
 
 ```
-根據以下「系統架構懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
+根據以下「系統設計懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
 
 格式：
 開頭段落（用 1-2 句帶出本集要拆解的系統及其規模）🏗️
@@ -433,7 +433,7 @@ sysdesign 專屬重寫保護規則（防止重寫 agent 壓平故事弧）：
 ### Step 3.5: YouTube 描述 — sysdesign 版
 
 ```
-根據以下「系統架構懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
+根據以下「系統設計懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
 
 格式要求：
 1. 開頭段落（2-3句帶出本集要拆解的系統架構）
@@ -504,8 +504,8 @@ sysdesign 專屬重寫保護規則（防止重寫 agent 壓平故事弧）：
 
 | 平台 | 格式 |
 |------|------|
-| **SoundOn** | `EP{N} ｜ 系統架構懶懶學 – {title}` |
-| **YouTube** | `AI懶人報Podcast ｜ EP{N} 系統架構懶懶學 - {title}` |
+| **SoundOn** | `EP{N} ｜ 系統設計懶懶學 – {title}` |
+| **YouTube** | `AI懶人報Podcast ｜ EP{N} 系統設計懶懶學 - {title}` |
 
 ### 描述附加 sourceLinks
 
@@ -549,21 +549,21 @@ SoundOn 和 YouTube 描述都會自動附上：
 Hashtag（壓縮成一整段，禁止換行）
   從下列混合挑選 8~12 個：
   #系統設計 #SystemDesign #軟體架構 #面試準備 #後端工程師
-  #分散式系統 #AI懶人報 #系統架構懶懶學 #湯懶懶日記
+  #分散式系統 #AI懶人報 #系統設計懶懶學 #湯懶懶日記
   #SlothVibes #科技職涯 #工程師日常
 ```
 
 ### Email 主題
 
 ```
-[{yyyy-mm-dd}] AI懶人報：系統架構懶懶學
+[{yyyy-mm-dd}] AI懶人報：系統設計懶懶學
 ```
 
 ### Email 內容 — sysdesign 版
 
 ```
 你是一位專業的系統設計教學內容編輯，擅長將系統架構概念轉換為結構清晰、
-有趣易讀的繁體中文摘要。在本任務中，你的角色是《系統架構懶懶學》的
+有趣易讀的繁體中文摘要。在本任務中，你的角色是《系統設計懶懶學》的
 Email 週報編輯助理。
 
 📤 格式：
@@ -645,5 +645,5 @@ ver5（持續演進型）:
 | 封面風格 | 小科技感 | 小科技感 | 未來機器人感 | **系統架構感 + 白板/藍圖** |
 | 結尾用語 | 明天見 | 明天見 | 明天見 | **下次見** |
 | 發布附連結 | 無 | 無 | 無 | **附 sourceLinks** |
-| SoundOn 標題 | EP{N} – {title} | EP{N} ｜ AI懶人精選週報 – {title} | EP{N} ｜ 機器人觀察週報 – {title} | **EP{N} ｜ 系統架構懶懶學 – {title}** |
+| SoundOn 標題 | EP{N} – {title} | EP{N} ｜ AI懶人精選週報 – {title} | EP{N} ｜ 機器人觀察週報 – {title} | **EP{N} ｜ 系統設計懶懶學 – {title}** |
 | UI badge 顏色 | blue | violet | amber | **teal** |

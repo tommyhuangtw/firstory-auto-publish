@@ -64,7 +64,7 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
       const isWeekly = state.segmentType === 'weekly';
       const isSysdesignEmail = state.segmentType === 'sysdesign';
       const subject = isSysdesignEmail
-        ? `[${today}] AI懶人報：系統架構懶懶學`
+        ? `[${today}] AI懶人報：系統設計懶懶學`
         : isRobot
         ? `[${today}] AI懶人報：機器人觀察週報`
         : isWeekly
@@ -90,12 +90,16 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
 // n8n exact prompt for IG貼文文案撰寫Agent
 async function generateIgCaption(state: PipelineState): Promise<string> {
   const videos = (state.selectedVideos || []).map(v => ({ title: v.title, viewCount: v.viewCount }));
+  const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
   return regenerateIgCaption(
     state.segmentType,
     state.igScenario,
     videos,
     state.episodeId,
     state.scriptSummary,
+    state.selectedTitle,
+    state.episodeNumber || undefined,
+    today,
   );
 }
 
@@ -106,10 +110,14 @@ export async function regenerateIgCaption(
   selectedVideos: { title: string; viewCount: number }[],
   episodeId: number,
   scriptSummary?: string,
+  episodeTitle?: string,
+  episodeNumber?: number,
+  episodeDate?: string,
 ): Promise<string> {
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
   const isSysdesign = segmentType === 'sysdesign';
+  const isWeekly = segmentType === 'weekly';
   const scenario = igScenario || '湯懶懶躺在沙發上用 AI 自動處理所有工作';
 
   // Prefer script summary (accurate Chinese content) over video titles (English, prone to hallucination)
@@ -141,8 +149,12 @@ export async function regenerateIgCaption(
       .join('\n');
   }
 
+  const episodeInfo = episodeTitle
+    ? `本集資訊：EP${episodeNumber || ''} ${episodeTitle}${episodeDate ? `（${episodeDate}）` : ''}`
+    : '';
+
   const userPrompt = `湯懶懶情境： ${scenario}
-Podcast總結（IG貼文要用中文輸出 可保留重點公司或是工具名稱為英文）:
+${episodeInfo ? episodeInfo + '\n' : ''}Podcast總結（IG貼文要用中文輸出 可保留重點公司或是工具名稱為英文）:
 ${podcastSummary}`;
 
   const sysdesignSystemPrompt = `你是一位專業經營 Instagram 的貼文寫手，專為品牌角色「湯懶懶」——一隻靠 AI 翻轉人生、懶得優雅又略帶聰明感的樹懶——創作高資訊密度、輕鬆口吻又具實用價值的 IG 圖文貼文(中文)。
@@ -157,6 +169,12 @@ ${podcastSummary}`;
 範例：
 「Netflix 怎麼撐住全球兩億人同時追劇的？湯懶懶拆給你看 🦥」
 「面試官問你 Uber 怎麼設計，你是不是又腦袋空白了 🧠」
+
+單元標示（獨立一行）
+在開場 hook 之後、進入重點摘要之前，用一行標示單元名稱。
+若有提供本集資訊（EP 集數、標題、日期），必須使用完整標題，禁止截短或改寫。格式：
+「📐 系統設計懶懶學｜EP{集數} {完整標題}（{日期}）」
+此行獨立存在，不與其他段落合併。
 
 一句鋪墊（1 句）
 簡短交代今天拆解了什麼 + 為什麼值得知道，讓讀者有心理準備接收技術重點。
@@ -186,7 +204,7 @@ ${podcastSummary}`;
 
 Hashtag（壓縮成一整段，禁止換行）
 請從下列混合挑選 8~12 個：
-#系統設計 #SystemDesign #軟體架構 #面試準備 #後端工程師 #分散式系統 #AI懶人報 #系統架構懶懶學 #湯懶懶日記 #SlothVibes #科技職涯 #工程師日常
+#系統設計 #SystemDesign #軟體架構 #面試準備 #後端工程師 #分散式系統 #AI懶人報 #系統設計懶懶學 #湯懶懶日記 #SlothVibes #科技職涯 #工程師日常
 
 注意！！
 只需要輸出IG貼文內容，不需要其他不必要的文字`;
@@ -207,8 +225,14 @@ Hashtag（壓縮成一整段，禁止換行）
 📝 貼文結構請遵守以下格式：
 
 1. 開場 murmur（限 1～2 句）
-簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」或「剛滑完這幾支影片，我的偷懶大腦瞬間升級 🧠✨」
+簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」
 ⛔ 請避免超過 3 句、不需描述過多生活細節、不要成為主軸。
+
+1.5 單元標示（獨立一行）
+在開場 murmur 之後、進入重點摘要之前，用一行標示單元名稱。
+若有提供本集資訊（EP 集數、標題、日期），必須使用完整標題，禁止截短或改寫。格式：
+「🤖 機器人觀察週報｜EP{集數} {完整標題}（{日期}）」
+此行獨立存在，不與其他段落合併。
 
 2. 🎥 今日機器人更新整理（每則影片三行重點描述，禁止加入湯懶懶 murmur 或評語）
 請以 emoji 開頭，每則重點包含：
@@ -247,8 +271,14 @@ Hashtag（壓縮成一整段，禁止換行）
 📝 貼文結構請遵守以下格式：
 
 1. 開場 murmur（限 1～2 句）
-簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」或「剛滑完這幾支影片，我的偷懶大腦瞬間升級 🧠✨」
+簡短說明湯懶懶今天的情境或狀態，像是：「今天懶到只想聽 AI 講幹話，但這幾支影片我竟然聽完了 😪」或「剛滑完這幾支影片，我的偷懶大腦瞬間升級」
 ⛔ 請避免超過 3 句、不需描述過多生活細節、不要成為主軸。
+
+1.5 單元標示（獨立一行）
+在開場 murmur 之後、進入重點摘要之前，用一行標示單元名稱。
+若有提供本集資訊（EP 集數、標題、日期），必須使用完整標題，禁止截短或改寫。格式：
+「${isWeekly ? '📋 AI懶人精選週報' : '📰 AI懶人報'}｜EP{集數} {完整標題}（{日期}）」
+此行獨立存在，不與其他段落合併。
 
 2. 🎥 今日AI工具整理（每則影片三行重點描述，禁止加入湯懶懶 murmur 或評語）
 請以 emoji 開頭，每則重點包含：
@@ -322,7 +352,7 @@ async function generateEmailHtml(state: PipelineState): Promise<string> {
   // Step 1: Email content agent
   const isSysdesignContent = state.segmentType === 'sysdesign';
   const contentSystemPrompt = isSysdesignContent
-    ? `你是一位專業的系統設計教學內容編輯，擅長將系統架構概念轉換為結構清晰、有趣易讀的繁體中文摘要。在本任務中，你的角色是《系統架構懶懶學》的 Email 週報編輯助理。
+    ? `你是一位專業的系統設計教學內容編輯，擅長將系統架構概念轉換為結構清晰、有趣易讀的繁體中文摘要。在本任務中，你的角色是《系統設計懶懶學》的 Email 週報編輯助理。
 
 🎯 任務目標：
 請根據提供的 Podcast 內容摘要，撰寫一段結構清晰的繁體中文週報，介紹本集討論的系統設計主題。

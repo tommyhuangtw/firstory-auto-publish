@@ -11,7 +11,6 @@ interface Props {
   candidateTitles: string[];
   selectedTitle: string;
   description: string;
-  igCaption: string;
   tags: string[];
   soundonUrl: string | null;
   youtubeUrl: string | null;
@@ -23,19 +22,16 @@ export default function ReviewClient({
   candidateTitles: initialCandidates,
   selectedTitle: initialTitle,
   description: initialDescription,
-  igCaption: initialIgCaption,
   tags,
 }: Props) {
   const router = useRouter();
   const [candidateTitles, setCandidateTitles] = useState(initialCandidates);
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
-  const [igCaption, setIgCaption] = useState(initialIgCaption);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regeneratingDesc, setRegeneratingDesc] = useState(false);
-  const [regeneratingIg, setRegeneratingIg] = useState(false);
   const [message, setMessage] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
@@ -44,16 +40,14 @@ export default function ReviewClient({
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
   const [savedDescription, setSavedDescription] = useState(initialDescription);
-  const [savedIgCaption, setSavedIgCaption] = useState(initialIgCaption);
 
   const canReview = status === 'pending_review';
   const canEdit = status === 'pending_review' || status === 'published' || status === 'approved' || status === 'publishing';
 
   const isDirty = useMemo(() =>
     title !== savedTitle ||
-    description !== savedDescription ||
-    igCaption !== savedIgCaption,
-  [title, description, igCaption, savedTitle, savedDescription, savedIgCaption]);
+    description !== savedDescription,
+  [title, description, savedTitle, savedDescription]);
 
   async function handleSave() {
     setSaving(true);
@@ -65,14 +59,12 @@ export default function ReviewClient({
         body: JSON.stringify({
           selectedTitle: title,
           description,
-          igCaption,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSavedTitle(title);
       setSavedDescription(description);
-      setSavedIgCaption(igCaption);
       setMessage('已儲存');
       router.refresh();
     } catch (err) {
@@ -163,25 +155,6 @@ export default function ReviewClient({
     }
   }
 
-  async function handleRegenerateIg() {
-    setRegeneratingIg(true);
-    setMessage('');
-    try {
-      const res = await fetch(`/api/episodes/${episodeId}/regenerate-ig`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setIgCaption(data.igCaption);
-      setSavedIgCaption(data.igCaption);
-      setMessage('IG 貼文已重新生成');
-      router.refresh();
-    } catch (err) {
-      setMessage(`Error: ${(err as Error).message}`);
-    } finally {
-      setRegeneratingIg(false);
-    }
-  }
 
   const regenerateButton = (onClick: () => void, loading: boolean, label: string, loadingLabel: string) => (
     <button
@@ -319,12 +292,7 @@ export default function ReviewClient({
                 <p className="text-xs text-zinc-400 line-clamp-2">{description}</p>
               </div>
             )}
-            {igCaption && (
-              <div>
-                <p className="text-[11px] text-zinc-500 mb-0.5">IG Caption</p>
-                <p className="text-xs text-zinc-400 line-clamp-2">{igCaption}</p>
-              </div>
-            )}
+
           </div>
         )}
 
@@ -360,26 +328,7 @@ export default function ReviewClient({
               </div>
             )}
 
-            {/* IG Caption */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] text-zinc-500 uppercase tracking-wider">IG Caption</p>
-                {canEdit && regenerateButton(handleRegenerateIg, regeneratingIg, '重新生成 IG 貼文', '生成中...')}
-              </div>
-              {igCaption ? (
-                <div>
-                  <textarea
-                    value={igCaption}
-                    onChange={(e) => setIgCaption(e.target.value)}
-                    rows={12}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
-                  />
-                  <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{igCaption.length} 字</p>
-                </div>
-              ) : (
-                <p className="text-sm text-zinc-500">尚未生成 IG 貼文</p>
-              )}
-            </div>
+
           </div>
         )}
       </div>
