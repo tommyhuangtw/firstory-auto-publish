@@ -49,6 +49,9 @@ export interface QualityIteration {
 export interface SourceLink {
   title: string;
   url: string;
+  viewCount?: number;
+  channelName?: string;
+  publishedAt?: string;
 }
 
 export type SegmentType = 'daily' | 'weekly' | 'robot' | 'sysdesign';

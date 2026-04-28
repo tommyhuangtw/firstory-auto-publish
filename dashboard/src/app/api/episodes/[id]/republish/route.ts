@@ -18,9 +18,9 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { platform } = body as { platform?: 'soundon' | 'youtube' | 'instagram' | 'all' };
-    if (!platform || !['soundon', 'youtube', 'instagram', 'all'].includes(platform)) {
-      return NextResponse.json({ error: 'platform must be soundon, youtube, instagram, or all' }, { status: 400 });
+    const { platform } = body as { platform?: 'soundon' | 'youtube' | 'instagram' | 'facebook' | 'all' };
+    if (!platform || !['soundon', 'youtube', 'instagram', 'facebook', 'all'].includes(platform)) {
+      return NextResponse.json({ error: 'platform must be soundon, youtube, instagram, facebook, or all' }, { status: 400 });
     }
 
     const db = getDb();
@@ -92,7 +92,7 @@ export async function POST(
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     };
 
-    const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; errors: string[] } = { errors: [] };
+    const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; fbPostId?: string; fbPostUrl?: string; errors: string[] } = { errors: [] };
 
     // Republish to requested platform(s)
     if (platform === 'soundon' || platform === 'all') {
@@ -145,7 +145,54 @@ export async function POST(
       }
     }
 
-    if (results.errors.length > 0 && !results.soundonUrl && !results.youtubeUrl && !results.igPostId) {
+    if (platform === 'facebook' || platform === 'instagram' || platform === 'all') {
+      try {
+        const caption = (episode.ig_caption as string) || '';
+        if (!caption) throw new Error('沒有 IG 貼文內容，無法產生 FB 貼文');
+
+        const coverPath = (episode.cover_path as string) || '';
+        if (!coverPath) throw new Error('沒有封面圖片');
+
+        // Reuse publicUrl if already uploaded for IG, otherwise upload
+        let fbImageUrl: string;
+        if (results.igPostId && platform !== 'facebook') {
+          // IG block already uploaded, we need to upload again for FB
+          const { uploadToCloudinary } = await import('@/services/cloudinary');
+          fbImageUrl = await uploadToCloudinary(coverPath, `ep${episodeNumber}_fb.png`);
+        } else {
+          const { uploadToCloudinary } = await import('@/services/cloudinary');
+          fbImageUrl = await uploadToCloudinary(coverPath, `ep${episodeNumber}_fb.png`);
+        }
+
+        const { postPhotoToFacebook, buildFacebookCaption } = await import('@/services/facebook');
+        // Use saved fb_caption if available, otherwise generate
+        let fbCaption = (episode.fb_caption as string) || '';
+        if (!fbCaption) {
+          fbCaption = await buildFacebookCaption({
+            igCaption: caption,
+            sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
+            episodeTitle: (episode.selected_title as string) || '',
+            episodeNumber,
+            segmentType: (episode.segment_type as string) || 'daily',
+          });
+          db.prepare('UPDATE episodes SET fb_caption = ? WHERE id = ?').run(fbCaption, episodeId);
+        }
+        const { getFacebookPostUrl } = await import('@/services/facebook');
+        const fbPostId = await postPhotoToFacebook(fbImageUrl, fbCaption);
+        if (fbPostId) {
+          results.fbPostId = fbPostId;
+          results.fbPostUrl = getFacebookPostUrl(fbPostId);
+          db.prepare('UPDATE episodes SET fb_post_id = ? WHERE id = ?').run(fbPostId, episodeId);
+          log.info({ episodeId, fbPostId, fbPostUrl: results.fbPostUrl }, 'Facebook post succeeded');
+        }
+      } catch (error) {
+        const msg = (error as Error).message;
+        results.errors.push(`Facebook: ${msg}`);
+        log.warn({ episodeId, error: msg }, 'Facebook post failed (non-blocking)');
+      }
+    }
+
+    if (results.errors.length > 0 && !results.soundonUrl && !results.youtubeUrl && !results.igPostId && !results.fbPostId) {
       return NextResponse.json({ error: results.errors.join('; ') }, { status: 500 });
     }
 
@@ -155,6 +202,8 @@ export async function POST(
       soundonUrl: results.soundonUrl || null,
       youtubeUrl: results.youtubeUrl || null,
       igPostId: results.igPostId || null,
+      fbPostId: results.fbPostId || null,
+      fbPostUrl: results.fbPostUrl || null,
       errors: results.errors,
     });
   } catch (error) {

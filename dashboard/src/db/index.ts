@@ -50,6 +50,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE service_costs ADD COLUMN episode_id INTEGER');
   safeAlter('ALTER TABLE episodes ADD COLUMN source_links TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN cover_url TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN fb_post_id TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN fb_caption TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {

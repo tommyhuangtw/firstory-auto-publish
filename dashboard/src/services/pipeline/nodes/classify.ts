@@ -342,6 +342,9 @@ async function classifySysdesign(
   const sourceLinks: SourceLink[] = videos.map((v) => ({
     title: v.title || v.videoId,
     url: `https://www.youtube.com/watch?v=${v.videoId}`,
+    viewCount: v.viewCount || 0,
+    channelName: v.channelName || '',
+    publishedAt: v.publishedAt || '',
   }));
 
   log.info(

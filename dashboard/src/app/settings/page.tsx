@@ -9,6 +9,12 @@ interface AdPreset {
   is_active: number;
 }
 
+interface FbStatus {
+  connected: boolean;
+  pageId?: string;
+  pageName?: string;
+}
+
 interface SettingField {
   key: string;
   label: string;
@@ -45,18 +51,47 @@ export default function SettingsPage() {
   const [newName, setNewName] = useState('');
   const [newContent, setNewContent] = useState('');
   const [editingFooter, setEditingFooter] = useState<string | null>(null);
+  const [fbStatus, setFbStatus] = useState<FbStatus | null>(null);
+  const [fbDisconnecting, setFbDisconnecting] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [presetsRes, settingsRes] = await Promise.all([
+    const [presetsRes, settingsRes, fbRes] = await Promise.all([
       fetch('/api/ad-presets').then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
+      fetch('/api/auth/facebook/status').then(r => r.json()).catch(() => ({ connected: false })),
     ]);
     setPresets(presetsRes);
     setFooterValues(settingsRes);
+    setFbStatus(fbRes);
     setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Show toast when redirected back from Facebook OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fb = params.get('fb');
+    if (fb === 'connected') setMessage('Facebook Page 已成功連結！');
+    else if (fb === 'denied') setMessage('Facebook 授權已取消');
+    else if (fb === 'error') setMessage('Facebook 連結失敗，請重試');
+    // Clean up URL params
+    if (fb) window.history.replaceState({}, '', '/settings');
+  }, []);
+
+  async function handleFbDisconnect() {
+    if (!confirm('確定要斷開 Facebook Page 連結？')) return;
+    setFbDisconnecting(true);
+    try {
+      await fetch('/api/auth/facebook/status', { method: 'DELETE' });
+      setFbStatus({ connected: false });
+      setMessage('已斷開 Facebook 連結');
+    } catch {
+      setMessage('斷開失敗');
+    } finally {
+      setFbDisconnecting(false);
+    }
+  }
 
   async function handleActivate(id: number) {
     setSaving('preset');
@@ -191,6 +226,43 @@ export default function SettingsPage() {
       </h1>
 
       <div className="space-y-8">
+        {/* Facebook Page Connection */}
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">Facebook Page 連結</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            連結後，發布 IG 貼文時會自動同步到 Facebook Page
+          </p>
+
+          {fbStatus?.connected ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-sm text-zinc-200">{fbStatus.pageName}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
+                  已連結
+                </span>
+              </div>
+              <button
+                onClick={handleFbDisconnect}
+                disabled={fbDisconnecting}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-red-950/50 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+              >
+                {fbDisconnecting ? '斷開中...' : '斷開連結'}
+              </button>
+            </div>
+          ) : (
+            <a
+              href="/api/auth/facebook"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+              </svg>
+              連結 Facebook Page
+            </a>
+          )}
+        </section>
+
         {/* Ad Presets Section */}
         <section>
           <div className="flex items-center justify-between mb-3">
