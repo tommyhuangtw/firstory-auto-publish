@@ -18,9 +18,9 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { platform } = body as { platform?: 'soundon' | 'youtube' | 'instagram' | 'facebook' | 'all' };
-    if (!platform || !['soundon', 'youtube', 'instagram', 'facebook', 'all'].includes(platform)) {
-      return NextResponse.json({ error: 'platform must be soundon, youtube, instagram, facebook, or all' }, { status: 400 });
+    const { platform } = body as { platform?: 'soundon' | 'youtube' | 'instagram' | 'facebook' | 'threads' | 'all' };
+    if (!platform || !['soundon', 'youtube', 'instagram', 'facebook', 'threads', 'all'].includes(platform)) {
+      return NextResponse.json({ error: 'platform must be soundon, youtube, instagram, facebook, threads, or all' }, { status: 400 });
     }
 
     const db = getDb();
@@ -92,7 +92,7 @@ export async function POST(
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     };
 
-    const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; fbPostId?: string; fbPostUrl?: string; errors: string[] } = { errors: [] };
+    const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; fbPostId?: string; fbPostUrl?: string; threadsPostId?: string; errors: string[] } = { errors: [] };
 
     // Republish to requested platform(s)
     if (platform === 'soundon' || platform === 'all') {
@@ -192,7 +192,49 @@ export async function POST(
       }
     }
 
-    if (results.errors.length > 0 && !results.soundonUrl && !results.youtubeUrl && !results.igPostId && !results.fbPostId) {
+    if (platform === 'threads' || platform === 'all') {
+      try {
+        const igCaption = (episode.ig_caption as string) || '';
+        if (!igCaption) throw new Error('沒有 IG 貼文內容，無法產生 Threads 貼文');
+
+        const { postImageToThreads, postTextToThreads, buildThreadsCaption } = await import('@/services/threads');
+
+        // Use saved threads_caption if available, otherwise generate
+        let threadsCaption = (episode.threads_caption as string) || '';
+        if (!threadsCaption) {
+          threadsCaption = await buildThreadsCaption({
+            igCaption,
+            episodeTitle: (episode.selected_title as string) || '',
+            episodeNumber,
+            segmentType: (episode.segment_type as string) || 'daily',
+          });
+          db.prepare('UPDATE episodes SET threads_caption = ? WHERE id = ?').run(threadsCaption, episodeId);
+        }
+
+        let threadsPostId: string | null = null;
+        const coverPath = (episode.cover_path as string) || '';
+        if (coverPath) {
+          // Upload cover to get public URL for Threads
+          const { uploadToCloudinary } = await import('@/services/cloudinary');
+          const publicUrl = await uploadToCloudinary(coverPath, `ep${episodeNumber}_threads.png`);
+          threadsPostId = await postImageToThreads(publicUrl, threadsCaption);
+        } else {
+          threadsPostId = await postTextToThreads(threadsCaption);
+        }
+
+        if (threadsPostId) {
+          results.threadsPostId = threadsPostId;
+          db.prepare('UPDATE episodes SET threads_post_id = ? WHERE id = ?').run(threadsPostId, episodeId);
+          log.info({ episodeId, threadsPostId }, 'Threads post succeeded');
+        }
+      } catch (error) {
+        const msg = (error as Error).message;
+        results.errors.push(`Threads: ${msg}`);
+        log.warn({ episodeId, error: msg }, 'Threads post failed (non-blocking)');
+      }
+    }
+
+    if (results.errors.length > 0 && !results.soundonUrl && !results.youtubeUrl && !results.igPostId && !results.fbPostId && !results.threadsPostId) {
       return NextResponse.json({ error: results.errors.join('; ') }, { status: 500 });
     }
 
@@ -204,6 +246,7 @@ export async function POST(
       igPostId: results.igPostId || null,
       fbPostId: results.fbPostId || null,
       fbPostUrl: results.fbPostUrl || null,
+      threadsPostId: results.threadsPostId || null,
       errors: results.errors,
     });
   } catch (error) {

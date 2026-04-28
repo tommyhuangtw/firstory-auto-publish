@@ -15,6 +15,7 @@ import ShortsSection from './ShortsSection';
 import IgCaptionSection from './IgCaptionSection';
 import RegenerateCoverButton from './RegenerateCoverButton';
 import FbCaptionSection from './FbCaptionSection';
+import ThreadsCaptionSection from './ThreadsCaptionSection';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,8 @@ interface Episode {
   ig_post_id: string | null;
   fb_caption: string | null;
   fb_post_id: string | null;
+  threads_caption: string | null;
+  threads_post_id: string | null;
   source_links: string | null;
   created_at: string;
   approved_at: string | null;
@@ -285,6 +288,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           episodeId={episode.id}
           fbCaption={episode.fb_caption || ''}
           fbPostId={episode.fb_post_id}
+          coverPath={episode.cover_path}
+          canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
+        />
+
+        {/* Threads 貼文 — independent section */}
+        <ThreadsCaptionSection
+          episodeId={episode.id}
+          threadsCaption={episode.threads_caption || ''}
+          threadsPostId={episode.threads_post_id}
           coverPath={episode.cover_path}
           canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         />

@@ -15,6 +15,12 @@ interface FbStatus {
   pageName?: string;
 }
 
+interface ThreadsStatus {
+  connected: boolean;
+  userId?: string;
+  username?: string;
+}
+
 interface SettingField {
   key: string;
   label: string;
@@ -53,16 +59,20 @@ export default function SettingsPage() {
   const [editingFooter, setEditingFooter] = useState<string | null>(null);
   const [fbStatus, setFbStatus] = useState<FbStatus | null>(null);
   const [fbDisconnecting, setFbDisconnecting] = useState(false);
+  const [threadsStatus, setThreadsStatus] = useState<ThreadsStatus | null>(null);
+  const [threadsDisconnecting, setThreadsDisconnecting] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [presetsRes, settingsRes, fbRes] = await Promise.all([
+    const [presetsRes, settingsRes, fbRes, threadsRes] = await Promise.all([
       fetch('/api/ad-presets').then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
       fetch('/api/auth/facebook/status').then(r => r.json()).catch(() => ({ connected: false })),
+      fetch('/api/auth/threads/status').then(r => r.json()).catch(() => ({ connected: false })),
     ]);
     setPresets(presetsRes);
     setFooterValues(settingsRes);
     setFbStatus(fbRes);
+    setThreadsStatus(threadsRes);
     setLoading(false);
   }, []);
 
@@ -72,11 +82,15 @@ export default function SettingsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const fb = params.get('fb');
+    const threads = params.get('threads');
     if (fb === 'connected') setMessage('Facebook Page 已成功連結！');
     else if (fb === 'denied') setMessage('Facebook 授權已取消');
     else if (fb === 'error') setMessage('Facebook 連結失敗，請重試');
+    else if (threads === 'connected') setMessage('Threads 已成功連結！');
+    else if (threads === 'denied') setMessage('Threads 授權已取消');
+    else if (threads === 'error') setMessage('Threads 連結失敗，請重試');
     // Clean up URL params
-    if (fb) window.history.replaceState({}, '', '/settings');
+    if (fb || threads) window.history.replaceState({}, '', '/settings');
   }, []);
 
   async function handleFbDisconnect() {
@@ -90,6 +104,20 @@ export default function SettingsPage() {
       setMessage('斷開失敗');
     } finally {
       setFbDisconnecting(false);
+    }
+  }
+
+  async function handleThreadsDisconnect() {
+    if (!confirm('確定要斷開 Threads 連結？')) return;
+    setThreadsDisconnecting(true);
+    try {
+      await fetch('/api/auth/threads/status', { method: 'DELETE' });
+      setThreadsStatus({ connected: false });
+      setMessage('已斷開 Threads 連結');
+    } catch {
+      setMessage('斷開失敗');
+    } finally {
+      setThreadsDisconnecting(false);
     }
   }
 
@@ -259,6 +287,43 @@ export default function SettingsPage() {
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
               </svg>
               連結 Facebook Page
+            </a>
+          )}
+        </section>
+
+        {/* Threads Connection */}
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">Threads 連結</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            連結後可從 Review 頁面發布貼文到 Threads
+          </p>
+
+          {threadsStatus?.connected ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-sm text-zinc-200">@{threadsStatus.username}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
+                  已連結
+                </span>
+              </div>
+              <button
+                onClick={handleThreadsDisconnect}
+                disabled={threadsDisconnecting}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-red-950/50 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+              >
+                {threadsDisconnecting ? '斷開中...' : '斷開連結'}
+              </button>
+            </div>
+          ) : (
+            <a
+              href="/api/auth/threads"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.5 12.068c0-3.518.85-6.372 2.495-8.423C5.845 1.34 8.598.16 12.179.136h.007c2.907.02 5.408.862 7.258 2.46 1.85 1.599 2.93 3.83 3.056 6.404h-3.86c-.12-1.612-.79-2.888-1.98-3.784-1.19-.896-2.67-1.376-4.467-1.22-2.342.205-3.964 1.218-4.987 2.855C6.183 8.388 5.64 10.35 5.64 12.068c0 1.718.543 3.68 1.566 5.317 1.023 1.637 2.645 2.65 4.987 2.855 1.797.156 3.277-.324 4.467-1.22 1.19-.896 1.86-2.172 1.98-3.784h3.86c-.126 2.574-1.206 4.805-3.056 6.404-1.85 1.598-4.351 2.44-7.258 2.46z"/>
+              </svg>
+              連結 Threads
             </a>
           )}
         </section>

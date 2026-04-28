@@ -13,11 +13,12 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { selectedTitle, description, igCaption, fbCaption } = body as {
+    const { selectedTitle, description, igCaption, fbCaption, threadsCaption } = body as {
       selectedTitle?: string;
       description?: string;
       igCaption?: string;
       fbCaption?: string;
+      threadsCaption?: string;
     };
 
     const db = getDb();
@@ -38,6 +39,10 @@ export async function POST(
     if (fbCaption !== undefined) {
       db.prepare('UPDATE episodes SET fb_caption = ? WHERE id = ?')
         .run(fbCaption, episodeId);
+    }
+    if (threadsCaption !== undefined) {
+      db.prepare('UPDATE episodes SET threads_caption = ? WHERE id = ?')
+        .run(threadsCaption, episodeId);
     }
 
     return NextResponse.json({ success: true });
