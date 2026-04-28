@@ -292,14 +292,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         />
 
-        {/* Threads 貼文 — independent section */}
-        <ThreadsCaptionSection
+        {/* Threads 貼文 — 開發中，暫時隱藏 */}
+        {/* <ThreadsCaptionSection
           episodeId={episode.id}
           threadsCaption={episode.threads_caption || ''}
           threadsPostId={episode.threads_post_id}
           coverPath={episode.cover_path}
           canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
-        />
+        /> */}
 
         {/* Retry Controls — quick access for failed episodes */}
         {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing') && (
