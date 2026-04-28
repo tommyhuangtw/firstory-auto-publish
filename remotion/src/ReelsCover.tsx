@@ -4,6 +4,8 @@ import { AbsoluteFill, Img, staticFile } from 'remotion';
 export type ReelsCoverProps = {
   headline: string;
   backgroundImageSrc: string;
+  paddingTop?: number;
+  topPercent?: number;
 };
 
 const resolveSrc = (src: string): string => {
@@ -14,7 +16,14 @@ const resolveSrc = (src: string): string => {
 export const ReelsCover: React.FC<ReelsCoverProps> = ({
   headline,
   backgroundImageSrc,
+  paddingTop: customPaddingTop,
+  topPercent,
 }) => {
+  // Determine headline positioning:
+  // - If topPercent is provided (new API), use absolute top positioning
+  // - Otherwise fall back to flex center + paddingTop (legacy)
+  const useAbsoluteTop = topPercent != null;
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#FFF9F0' }}>
       {/* Bright sloth background */}
@@ -36,30 +45,58 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
         }}
       />
 
-      {/* Headline — slightly below center to avoid covering sloth's face */}
-      <AbsoluteFill
-        style={{
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '0 80px',
-          paddingTop: 400,
-        }}
-      >
+      {/* Headline */}
+      {useAbsoluteTop ? (
         <div
           style={{
-            fontSize: 96,
-            fontWeight: 900,
-            fontFamily: '"PingFang TC", "Noto Sans TC", system-ui, sans-serif',
-            color: '#FFFFFF',
+            position: 'absolute',
+            top: `${topPercent}%`,
+            left: 80,
+            right: 80,
             textAlign: 'center',
-            lineHeight: 1.3,
-            textShadow: '0 2px 12px rgba(0,0,0,0.7)',
-            letterSpacing: '0.02em',
           }}
         >
-          {headline}
+          <div
+            style={{
+              fontSize: 96,
+              fontWeight: 900,
+              fontFamily: '"PingFang TC", "Noto Sans TC", system-ui, sans-serif',
+              color: '#FFFFFF',
+              lineHeight: 1.3,
+              textShadow: '0 2px 12px rgba(0,0,0,0.7)',
+              letterSpacing: '0.02em',
+              whiteSpace: 'pre-line',
+            }}
+          >
+            {headline}
+          </div>
         </div>
-      </AbsoluteFill>
+      ) : (
+        <AbsoluteFill
+          style={{
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '0 80px',
+            paddingTop: customPaddingTop ?? 400,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 96,
+              fontWeight: 900,
+              fontFamily: '"PingFang TC", "Noto Sans TC", system-ui, sans-serif',
+              color: '#FFFFFF',
+              textAlign: 'center',
+              lineHeight: 1.3,
+              textShadow: '0 2px 12px rgba(0,0,0,0.7)',
+              letterSpacing: '0.02em',
+              whiteSpace: 'pre-line',
+            }}
+          >
+            {headline}
+          </div>
+        </AbsoluteFill>
+      )}
 
       {/* Brand watermark */}
       <AbsoluteFill

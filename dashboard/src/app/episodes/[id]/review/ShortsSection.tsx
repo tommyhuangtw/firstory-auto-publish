@@ -15,6 +15,8 @@ interface ShortsData {
   selected_beat_index: number | null;
   headlines_json: string | null;
   selected_headline_index: number | null;
+  avatar_filename: string | null;
+  avatar_path: string | null;
 }
 
 interface Beat {
@@ -52,6 +54,13 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
   const [selectedHeadlineIdx, setSelectedHeadlineIdx] = useState<number | null>(null);
   const [customHeadline, setCustomHeadline] = useState('');
   const [igCaption, setIgCaption] = useState('');
+  const [regeneratingIg, setRegeneratingIg] = useState(false);
+  const [coverHeadline, setCoverHeadline] = useState('');
+  const [coverHeadlineCandidates, setCoverHeadlineCandidates] = useState<string[]>([]);
+  const [regeneratingHeadlines, setRegeneratingHeadlines] = useState(false);
+  const [headlineY, setHeadlineY] = useState(37); // percentage from top (default matches Remotion paddingTop: 400/1080 ≈ 37%)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(initialShorts?.avatar_path ? `/api/audio${initialShorts.avatar_path}` : null);
+  const [regeneratingCover, setRegeneratingCover] = useState(false);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
 
@@ -61,6 +70,14 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
     const s = initialShorts;
     setShortsId(s.id);
     if (s.ig_caption) setIgCaption(s.ig_caption);
+
+    // Restore cover headline from selected headline
+    if (s.headlines_json && s.selected_headline_index != null) {
+      try {
+        const hl = JSON.parse(s.headlines_json);
+        if (hl[s.selected_headline_index]) setCoverHeadline(hl[s.selected_headline_index]);
+      } catch { /* ignore */ }
+    }
 
     switch (s.status) {
       case 'beats_ready':
@@ -80,10 +97,12 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
         setExpanded(true);
         break;
       case 'completed':
+        setSelectedBeatIdx(s.selected_beat_index);
         setStep('completed');
         setExpanded(true);
         break;
       case 'published':
+        setSelectedBeatIdx(s.selected_beat_index);
         setStep('published');
         break;
       case 'failed':
@@ -217,12 +236,29 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
     }
   }, [selectedHeadlineIdx, shortsId, customHeadline, headlines]);
 
+  const [publishStage, setPublishStage] = useState<'cover' | 'upload' | null>(null);
+
   const handlePublish = useCallback(async () => {
     if (!shortsId) return;
     if (!confirm('確定要發布到 Instagram Reels？')) return;
     setError('');
     setStep('publishing');
     try {
+      // Step 1: Regenerate cover with latest headline + position
+      if (coverHeadline.trim()) {
+        setPublishStage('cover');
+        const coverRes = await fetch('/api/shorts/regenerate-cover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY }),
+        });
+        const coverData = await coverRes.json();
+        if (!coverRes.ok) throw new Error(coverData.error);
+        setShorts((prev) => prev ? { ...prev, cover_path: coverData.coverPath } : prev);
+      }
+
+      // Step 2: Publish to Instagram
+      setPublishStage('upload');
       const res = await fetch(`/api/shorts/publish/${shortsId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -235,8 +271,10 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
     } catch (err) {
       setError((err as Error).message);
       setStep('completed');
+    } finally {
+      setPublishStage(null);
     }
-  }, [shortsId, igCaption]);
+  }, [shortsId, igCaption, coverHeadline, headlineY]);
 
   const handleRestart = useCallback(() => {
     // Reuse existing beats — same script always produces same highlights.
@@ -258,6 +296,101 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
       setStep('idle');
     }
   }, [beats]);
+
+  const handleRegenerateIgCaption = useCallback(async () => {
+    if (!shortsId) return;
+    setRegeneratingIg(true);
+    setError('');
+    try {
+      const res = await fetch('/api/shorts/regenerate-ig', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortsId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setIgCaption(data.igCaption);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRegeneratingIg(false);
+    }
+  }, [shortsId]);
+
+  const handleNewHeadlineBatch = useCallback(async () => {
+    if (selectedBeatIdx === null || !shortsId) return;
+    setRegeneratingHeadlines(true);
+    setError('');
+    try {
+      const res = await fetch('/api/shorts/headlines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortsId, selectedBeatIndex: selectedBeatIdx, segmentType }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCoverHeadlineCandidates(data.headlines);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRegeneratingHeadlines(false);
+    }
+  }, [selectedBeatIdx, shortsId, segmentType]);
+
+  const handleRegenerateCover = useCallback(async () => {
+    if (!shortsId || !coverHeadline.trim()) return;
+    setRegeneratingCover(true);
+    setError('');
+    try {
+      const res = await fetch('/api/shorts/regenerate-cover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setShorts((prev) => prev ? { ...prev, cover_path: data.coverPath } : prev);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRegeneratingCover(false);
+    }
+  }, [shortsId, coverHeadline, headlineY]);
+
+  const handleRemakeVideo = useCallback(() => {
+    // Go back to beat selection, keeping existing beats and shortsId
+    const existingBeats = beats;
+    setSelectedBeatIdx(null);
+    setHeadlines([]);
+    setSelectedHeadlineIdx(null);
+    setCustomHeadline('');
+    setError('');
+    if (existingBeats.length > 0) {
+      setBeats(existingBeats);
+      setStep('select_beat');
+    } else {
+      setStep('idle');
+    }
+  }, [beats]);
+
+  const handleChangeAvatar = useCallback(async () => {
+    // Go back to avatar selection, reset everything
+    setSelectedBeatIdx(null);
+    setHeadlines([]);
+    setSelectedHeadlineIdx(null);
+    setCustomHeadline('');
+    setSelectedAvatar(null);
+    setError('');
+    try {
+      const res = await fetch('/api/shorts/avatars');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAvatars(data.avatars);
+      setStep('select_avatar');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, []);
 
   const currentStageIndex = shorts?.current_stage ? STAGES.indexOf(shorts.current_stage) : -1;
 
@@ -514,9 +647,22 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
             </div>
           )}
 
-          {/* Step: Completed — Preview + Publish */}
-          {(step === 'completed' || step === 'publishing') && shorts && (
+          {/* Step: Completed / Publishing / Published — Preview + Actions */}
+          {(step === 'completed' || step === 'publishing' || step === 'published') && shorts && (
             <div className="pt-4 space-y-4">
+              {/* Published badge */}
+              {step === 'published' && (
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm">已發布到 Instagram Reels</span>
+                  {shorts.ig_post_id && (
+                    <span className="text-[10px] text-zinc-500 ml-1">Post ID: {shorts.ig_post_id}</span>
+                  )}
+                </div>
+              )}
+
               {/* Video preview */}
               {shorts.video_path && (
                 <div>
@@ -530,21 +676,123 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 </div>
               )}
 
-              {/* Cover preview */}
-              {shorts.cover_path && (
-                <div>
-                  <p className="text-xs text-zinc-400 mb-1.5">封面</p>
-                  <img
-                    src={`/api/audio${shorts.cover_path}`}
-                    alt="Shorts cover"
-                    className="w-32 rounded-lg border border-zinc-700"
-                  />
+              {/* Cover preview + headline editor */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs text-zinc-400">封面</p>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleNewHeadlineBatch}
+                      disabled={regeneratingHeadlines || selectedBeatIdx === null}
+                      className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      <svg className={`w-3 h-3 ${regeneratingHeadlines ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.656v4.992" />
+                      </svg>
+                      {regeneratingHeadlines ? '生成中...' : '換一批標題'}
+                    </button>
+                    <button
+                      onClick={handleRegenerateCover}
+                      disabled={regeneratingCover || !coverHeadline.trim()}
+                      className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      <svg className={`w-3 h-3 ${regeneratingCover ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.656v4.992" />
+                      </svg>
+                      {regeneratingCover ? '生成中...' : '重新生成封面'}
+                    </button>
+                  </div>
                 </div>
-              )}
+                {/* Live CSS preview — mirrors Remotion ReelsCover layout (1080×1920) */}
+                {avatarUrl && (
+                  <div className="rounded-lg border border-zinc-700 overflow-hidden mb-2" style={{ width: 128, height: Math.round(128 * 16 / 9) }}>
+                    <div className="relative w-full h-full">
+                      <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover brightness-[0.85]" />
+                      <div className="absolute inset-0" style={{
+                        background: 'linear-gradient(to bottom, transparent 35%, rgba(20,10,5,0.65) 55%, rgba(20,10,5,0.65) 75%, transparent 92%)'
+                      }} />
+                      {/* Remotion: paddingTop on 1920h, padding 0 80px on 1080w, fontSize 96 on 1080w */}
+                      {/* Preview: 128w × 227h, scale = 128/1080 ≈ 0.1185 */}
+                      <div className="absolute inset-x-0 flex justify-center text-center" style={{
+                        top: `${headlineY}%`,
+                        paddingLeft: 9,   /* 80 * 128/1080 ≈ 9.5 */
+                        paddingRight: 9,
+                      }}>
+                        <p className="text-white font-black whitespace-pre-line" style={{
+                          fontSize: 11,     /* 96 * 128/1080 ≈ 11.4 */
+                          lineHeight: 1.3,
+                          textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+                          letterSpacing: '0.02em',
+                        }}>
+                          {coverHeadline || '\u00A0'}
+                        </p>
+                      </div>
+                      <p className="absolute font-semibold text-white/50" style={{
+                        bottom: 5,        /* 80 * 227/1920 ≈ 9.5, but smaller looks better */
+                        right: 5,
+                        fontSize: 3,      /* 28 * 128/1080 ≈ 3.3 */
+                        letterSpacing: '0.1em',
+                      }}>
+                        AI懶人報 PODCAST
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {/* Headline candidates */}
+                {coverHeadlineCandidates.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    <p className="text-[10px] text-zinc-500">點選標題：</p>
+                    {coverHeadlineCandidates.map((h, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { setCoverHeadline(h); setCoverHeadlineCandidates([]); }}
+                        className={`block w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors cursor-pointer ${
+                          coverHeadline === h
+                            ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+                            : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 border border-transparent'
+                        }`}
+                      >
+                        {h}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <textarea
+                  value={coverHeadline}
+                  onChange={(e) => setCoverHeadline(e.target.value)}
+                  placeholder="封面標題（按 Enter 換行）..."
+                  rows={2}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 resize-y"
+                />
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[10px] text-zinc-500 shrink-0">標題位置</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={70}
+                    value={headlineY}
+                    onChange={(e) => setHeadlineY(Number(e.target.value))}
+                    className="flex-1 h-1 accent-violet-500 cursor-pointer"
+                  />
+                  <span className="text-[10px] text-zinc-500 tabular-nums w-6 text-right">{headlineY}%</span>
+                </div>
+              </div>
 
               {/* IG Caption */}
               <div>
-                <p className="text-xs text-zinc-400 mb-1.5">IG 文案</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs text-zinc-400">IG 文案</p>
+                  <button
+                    onClick={handleRegenerateIgCaption}
+                    disabled={regeneratingIg}
+                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    <svg className={`w-3 h-3 ${regeneratingIg ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.656v4.992" />
+                    </svg>
+                    {regeneratingIg ? '生成中...' : '重新生成文案'}
+                  </button>
+                </div>
                 <textarea
                   value={igCaption}
                   onChange={(e) => setIgCaption(e.target.value)}
@@ -553,43 +801,32 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 />
               </div>
 
-              {/* Action buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={handlePublish}
-                  disabled={step === 'publishing'}
-                  className="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white text-sm font-medium transition-all cursor-pointer"
-                >
-                  {step === 'publishing' ? '發布中...' : 'Publish to Instagram'}
-                </button>
-                <button
-                  onClick={() => handleGenerate()}
-                  className="px-4 py-2.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-sm transition-colors cursor-pointer"
-                >
-                  重新製作
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step: Published */}
-          {step === 'published' && (
-            <div className="pt-4 space-y-3">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-sm">已發布到 Instagram Reels</span>
-              </div>
-              {shorts?.ig_post_id && (
-                <p className="text-[10px] text-zinc-500">Post ID: {shorts.ig_post_id}</p>
-              )}
+              {/* Publish button */}
               <button
-                onClick={() => handleGenerate()}
-                className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                onClick={handlePublish}
+                disabled={step === 'publishing'}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white text-sm font-medium transition-all cursor-pointer"
               >
-                重新製作
+                {step === 'publishing'
+                  ? (publishStage === 'cover' ? '生成封面中...' : '發布中...')
+                  : 'Publish to Instagram'}
               </button>
+
+              {/* Remake actions */}
+              <div className="flex gap-2 pt-1 border-t border-zinc-800">
+                <button
+                  onClick={handleRemakeVideo}
+                  className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs transition-colors cursor-pointer"
+                >
+                  重新製作影片
+                </button>
+                <button
+                  onClick={handleChangeAvatar}
+                  className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs transition-colors cursor-pointer"
+                >
+                  重新選擇形象
+                </button>
+              </div>
             </div>
           )}
 

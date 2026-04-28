@@ -443,16 +443,16 @@ ${antiPatterns}
 3. 每個標題就是一句完整的短句，不要用斜線或任何分隔符號拆成兩半
 4. 盡量每個標題用不同公式
 5. 語氣 = 封面大字，像路邊看板一樣短促有力
-6. 8 個標題的**開頭必須不同**
-7. 如果主題有具體產品名/系統名，至少 4 個標題要包含它
+6. 10 個標題的**開頭必須不同**
+7. 如果主題有具體產品名/系統名，至少 5 個標題要包含它
 ${isSysdesign ? `8. ⚠️ 至少 3 個標題要帶有「揭密」「拆解」「解密」「秘密」「怎麼做到」等揭密拆解的語感——讓觀眾一看就知道這集是要幫他們看懂厲害系統的內幕` : ''}
 
 輸出嚴格 JSON（不要 markdown code fence、不要說明）：
-{ "core_keyword": "核心關鍵字", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5", "標題6", "標題7", "標題8"] }
+{ "core_keyword": "核心關鍵字", "headlines": ["標題1", "標題2", "標題3", "標題4", "標題5", "標題6", "標題7", "標題8", "標題9", "標題10"] }
 `.trim();
 
   try {
-    console.log('🎨 [cover] Generating 8 cover headline candidates...');
+    console.log('🎨 [cover] Generating 10 cover headline candidates...');
     const resp = await openRouter.generateContent(prompt, {
       temperature: 0.85,
       maxTokens: 768,

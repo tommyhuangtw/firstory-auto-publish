@@ -138,7 +138,7 @@ export async function runShortsGeneration(shortsId: number) {
 /**
  * Generate an IG caption for the shorts video, optimized for 引流 to the podcast.
  */
-async function generateShortsIgCaption(args: {
+export async function generateShortsIgCaption(args: {
   episodeId: number;
   episodeTitle: string;
   episodeNumber?: number;
@@ -169,11 +169,12 @@ async function generateShortsIgCaption(args: {
 
 【文案規則】
 1. 開頭用 1-2 句吸睛的 hook（呼應 Shorts 內容）
-2. 用 3-5 個 emoji bullet points 列出本集重點
-3. 結尾 CTA：引導去聽完整集數（「完整集數連結在 bio」或「連結在限動」）
-4. 加 10-15 個相關 hashtags${extraHashtags}
-5. 總長度 150-300 字
-6. 語氣要像跟朋友聊天，不要太正式
+2. hook 之後、重點摘要之前，獨立一行標示本集資訊，格式：「${isSysdesign ? '📐 系統設計懶懶學' : '📰 AI懶人報'}｜${epLabel}${args.episodeTitle}」。必須使用完整標題，禁止截短或改寫。
+3. 用 3-5 個 emoji bullet points 列出本集重點
+4. 結尾 CTA：引導去聽完整集數（「完整集數連結在 bio」或「連結在限動」）
+5. 加 10-15 個相關 hashtags${extraHashtags}
+6. 總長度 150-300 字
+7. 語氣要像跟朋友聊天，不要太正式
 
 直接輸出文案，不要任何前後說明。`;
 
@@ -194,6 +195,74 @@ async function generateShortsIgCaption(args: {
   // Fallback
   const fallbackTag = args.segmentType === 'sysdesign' ? '#系統設計懶懶學 #系統設計 #SystemDesign' : '#AI懶人報 #AI';
   return `${args.coverHeadline}\n\n完整集數連結在 bio！\n\n${fallbackTag} #Podcast`;
+}
+
+/**
+ * Regenerate the Reels cover image with a new headline.
+ * Uses the same avatar as the original shorts and renders via Remotion.
+ */
+export async function regenerateCover(shortsId: number, newHeadline: string, headlineY?: number): Promise<string> {
+  const db = getDb();
+  const shorts = db.prepare('SELECT avatar_filename, cover_path, headlines_json, selected_headline_index FROM shorts WHERE id = ?').get(shortsId) as {
+    avatar_filename: string | null;
+    cover_path: string | null;
+    headlines_json: string;
+    selected_headline_index: number;
+  } | undefined;
+
+  if (!shorts) throw new Error('Shorts not found');
+
+  const pipelineModule = loadModule(path.join(SHORTS_PIPELINE_DIR));
+  const { renderRemotionStill, stageAsset, rel, REMOTION_DIR } = pipelineModule;
+
+  const SLOTH_IMAGES_DIR = path.join(REMOTION_DIR, 'public');
+  const avatarPath = shorts.avatar_filename
+    ? path.join(SLOTH_IMAGES_DIR, shorts.avatar_filename)
+    : null;
+
+  if (!avatarPath) throw new Error('No avatar found for this shorts');
+
+  // Stage avatar into a temp dir inside remotion/public
+  const fs = loadModule('fs-extra');
+  const ts = Date.now();
+  const stageDir = path.join(REMOTION_DIR, 'public', `regen_${ts}`);
+  await fs.ensureDir(stageDir);
+
+  try {
+    const stagedAvatar = await stageAsset(avatarPath, stageDir, 'avatar.png');
+
+    // Determine output path — reuse existing cover_path directory or create new
+    // cover_path in DB is already an absolute path
+    const outputDir = shorts.cover_path
+      ? path.dirname(shorts.cover_path)
+      : path.join(PROJECT_ROOT, 'remotion', 'out');
+    await fs.ensureDir(outputDir);
+    const coverPath = path.join(outputDir, `cover_${ts}.png`);
+
+    const coverProps: Record<string, unknown> = {
+      headline: newHeadline,
+      backgroundImageSrc: rel(stagedAvatar),
+    };
+    // Use topPercent for absolute positioning (matches CSS preview's top: X%)
+    if (headlineY != null) {
+      coverProps.topPercent = headlineY;
+    }
+    const propsPath = path.join(stageDir, 'cover_props.json');
+    await fs.writeJSON(propsPath, coverProps, { spaces: 2 });
+
+    await renderRemotionStill({ propsPath, outputPath: coverPath });
+
+    // Update headline in headlines_json and cover_path in DB (absolute path, matching original pipeline convention)
+    const headlines = JSON.parse(shorts.headlines_json);
+    headlines[shorts.selected_headline_index] = newHeadline;
+    db.prepare('UPDATE shorts SET cover_path = ?, headlines_json = ? WHERE id = ?')
+      .run(coverPath, JSON.stringify(headlines), shortsId);
+
+    log.info({ shortsId, coverPath }, 'Cover regenerated');
+    return coverPath;
+  } finally {
+    await fs.remove(stageDir).catch(() => {});
+  }
 }
 
 function logShortsCosts(db: ReturnType<typeof getDb>, episodeId: number, shortsId: number) {
