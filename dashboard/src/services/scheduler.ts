@@ -157,6 +157,13 @@ export class Scheduler {
     log.info({ name }, 'Job unskipped');
   }
 
+  pause(name: string): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Job "${name}" not found`);
+    job.skippedUntil = new Date('9999-12-31T00:00:00Z');
+    log.info({ name }, 'Job paused indefinitely');
+  }
+
   updateSchedule(name: string, newSchedule: string): void {
     const job = this.jobs.get(name);
     if (!job) throw new Error(`Job "${name}" not found`);
@@ -217,6 +224,7 @@ export class Scheduler {
     lastRun: string | null;
     lastError: string | null;
     skippedUntil: string | null;
+    paused: boolean;
   }> {
     return Array.from(this.jobs.values()).map((job) => ({
       name: job.name,
@@ -228,6 +236,7 @@ export class Scheduler {
       skippedUntil: job.skippedUntil && job.skippedUntil > new Date()
         ? job.skippedUntil.toISOString()
         : null,
+      paused: job.skippedUntil ? job.skippedUntil.getFullYear() >= 9999 : false,
     }));
   }
 }

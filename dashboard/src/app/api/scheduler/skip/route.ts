@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
   try {
     const { name, action } = await request.json() as {
       name: string;
-      action: 'skip' | 'unskip' | 'enable' | 'disable';
+      action: 'skip' | 'unskip' | 'enable' | 'disable' | 'pause' | 'resume';
     };
     if (!name) {
       return NextResponse.json({ error: 'Job name is required' }, { status: 400 });
@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
       unskip: () => { scheduler.unskip(name); return `"${name}" 已恢復排程`; },
       enable: () => { scheduler.enable(name); return `"${name}" 已啟用`; },
       disable: () => { scheduler.disable(name); return `"${name}" 已停用`; },
+      pause: () => { scheduler.pause(name); return `"${name}" 已暫停`; },
+      resume: () => { scheduler.unskip(name); return `"${name}" 已恢復`; },
     };
 
     const handler = messages[action];

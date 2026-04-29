@@ -11,6 +11,7 @@ interface Job {
   lastRun: string | null;
   lastError: string | null;
   skippedUntil: string | null;
+  paused: boolean;
 }
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -70,14 +71,15 @@ export default function SchedulerClient() {
     }
   }
 
-  async function handleSkipToggle(name: string, isSkipped: boolean) {
+  async function handleSkipToggle(name: string, isSkipped: boolean, actionOverride?: string) {
     setSkippingJob(name);
     setMessage('');
     try {
+      const action = actionOverride || (isSkipped ? 'unskip' : 'skip');
       const res = await fetch('/api/scheduler/skip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, action: isSkipped ? 'unskip' : 'skip' }),
+        body: JSON.stringify({ name, action }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -122,7 +124,7 @@ export default function SchedulerClient() {
           </div>
           <div className="divide-y divide-zinc-800/60">
             {jobs.map((job) => {
-              const isSkipped = !!job.skippedUntil;
+              const isSkipped = !!job.skippedUntil && !job.paused;
               const segLabel = SEGMENT_LABELS[job.name] ?? job.name;
               const dotColor = SEGMENT_COLORS[job.name] ?? 'bg-brand';
 
@@ -130,7 +132,7 @@ export default function SchedulerClient() {
                 <div key={job.name} className="px-4 py-2.5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${
-                      isSkipped ? 'bg-yellow-400' : dotColor
+                      job.paused ? 'bg-orange-400' : isSkipped ? 'bg-yellow-400' : dotColor
                     }`} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -138,6 +140,9 @@ export default function SchedulerClient() {
                         <code className="text-[10px] text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded shrink-0">
                           {job.schedule}
                         </code>
+                        {job.paused && (
+                          <span className="text-[10px] text-orange-400/80 shrink-0">已暫停</span>
+                        )}
                         {isSkipped && (
                           <span className="text-[10px] text-yellow-400/80 shrink-0">已跳過今天</span>
                         )}
@@ -151,17 +156,32 @@ export default function SchedulerClient() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Pause / Resume */}
                     <button
-                      onClick={() => handleSkipToggle(job.name, isSkipped)}
+                      onClick={() => handleSkipToggle(job.name, false, job.paused ? 'resume' : 'pause')}
                       disabled={skippingJob === job.name}
                       className={`text-[11px] px-2.5 py-1 rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
-                        isSkipped
-                          ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-300'
+                        job.paused
+                          ? 'bg-orange-900/30 hover:bg-orange-900/50 text-orange-300'
                           : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
                       }`}
                     >
-                      {skippingJob === job.name ? '...' : isSkipped ? '恢復' : '跳過今天'}
+                      {skippingJob === job.name ? '...' : job.paused ? '恢復' : '暫停'}
                     </button>
+                    {/* Skip today — only when not paused */}
+                    {!job.paused && (
+                      <button
+                        onClick={() => handleSkipToggle(job.name, isSkipped)}
+                        disabled={skippingJob === job.name}
+                        className={`text-[11px] px-2.5 py-1 rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
+                          isSkipped
+                            ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-300'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
+                        }`}
+                      >
+                        {skippingJob === job.name ? '...' : isSkipped ? '取消跳過' : '跳過今天'}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleTrigger(job.name)}
                       disabled={triggeringJob === job.name}
