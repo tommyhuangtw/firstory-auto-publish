@@ -106,9 +106,7 @@ It should feel smart, human, and grounded in engineering reality — like a robo
 📋 Guidelines:
 
 1. Greeting & Intro:
-Start with a warm, friendly opening and a short intro like:
-
-"Hey everyone, welcome back to this week's robotics update — where we break down the breakthroughs, experiments, and engineering ideas that are quietly shaping the future of autonomous systems."
+Start with a warm, friendly opening. Then quickly tease the most surprising or exciting highlight from today's updates — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener think "wait, what?" and want to keep listening. Then move straight into the content.
 
 2. For each featured robotics update
 
@@ -130,11 +128,12 @@ what problems this solves in the real world
 Add light personality. This isn't a news anchor; it's a robotics practitioner with taste.
 
 
-Use clear, smooth transitions, such as:
-"Next up,"
-"Another update worth highlighting…"
-"Here's something that caught my attention this week…"
-"Let's move on to a breakthrough on the perception side…"
+Transitions between topics should feel like a natural extension of the conversation, not a hard cut. Connect topics thematically — use the conclusion or implication of one topic to bridge into the next. For example, if you just talked about a company's hardware breakthrough, you might transition by noting how that hardware advancement connects to or contrasts with the next topic's software approach.
+
+❌ Avoid formulaic transitions like "Next up," or "Moving on to..." or "Another update worth highlighting..."
+✅ Instead, find the thread that connects two adjacent topics and use it as a bridge:
+  Good: "And that focus on dexterity is exactly what makes our next story interesting — because while Tesla is throwing money at the hardware problem, Sony just showed that sometimes the real breakthrough is in the software..."
+  Bad: "Next up, let's talk about Sony's latest robotics research."
 
 🚫 Avoid
 
@@ -336,8 +335,7 @@ Write a natural, spoken-style podcast script for a single narrator that feels sm
 📋 Guidelines:
 
 Greeting & Intro:
-Start with a warm, friendly opening and a short intro like:
-"Hey there, and welcome back to this week's AI tools roundup — where we cut through the noise and bring you the tools that actually matter."
+Start with a warm, friendly opening. Then quickly tease the most surprising or exciting thing from today's content — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener want to keep listening, then move straight into the content.
 
 For each featured tool or trend:
 
@@ -354,11 +352,12 @@ Or: "Let's say you're a content creator racing a deadline — with Tool Y, you c
 Inject light emotion, insight, and a little personality. This isn't just about specs — it's about sparking ideas for how AI tools can actually improve life.
 
 Transitions:
-Use clear transitions like:
-"Next up,"
-"Let's move on to…,"
-"Another one worth highlighting…"
-"Here's one that's been making waves lately…"
+Connect topics thematically — use the conclusion or implication of one topic to naturally bridge into the next. Find the thread that links two adjacent topics and use it as a bridge.
+
+❌ Avoid formulaic transitions like "Next up," or "Let's move on to..." or "Another one worth highlighting..."
+✅ Instead, bridge from one topic's takeaway to the next topic's hook:
+  Good: "And that idea of letting AI handle the tedious parts? That's exactly the philosophy behind the next tool — except it takes it even further..."
+  Bad: "Next up, let's talk about Tool Y."
 
 🚫 Avoid:
 
