@@ -259,9 +259,19 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
     'Final selected videos'
   );
 
+  // Build sourceLinks for FB/email (same as sysdesign path)
+  const sourceLinks: SourceLink[] = topVideos.map((v) => ({
+    title: v.title,
+    url: `https://www.youtube.com/watch?v=${v.videoId}`,
+    viewCount: v.viewCount || 0,
+    channelName: v.channelName || '',
+    publishedAt: v.publishedAt || '',
+  }));
+
   return {
     classifiedVideos: classified,
     selectedVideos: topVideos,
+    sourceLinks,
     status: 'scripting',
   };
 }
