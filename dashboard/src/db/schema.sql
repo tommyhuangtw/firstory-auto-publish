@@ -235,6 +235,29 @@ CREATE TABLE IF NOT EXISTS service_costs (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS soundon_daily_downloads (
+  id INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,                    -- YYYY-MM-DD
+  downloads INTEGER NOT NULL,
+  unique_downloads INTEGER NOT NULL,
+  imported_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(date)
+);
+
+CREATE TABLE IF NOT EXISTS soundon_episodes (
+  id INTEGER PRIMARY KEY,
+  episode_number INTEGER,
+  title TEXT NOT NULL,
+  publish_type TEXT,                     -- 'public'
+  total_downloads INTEGER,
+  downloads_7d INTEGER,
+  downloads_30d INTEGER,
+  duration_sec REAL,
+  published_at TEXT,
+  imported_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(title)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -250,3 +273,5 @@ CREATE INDEX IF NOT EXISTS idx_weekly_youtube_sources_video ON weekly_youtube_so
 CREATE INDEX IF NOT EXISTS idx_shorts_episode ON shorts(episode_number);
 CREATE INDEX IF NOT EXISTS idx_service_costs_episode ON service_costs(episode_number);
 CREATE INDEX IF NOT EXISTS idx_service_costs_shorts ON service_costs(shorts_id);
+CREATE INDEX IF NOT EXISTS idx_soundon_daily_date ON soundon_daily_downloads(date);
+CREATE INDEX IF NOT EXISTS idx_soundon_episodes_number ON soundon_episodes(episode_number);
