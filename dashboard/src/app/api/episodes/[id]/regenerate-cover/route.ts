@@ -59,20 +59,14 @@ export async function POST(
 
     const result = await generateCover(minimalState);
 
-    // Append to cover_candidates and set as active cover
-    const row = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
-    const candidates: { path: string; url: string; createdAt: string; source: string }[] = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
-    if (result.coverPath) {
-      candidates.push({
-        path: result.coverPath,
-        url: result.coverUrl || '',
-        createdAt: new Date().toISOString(),
-        source: 'generated',
-      });
-    }
+    // generateCover() already appends to cover_candidates in DB
+    // Here we only set the new image as the active cover
+    db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ? WHERE id = ?')
+      .run(result.coverPath || null, result.coverUrl || null, episodeId);
 
-    db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ?, cover_candidates = ? WHERE id = ?')
-      .run(result.coverPath || null, result.coverUrl || null, JSON.stringify(candidates), episodeId);
+    // Read latest candidates from DB
+    const row = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
+    const candidates = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
 
     log.info({ episodeId, coverUrl: result.coverUrl, totalCandidates: candidates.length }, 'Cover image regenerated');
 
