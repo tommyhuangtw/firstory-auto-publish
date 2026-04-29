@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS llm_calls (
   quality_score REAL,
   success INTEGER DEFAULT 1,
   error_message TEXT,
+  input_messages TEXT,              -- JSON: [{role, content}] full prompt
+  output_content TEXT,              -- LLM response full text
   created_at TEXT DEFAULT (datetime('now'))
 );
 

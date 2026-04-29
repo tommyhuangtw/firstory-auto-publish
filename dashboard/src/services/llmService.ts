@@ -103,7 +103,7 @@ export class LLMService {
             const latency = Date.now() - startTime;
             const cost = calculateCost(model, result.usage);
 
-            // Auto-log to SQLite
+            // Auto-log to SQLite (with full prompt/response for debugging)
             this.logCall({
               episodeId,
               episodeNumber: episodeNumber ?? undefined,
@@ -114,6 +114,8 @@ export class LLMService {
               costUsd: cost,
               latencyMs: latency,
               success: true,
+              inputMessages: JSON.stringify(messages),
+              outputContent: result.content ?? undefined,
             });
 
             log.info({ model, stage, latency, cost: cost.toFixed(4) }, 'LLM call succeeded');
@@ -131,7 +133,7 @@ export class LLMService {
       }
     }
 
-    // All attempts failed — log failure
+    // All attempts failed — log failure (still store prompt for debugging)
     this.logCall({
       episodeId,
       episodeNumber: episodeNumber ?? undefined,
@@ -143,6 +145,7 @@ export class LLMService {
       latencyMs: Date.now() - startTime,
       success: false,
       errorMessage: lastError?.message,
+      inputMessages: JSON.stringify(messages),
     });
 
     log.error({ stage }, 'All models failed');
@@ -248,13 +251,15 @@ export class LLMService {
     success: boolean;
     errorMessage?: string;
     qualityScore?: number;
+    inputMessages?: string;
+    outputContent?: string;
   }) {
     try {
       const db = getDb();
       db.prepare(
         `INSERT INTO llm_calls (episode_id, episode_number, stage, model, input_tokens, output_tokens,
-         cost_usd, latency_ms, quality_score, success, error_message)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         cost_usd, latency_ms, quality_score, success, error_message, input_messages, output_content)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         params.episodeId ?? null,
         params.episodeNumber ?? null,
@@ -266,7 +271,9 @@ export class LLMService {
         params.latencyMs,
         params.qualityScore ?? null,
         params.success ? 1 : 0,
-        params.errorMessage ?? null
+        params.errorMessage ?? null,
+        params.inputMessages ?? null,
+        params.outputContent ?? null
       );
     } catch (error) {
       log.error({ error: (error as Error).message }, 'Failed to log LLM call to DB');
