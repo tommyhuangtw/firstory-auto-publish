@@ -14,12 +14,12 @@ import type { PipelineState, QualityScore, QualityIteration } from '../state';
 const log = createChildLogger('pipeline:quality');
 
 /** Count non-whitespace characters in a script. */
-function countScriptChars(text: string): number {
+export function countScriptChars(text: string): number {
   return text.replace(/\s/g, '').length;
 }
 
 /** Read word count target from DB settings, fallback to defaults. */
-function getWordCountTarget(segmentType: string): [number, number] {
+export function getWordCountTarget(segmentType: string): [number, number] {
   const key = `word_count_${segmentType}`;
   const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
   if (row?.value) {
@@ -35,10 +35,10 @@ function getWordCountTarget(segmentType: string): [number, number] {
   return defaults[segmentType] || [4500, 5000];
 }
 
-const SCORING_MODEL = 'openai/gpt-5.4';
-const REWRITE_MODEL = 'google/gemini-3.1-pro-preview';
-const QUALITY_THRESHOLD = 88;
-const MAX_ITERATIONS = 3;
+const SCORING_MODEL = 'openai/gpt-5.5';
+const REWRITE_MODEL = 'anthropic/claude-sonnet-4.6';
+const QUALITY_THRESHOLD = 90;
+const MAX_ITERATIONS = 2;
 
 // 機器人觀察週報 fixed opening for scoring/rewrite
 const ROBOT_FIXED_OPENING = `「AI 的浪潮正在改寫機器人的發展速度，越來越多過去像科幻的能力，開始變成工程上的日常。如果照這股動能延伸下去，五年、十年後的世界一定會很精彩。這裡是 AI 懶人報：機器人觀察週報，帶你看看這週未來感最強的那些技術亮點。」`;
@@ -115,10 +115,28 @@ const SCORING_SYSTEM_PROMPT = `你是一位經驗豐富、標準明確的 Podcas
    — 13-15 分：落在目標範圍內
    — 9-12 分：偏差 500 字以內
    — 5-8 分：偏差 500-1000 字
-   — 0-4 分：偏差超過 1000 字`;
+   — 0-4 分：偏差超過 1000 字
+
+## 評分校準範例（請嚴格以此為參考基準，避免分數膨脹）
+
+以下是三段不同品質的腳本片段與對應分數。請在評分時對照這些範例，確保你的分數反映真實品質差異，而不是一律給高分。
+
+### 🔴 總分約 65-70 分的腳本片段（明顯問題，需大幅修改）
+「接下來，我們來看看第三個工具。這個工具主要是用於自動化流程管理，它可以幫助用戶提升工作效率，實現智能化的任務分配。通過使用這個工具，您可以更加高效地管理團隊協作，並且在多個場景下進行落地應用。接下來我們看第四個工具。」
+→ 問題：書面報告感極重（「用戶」「實現」「通過」「場景」「落地」全是大陸用語）、沒有任何具體例子、轉場公式化（「接下來我們看」）、零聊天感。這種品質的腳本絕對不應超過 70 分。
+
+### 🟡 總分約 80-84 分的腳本片段（基本合格，但有明顯可改進空間）
+「好，接下來這個工具也蠻有趣的。它叫做 Replit Agent，簡單來說就是你跟它講一句話，它就能幫你把整個網站架好。聽起來很厲害吧？不過老實說，目前這個工具比較適合做一些簡單的 side project，如果你要拿來做大型的商業應用，可能還是需要再搭配其他工具。」
+→ 優點：語氣自然、有口語連接詞（「老實說」「聽起來很厲害吧」）、有具體限制說明。缺點：轉場仍偏公式化（「好，接下來這個工具」）、缺少生活化使用場景、「side project」可用中文替代。這種品質應落在 80-84 分區間，不應給到 88+。
+
+### 🟢 總分約 90-95 分的腳本片段（接近完美，僅有極微小瑕疵）
+「你有沒有這種經驗？每次週末想找一部電影來看，打開 Netflix 結果滑了二十分鐘，最後還是選了看過三遍的老片。Perplexity 這個工具就是來解決這種選擇困難的。你直接跟它說『推薦我一部像乍夢的懸疑片，但不要太燒腦的』，它就會幫你從爛番茄、IMDb 各大平台比對評分，直接給你三個推薦，還附上每部片大概在演什麼。省掉你半小時的選片時間，直接躺平開看。」
+→ 優點：以生活場景開場引發共鳴、語氣完全像朋友聊天、有具體使用示範、全中文無不必要英文、台灣用語道地（「躺平開看」「滑了二十分鐘」「選擇困難」）。只有達到這種水準的腳本才配得上 90+ 的分數。`;
 
 // n8n exact system prompt for 4.腳本重寫Agent
-const REWRITE_SYSTEM_PROMPT = `你是一位專業的 Podcast 腳本優化專家，擅長將技術性或資訊性內容，轉換成輕鬆、有故事感、適合口語朗讀的 Podcast 腳本，整體篇幅要落於__REWRITE_WORD_COUNT__字左右的長度。
+const REWRITE_SYSTEM_PROMPT = `你是一位專業的 Podcast 腳本優化專家，擅長將技術性或資訊性內容，轉換成輕鬆、有故事感、適合口語朗讀的 Podcast 腳本。
+
+⚠️ 字數硬性限制：最終腳本必須控制在 __REWRITE_WORD_COUNT__ 字之間（去除空白後計算）。超過上限或低於下限都不合格。如果改善語感會導致字數膨脹，請同時刪減冗餘段落來維持字數平衡。
 
 🎯 任務說明：
 請根據評分 Agent 所提供的審稿建議，針對原始 Podcast 腳本進行大幅優化。你的目標是將內容轉換成 自然、親切、容易理解 的敘述，適合用來口語錄製，目標是產出一段適合直接餵給語音合成模型（Text-to-Speech）朗讀的稿件，語句需自然、親切、無干擾物，讓聽眾在「像聽朋友講話」的節奏中獲得實用資訊。
@@ -163,7 +181,7 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
   "original_script": "（這裡是優化後完整的 Podcast 腳本）"
 }`;
 
-function getScoringPrompt(segmentType: string): string {
+export function getScoringPrompt(segmentType: string): string {
   const [targetMin, targetMax] = getWordCountTarget(segmentType);
   const targetStr = `${targetMin}-${targetMax}`;
 
@@ -282,7 +300,7 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
 🎙 ver4：今天分享的AI工具我都覺得蠻實用的，你們覺得呢？我是湯懶懶，我們明天據續朝懶人工作邁進！ 掰掰！
 🎙 ver5：最近的AI發展依然快得讓我害怕，不想錯過明天再繼續收聽AI懶人報囉，我是湯懶懶，我們明天見，掰掰！`;
 
-function getRewritePrompt(segmentType: string): string {
+export function getRewritePrompt(segmentType: string): string {
   const [rwMin, rwMax] = getWordCountTarget(segmentType);
   const wordCountStr = `${rwMin}-${rwMax}`;
 
@@ -404,7 +422,7 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
       ],
       options: {
         preferredModel: SCORING_MODEL,
-        maxTokens: 4096,
+        maxTokens: 8192,
         temperature: 0.3,
       },
     });
@@ -465,11 +483,20 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
 
     const [rwMin, rwMax] = getWordCountTarget(segmentType);
     const rwActual = countScriptChars(currentScript);
-    const wordCountGuidance = rwActual < rwMin
-      ? `目前字數 ${rwActual} 字，低於目標 ${rwMin}-${rwMax} 字，請增加內容使篇幅更充實。`
-      : rwActual > rwMax
-      ? `目前字數 ${rwActual} 字，超過目標 ${rwMin}-${rwMax} 字，請精簡內容。`
-      : `目前字數 ${rwActual} 字，已在目標 ${rwMin}-${rwMax} 字範圍內，請維持相近篇幅。`;
+    const diffFromMin = rwMin - rwActual;
+    const diffFromMax = rwActual - rwMax;
+    // Near-target zone: within 200 chars of range boundary → treat as "maintain"
+    const nearTarget = (rwActual >= rwMin - 200 && rwActual <= rwMax + 200);
+    let wordCountGuidance: string;
+    if (nearTarget && (rwActual < rwMin || rwActual > rwMax)) {
+      wordCountGuidance = `目前字數 ${rwActual} 字，接近目標 ${rwMin}-${rwMax} 字，微調即可。請在改善語感的同時維持相近篇幅，不要大幅增減內容。`;
+    } else if (rwActual < rwMin) {
+      wordCountGuidance = `目前字數 ${rwActual} 字，低於目標下限 ${rwMin} 字（差 ${diffFromMin} 字）。請適度補充內容，但最終字數不得超過 ${rwMax} 字。`;
+    } else if (rwActual > rwMax) {
+      wordCountGuidance = `目前字數 ${rwActual} 字，超過目標上限 ${rwMax} 字（多 ${diffFromMax} 字）。請刪減冗餘或重複的段落，將字數壓到 ${rwMin}-${rwMax} 字之間。`;
+    } else {
+      wordCountGuidance = `目前字數 ${rwActual} 字，已在目標 ${rwMin}-${rwMax} 字範圍內，請維持相近篇幅，不要大幅增減。`;
+    }
 
     const rewriteUserPrompt = `⚠️ 重要原則：請保留原稿中已經做好的部分，只針對評分建議中指出的具體問題進行修改。不要為了改而改，不要引入新的大陸用語或書面感。
 
@@ -507,8 +534,16 @@ ${structureFlowFeedback}
     });
 
     if (rewriteResult.success && rewriteResult.content) {
-      currentScript = extractScriptFromResponse(rewriteResult.content);
-      log.info({ newLength: currentScript.length }, 'Script refined');
+      const rewritten = extractScriptFromResponse(rewriteResult.content);
+      const rewrittenChars = countScriptChars(rewritten);
+      const originalChars = countScriptChars(currentScript);
+      // Sanity check: if rewrite is less than 50% of original, it's likely truncated/broken
+      if (rewrittenChars < originalChars * 0.5) {
+        log.warn({ rewrittenChars, originalChars }, 'Rewrite too short, likely truncated — keeping current script');
+      } else {
+        currentScript = rewritten;
+        log.info({ newLength: currentScript.length, chars: rewrittenChars }, 'Script refined');
+      }
     } else {
       log.warn('Rewrite failed, keeping current script');
       break;
@@ -527,7 +562,12 @@ ${structureFlowFeedback}
 /**
  * Parse scoring JSON from LLM response with defensive fallbacks.
  */
-function parseScoringResponse(content: string): {
+/** Replace literal newlines/tabs with spaces so JSON.parse succeeds on LLM output. */
+function sanitizeLLMJson(text: string): string {
+  return text.replace(/[\n\r\t]/g, ' ');
+}
+
+export function parseScoringResponse(content: string): {
   score: { chat_feel: number; eng_mix: number; tw_localization: number; clarity: number; word_count: number; structure_flow?: number; total: number };
   comments: { chat_feel: string; eng_mix: string; tw_localization: string; clarity: string; word_count: string; structure_flow?: string; summary: string };
 } | null {
@@ -536,17 +576,17 @@ function parseScoringResponse(content: string): {
     // Try direct parse
     let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(trimmed);
+      parsed = JSON.parse(sanitizeLLMJson(trimmed));
     } catch {
       // Try markdown code block extraction
       const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[1]);
+        parsed = JSON.parse(sanitizeLLMJson(jsonMatch[1]));
       } else {
         // Try first JSON object
         const objectMatch = trimmed.match(/\{[\s\S]*\}/);
         if (objectMatch) {
-          parsed = JSON.parse(objectMatch[0]);
+          parsed = JSON.parse(sanitizeLLMJson(objectMatch[0]));
         } else {
           throw new Error('No JSON found');
         }
@@ -586,7 +626,7 @@ function parseScoringResponse(content: string): {
  * The model may return JSON like { "original_script": "..." } or
  * markdown-wrapped JSON. This extracts the actual script content.
  */
-function extractScriptFromResponse(content: string): string {
+export function extractScriptFromResponse(content: string): string {
   const trimmed = content.trim();
 
   // Try to parse as JSON (with or without markdown code block)

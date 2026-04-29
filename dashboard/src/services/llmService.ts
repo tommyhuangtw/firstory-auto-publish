@@ -13,6 +13,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'google/gemini-3.1-flash-lite-preview': { input: 0.02, output: 0.10 },
   'google/gemini-3-flash-preview': { input: 0.15, output: 0.60 },
   'openai/gpt-5.4': { input: 2.50, output: 10.00 },
+  'openai/gpt-5.5': { input: 5.00, output: 30.00 },
   'anthropic/claude-sonnet-4.6': { input: 3.00, output: 15.00 },
 };
 
