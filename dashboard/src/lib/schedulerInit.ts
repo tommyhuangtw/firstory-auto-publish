@@ -177,8 +177,10 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
       log.error({ error: (emailErr as Error).message }, 'Failed to send failure notification email');
     }
 
-    // 2. Auto retry once from the failed stage
+    // 2. Auto retry once from the failed stage (after cooldown)
     if (failedStage) {
+      log.info({ segmentType, episodeId, failedStage }, 'Auto-retrying pipeline from failed stage in 60s');
+      await new Promise((r) => setTimeout(r, 60_000));
       log.info({ segmentType, episodeId, failedStage }, 'Auto-retrying pipeline from failed stage');
       try {
         await retryFromStage(pipelineRunId, failedStage);

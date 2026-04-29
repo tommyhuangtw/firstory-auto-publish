@@ -9,7 +9,7 @@ import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('retry');
 
-const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
 
 const RETRYABLE_ERROR_CODES = new Set([
   'ECONNRESET',
@@ -80,6 +80,7 @@ function isRetryable(error: Error): boolean {
   if (code && RETRYABLE_ERROR_CODES.has(code)) return true;
   if (error.message.includes('fetch failed')) return true;
   if (error.message.includes('network')) return true;
+  if (error.message.includes('529')) return true;
   return false;
 }
 

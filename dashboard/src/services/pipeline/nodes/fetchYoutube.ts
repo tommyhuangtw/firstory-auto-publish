@@ -163,7 +163,20 @@ export async function fetchYoutube(state: PipelineState): Promise<Partial<Pipeli
   const unique = deduplicateByVideoId(allVideos);
   log.info({ total: allVideos.length, unique: unique.length }, 'Videos fetched and deduped');
 
-  return { videos: unique, status: 'classifying' };
+  // Step 3: Server-side date filter (YouTube API publishedAfter is unreliable with order=viewCount)
+  const cutoff = new Date(Date.now() - searchDays * 24 * 60 * 60 * 1000);
+  const dateFiltered = unique.filter((v) => {
+    if (!v.publishedAt) return true; // keep if no date (will be validated later with stats)
+    const pubDate = new Date(v.publishedAt);
+    if (pubDate < cutoff) {
+      log.debug({ videoId: v.videoId, publishedAt: v.publishedAt, title: v.title.slice(0, 40) }, 'Filtered: too old');
+      return false;
+    }
+    return true;
+  });
+  log.info({ beforeDateFilter: unique.length, afterDateFilter: dateFiltered.length }, 'Server-side date filter applied');
+
+  return { videos: dateFiltered, status: 'classifying' };
 }
 
 // ── Helpers ──

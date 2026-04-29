@@ -39,8 +39,8 @@ const SYSDESIGN_AUDIO_CONFIG = {
   breath_pause: 0.15,
 };
 const CHUNK_MAX_LEN = 190;
-const BATCH_SIZE = 5;
-const BATCH_WAIT_MS = 1500;
+const BATCH_SIZE = 2;
+const BATCH_WAIT_MS = 3000;
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
