@@ -34,8 +34,13 @@ export async function DELETE(
 
     // Cascade delete related records
     const tx = db.transaction(() => {
+      // Delete snapshots first (FK → pipeline_runs)
+      db.prepare(
+        'DELETE FROM pipeline_snapshots WHERE pipeline_run_id IN (SELECT id FROM pipeline_runs WHERE episode_id = ?)'
+      ).run(episodeId);
       db.prepare('DELETE FROM episode_tool_mentions WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM llm_calls WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM service_costs WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM pipeline_runs WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
     });

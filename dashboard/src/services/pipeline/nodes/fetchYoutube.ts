@@ -11,13 +11,13 @@
 
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
-import { withRetry } from '@/lib/retry';
+import { fetchWithKeyRotation, getYouTubeApiKey } from '@/lib/youtubeKeys';
 import type { PipelineState, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:fetch');
 
-// Search keyword groups (matches n8n exactly)
-const SEARCH_QUERIES: Record<string, string[]> = {
+// Default search keywords (fallback if DB has no config)
+const DEFAULT_SEARCH_QUERIES: Record<string, string[]> = {
   daily: [
     'Top AI tools',
     'AI automation',
@@ -68,6 +68,26 @@ const SEARCH_QUERIES: Record<string, string[]> = {
   ],
 };
 
+/** Read search keywords from DB settings, fall back to hardcoded defaults. */
+export function getSearchQueries(): Record<string, string[]> {
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'search_keywords'").get() as { value: string } | undefined;
+    if (row) {
+      const parsed = JSON.parse(row.value);
+      // Merge: use DB value per segment, fall back to default if missing
+      return {
+        daily: parsed.daily || DEFAULT_SEARCH_QUERIES.daily,
+        weekly: parsed.weekly || DEFAULT_SEARCH_QUERIES.weekly,
+        robot: parsed.robot || DEFAULT_SEARCH_QUERIES.robot,
+      };
+    }
+  } catch {
+    // DB not ready or parse error
+  }
+  return DEFAULT_SEARCH_QUERIES;
+}
+
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
@@ -97,45 +117,37 @@ export async function fetchYoutube(state: PipelineState): Promise<Partial<Pipeli
     return { videos, status: 'classifying' };
   }
 
-  const apiKey = process.env.YOUTUBE_API_KEY;
-  if (!apiKey) {
-    log.warn('YOUTUBE_API_KEY not set, skipping fetch');
+  if (!getYouTubeApiKey()) {
+    log.warn('No YouTube API keys configured, skipping fetch');
     return { videos: [], status: 'classifying' };
   }
 
   // Weekly uses same keywords as daily but wider time window
+  const SEARCH_QUERIES = getSearchQueries();
   const queries = state.segmentType === 'weekly'
     ? SEARCH_QUERIES.daily
     : (SEARCH_QUERIES[state.segmentType] || SEARCH_QUERIES.daily);
   const searchDays = state.segmentType === 'robot' ? 8.5
     : state.segmentType === 'weekly' ? 10
     : 2.5;
+  const publishedAfter = getDateDaysAgo(searchDays);
   const allVideos: VideoSource[] = [];
 
   // Step 1: Search with snippet only (no stats fetch yet — matches n8n)
   for (const query of queries) {
     try {
-      const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
-      searchUrl.searchParams.set('part', 'snippet');
-      searchUrl.searchParams.set('q', query);
-      searchUrl.searchParams.set('type', 'video');
-      searchUrl.searchParams.set('order', 'viewCount');
-      searchUrl.searchParams.set('maxResults', '4');
-      searchUrl.searchParams.set('regionCode', 'US');
-      searchUrl.searchParams.set('publishedAfter', getDateDaysAgo(searchDays));
-      searchUrl.searchParams.set('key', apiKey);
-
-      const searchResp = await withRetry(
-        async () => {
-          const r = await fetch(searchUrl.toString());
-          if (!r.ok) {
-            const errBody = await r.text().catch(() => '');
-            throw new Error(`YouTube search ${r.status}: ${errBody.slice(0, 200)}`);
-          }
-          return r;
-        },
-        { label: `youtube-search:${query}` },
-      );
+      const searchResp = await fetchWithKeyRotation((key) => {
+        const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+        searchUrl.searchParams.set('part', 'snippet');
+        searchUrl.searchParams.set('q', query);
+        searchUrl.searchParams.set('type', 'video');
+        searchUrl.searchParams.set('order', 'viewCount');
+        searchUrl.searchParams.set('maxResults', '4');
+        searchUrl.searchParams.set('regionCode', 'US');
+        searchUrl.searchParams.set('publishedAfter', publishedAfter);
+        searchUrl.searchParams.set('key', key);
+        return searchUrl.toString();
+      }, `search:${query}`);
 
       const searchData = await searchResp.json();
       for (const item of searchData.items || []) {

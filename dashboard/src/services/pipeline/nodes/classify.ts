@@ -15,6 +15,7 @@ import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
+import { fetchWithKeyRotation } from '@/lib/youtubeKeys';
 import type { PipelineState, SourceLink, VideoSource } from '../state';
 
 const log = createChildLogger('pipeline:classify');
@@ -99,52 +100,43 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   // ── Step 2: Fetch full stats for relevant videos only ──
   log.info({ count: relevantVideos.length }, 'Step 2: Fetching stats for relevant videos');
 
-  const apiKey = process.env.YOUTUBE_API_KEY;
-  if (apiKey) {
-    // Batch in groups of 50 (YouTube API limit)
-    const videoIds = relevantVideos.map((v) => v.videoId);
-    for (let i = 0; i < videoIds.length; i += 50) {
-      const batch = videoIds.slice(i, i + 50);
-      try {
+  // Batch in groups of 50 (YouTube API limit)
+  const videoIds = relevantVideos.map((v) => v.videoId);
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const resp = await fetchWithKeyRotation((key) => {
         const detailUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
         detailUrl.searchParams.set('part', 'snippet,contentDetails,statistics');
         detailUrl.searchParams.set('id', batch.join(','));
-        detailUrl.searchParams.set('key', apiKey);
+        detailUrl.searchParams.set('key', key);
+        return detailUrl.toString();
+      }, 'stats');
 
-        const resp = await withRetry(
-          async () => {
-            const r = await fetch(detailUrl.toString());
-            if (!r.ok) throw new Error(`YouTube stats ${r.status}`);
-            return r;
-          },
-          { label: 'youtube-stats' },
-        );
+      const data = await resp.json();
+      const statsMap = new Map<string, { views: number; likes: number; comments: number; duration: number }>();
 
-        const data = await resp.json();
-        const statsMap = new Map<string, { views: number; likes: number; comments: number; duration: number }>();
-
-        for (const item of data.items || []) {
-          statsMap.set(item.id, {
-            views: parseInt(item.statistics.viewCount || '0'),
-            likes: parseInt(item.statistics.likeCount || '0'),
-            comments: parseInt(item.statistics.commentCount || '0'),
-            duration: parseDuration(item.contentDetails.duration),
-          });
-        }
-
-        // Update video objects with stats
-        for (const video of relevantVideos) {
-          const stats = statsMap.get(video.videoId);
-          if (stats) {
-            video.viewCount = stats.views;
-            video.likeCount = stats.likes;
-            video.commentCount = stats.comments;
-            video.durationSeconds = stats.duration;
-          }
-        }
-      } catch (error) {
-        log.error({ error: (error as Error).message }, 'Stats fetch error');
+      for (const item of data.items || []) {
+        statsMap.set(item.id, {
+          views: parseInt(item.statistics.viewCount || '0'),
+          likes: parseInt(item.statistics.likeCount || '0'),
+          comments: parseInt(item.statistics.commentCount || '0'),
+          duration: parseDuration(item.contentDetails.duration),
+        });
       }
+
+      // Update video objects with stats
+      for (const video of relevantVideos) {
+        const stats = statsMap.get(video.videoId);
+        if (stats) {
+          video.viewCount = stats.views;
+          video.likeCount = stats.likes;
+          video.commentCount = stats.comments;
+          video.durationSeconds = stats.duration;
+        }
+      }
+    } catch (error) {
+      log.error({ error: (error as Error).message }, 'Stats fetch error');
     }
   }
 
@@ -248,12 +240,12 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
       : isWeekly ? 'weekly_youtube_sources'
       : 'youtube_sources';
     db.prepare(
-      `INSERT OR REPLACE INTO ${saveTable} (video_id, title, channel_name, published_at, view_count, like_count, comment_count, duration_seconds, transcript, used_in_episode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT OR REPLACE INTO ${saveTable} (video_id, title, channel_name, published_at, view_count, like_count, comment_count, duration_seconds, transcript)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       video.videoId, video.title, video.channelName, video.publishedAt,
       video.viewCount, video.likeCount, video.commentCount, video.durationSeconds,
-      video.transcript, state.episodeId
+      video.transcript,
     );
 
     // Rate limit between Apify calls (matches n8n 等待8秒)
@@ -280,44 +272,36 @@ async function classifySysdesign(
   state: PipelineState,
   db: ReturnType<typeof getDb>,
 ): Promise<Partial<PipelineState>> {
-  const apiKey = process.env.YOUTUBE_API_KEY;
   const videos = [...state.videos];
 
   // Fetch stats to get titles, channel names, durations
-  if (apiKey) {
-    const videoIds = videos.map((v) => v.videoId);
-    for (let i = 0; i < videoIds.length; i += 50) {
-      const batch = videoIds.slice(i, i + 50);
-      try {
+  const videoIds = videos.map((v) => v.videoId);
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const resp = await fetchWithKeyRotation((key) => {
         const detailUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
         detailUrl.searchParams.set('part', 'snippet,contentDetails,statistics');
         detailUrl.searchParams.set('id', batch.join(','));
-        detailUrl.searchParams.set('key', apiKey);
+        detailUrl.searchParams.set('key', key);
+        return detailUrl.toString();
+      }, 'stats-sysdesign');
 
-        const resp = await withRetry(
-          async () => {
-            const r = await fetch(detailUrl.toString());
-            if (!r.ok) throw new Error(`YouTube stats ${r.status}`);
-            return r;
-          },
-          { label: 'youtube-stats-sysdesign' },
-        );
-        const data = await resp.json();
-        for (const item of data.items || []) {
-          const video = videos.find((v) => v.videoId === item.id);
-          if (video) {
-            video.title = item.snippet.title;
-            video.channelName = item.snippet.channelTitle;
-            video.publishedAt = item.snippet.publishedAt;
-            video.viewCount = parseInt(item.statistics.viewCount || '0');
-            video.likeCount = parseInt(item.statistics.likeCount || '0');
-            video.commentCount = parseInt(item.statistics.commentCount || '0');
-            video.durationSeconds = parseDuration(item.contentDetails.duration);
-          }
+      const data = await resp.json();
+      for (const item of data.items || []) {
+        const video = videos.find((v) => v.videoId === item.id);
+        if (video) {
+          video.title = item.snippet.title;
+          video.channelName = item.snippet.channelTitle;
+          video.publishedAt = item.snippet.publishedAt;
+          video.viewCount = parseInt(item.statistics.viewCount || '0');
+          video.likeCount = parseInt(item.statistics.likeCount || '0');
+          video.commentCount = parseInt(item.statistics.commentCount || '0');
+          video.durationSeconds = parseDuration(item.contentDetails.duration);
         }
-      } catch (error) {
-        log.error({ error: (error as Error).message }, 'Sysdesign stats fetch error');
       }
+    } catch (error) {
+      log.error({ error: (error as Error).message }, 'Sysdesign stats fetch error');
     }
   }
 

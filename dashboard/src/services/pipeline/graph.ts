@@ -177,6 +177,9 @@ export async function startPipeline(
     // Update episode
     updateEpisodeFromState(db, finalState, episodeId);
 
+    // Mark selected videos as used (only on success)
+    markVideosUsed(db, finalState, episodeId);
+
     log.info({ episodeId, pipelineRunId }, 'Pipeline completed, awaiting review');
     return { pipelineRunId, state: finalState };
   } catch (error) {
@@ -390,6 +393,7 @@ export async function retryFromStage(
     ).run(newRunId);
 
     updateEpisodeFromState(db, currentState, episodeId);
+    markVideosUsed(db, currentState, episodeId);
 
     log.info({ newRunId, fromStage }, 'Retry completed');
     return { newPipelineRunId: newRunId };
@@ -437,6 +441,31 @@ function wrapNode(
     log.info({ node: name, elapsed: `${elapsed}ms` }, 'Node completed');
     return result;
   };
+}
+
+/**
+ * Mark selected videos as used in the appropriate youtube_sources table.
+ * Only called after pipeline completes successfully.
+ */
+function markVideosUsed(
+  db: ReturnType<typeof getDb>,
+  state: PipelineState,
+  episodeId: number
+) {
+  const videoIds = (state.selectedVideos || []).map((v) => v.videoId).filter(Boolean);
+  if (videoIds.length === 0) return;
+
+  const isRobot = state.segmentType === 'robot';
+  const isWeekly = state.segmentType === 'weekly';
+  const table = isRobot ? 'robot_youtube_sources'
+    : isWeekly ? 'weekly_youtube_sources'
+    : 'youtube_sources';
+
+  const stmt = db.prepare(`UPDATE ${table} SET used_in_episode = ? WHERE video_id = ?`);
+  for (const vid of videoIds) {
+    stmt.run(episodeId, vid);
+  }
+  log.info({ table, count: videoIds.length, episodeId }, 'Marked videos as used');
 }
 
 /**
