@@ -7,7 +7,7 @@ import PipelineTimeline from './PipelineTimeline';
 import ScriptEditor from './ScriptEditor';
 import QualityBreakdown from './QualityBreakdown';
 import QualityHistory from './QualityHistory';
-import LlmCallsLog from './LlmCallsLog';
+
 import SourceVideos from './SourceVideos';
 import RetryControls from './RetryControls';
 import RepublishSection from './RepublishSection';
@@ -390,11 +390,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             currentStage={pipelineRun.current_stage}
             pipelineStatus={pipelineRun.status}
             errorLog={pipelineRun.error_log}
+            llmCalls={llmCalls}
           />
         )}
-
-        {/* LLM Calls Log */}
-        <LlmCallsLog calls={llmCalls} />
 
         {/* Source Videos */}
         <SourceVideos

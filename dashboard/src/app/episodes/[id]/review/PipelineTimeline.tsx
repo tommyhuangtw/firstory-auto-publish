@@ -10,11 +10,25 @@ interface Snapshot {
   elapsed_ms: number;
 }
 
+interface LlmCall {
+  id: number;
+  stage: string;
+  model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  latency_ms: number | null;
+  success: number;
+  error_message: string | null;
+  created_at: string;
+}
+
 interface Props {
   pipelineRunId: number;
   currentStage: string | null;
   pipelineStatus: string;
   errorLog: string | null;
+  llmCalls: LlmCall[];
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -24,7 +38,6 @@ const STAGE_LABELS: Record<string, string> = {
   extractTools: '工具擷取',
   translate: '中文翻譯',
   customContentInsert: '客製內容插入',
-  enrichMemory: '記憶強化',
   scoreQuality: '品質評分',
   generateMeta: '標題描述',
   generateCover: '封面生成',
@@ -33,9 +46,33 @@ const STAGE_LABELS: Record<string, string> = {
   notify: '通知發送',
 };
 
-export default function PipelineTimeline({ pipelineRunId, currentStage, pipelineStatus, errorLog }: Props) {
+/** Map LLM call stage names to pipeline node names */
+const LLM_STAGE_TO_NODE: Record<string, string> = {
+  classify: 'classify',
+  summarize_transcript: 'scriptEnglish',
+  script_en: 'scriptEnglish',
+  tool_extraction: 'extractTools',
+  script_zh: 'translate',
+  custom_content_insert: 'customContentInsert',
+  scoring: 'scoreQuality',
+  script_refine: 'scoreQuality',
+  script_summary: 'generateMeta',
+  title_gen: 'generateMeta',
+  description_gen: 'generateMeta',
+  tags_gen: 'generateMeta',
+  ig_scenario_extract: 'generateCover',
+  ig_scenario: 'generateCover',
+  ig_caption: 'notify',
+  email_content: 'notify',
+  email_html: 'notify',
+  fb_caption: 'notify',
+  threads_caption: 'notify',
+};
+
+export default function PipelineTimeline({ pipelineRunId, currentStage, pipelineStatus, errorLog, llmCalls }: Props) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showSnapshot, setShowSnapshot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,6 +82,19 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [pipelineRunId]);
+
+  // Group LLM calls by pipeline node
+  const callsByNode = new Map<string, LlmCall[]>();
+  for (const call of llmCalls) {
+    const node = LLM_STAGE_TO_NODE[call.stage] || call.stage;
+    const arr = callsByNode.get(node) || [];
+    arr.push(call);
+    callsByNode.set(node, arr);
+  }
+
+  const totalCost = llmCalls.reduce((sum, c) => sum + (c.cost_usd || 0), 0);
+  const totalTokens = llmCalls.reduce((sum, c) => sum + (c.input_tokens || 0) + (c.output_tokens || 0), 0);
+  const failedCount = llmCalls.filter((c) => !c.success).length;
 
   if (loading) {
     return (
@@ -61,9 +111,20 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
         <h3 className="text-sm font-medium text-zinc-300">Pipeline Timeline</h3>
-        <span className="text-[11px] text-zinc-400 tabular-nums">
-          Run #{pipelineRunId}
-        </span>
+        <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+          {llmCalls.length > 0 && (
+            <>
+              <span>{llmCalls.length} calls</span>
+              <span className="tabular-nums">{totalTokens.toLocaleString()} tokens</span>
+              <span className="tabular-nums">${totalCost.toFixed(4)}</span>
+              {failedCount > 0 && (
+                <span className="text-red-400">{failedCount} failed</span>
+              )}
+              <span className="text-zinc-600">|</span>
+            </>
+          )}
+          <span>Run #{pipelineRunId}</span>
+        </div>
       </div>
 
       <div className="divide-y divide-zinc-800/50">
@@ -72,15 +133,16 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
           const isCurrent = stage === currentStage && pipelineStatus === 'running';
           const isFailed = stage === currentStage && pipelineStatus === 'failed';
           const isDone = !!snap;
-          const isExpanded = expanded === snap?.id;
+          const isExpanded = expanded === stage;
+          const nodeCalls = callsByNode.get(stage) || [];
 
           return (
             <div key={stage}>
               <button
-                onClick={() => snap && setExpanded(isExpanded ? null : snap.id)}
-                disabled={!snap}
+                onClick={() => (snap || nodeCalls.length > 0) && setExpanded(isExpanded ? null : stage)}
+                disabled={!snap && nodeCalls.length === 0}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer ${
-                  snap ? 'hover:bg-zinc-800/50' : ''
+                  snap || nodeCalls.length > 0 ? 'hover:bg-zinc-800/50' : ''
                 } ${isExpanded ? 'bg-zinc-800/30' : ''}`}
               >
                 {/* Status indicator */}
@@ -110,6 +172,17 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
                   {STAGE_LABELS[stage] || stage}
                 </span>
 
+                {/* LLM call count + cost for this stage */}
+                {nodeCalls.length > 0 && (() => {
+                  const stageCost = nodeCalls.reduce((sum, c) => sum + (c.cost_usd || 0), 0);
+                  return (
+                    <span className="text-[11px] text-zinc-500 tabular-nums flex items-center gap-2">
+                      <span>{nodeCalls.length} {nodeCalls.length === 1 ? 'call' : 'calls'}</span>
+                      {stageCost > 0 && <span>${stageCost.toFixed(4)}</span>}
+                    </span>
+                  );
+                })()}
+
                 {/* Elapsed time */}
                 {snap && (
                   <span className="text-[11px] text-zinc-400 tabular-nums">
@@ -120,7 +193,7 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
                 )}
 
                 {/* Expand icon */}
-                {snap && (
+                {(snap || nodeCalls.length > 0) && (
                   <svg
                     className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
@@ -130,12 +203,76 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
                 )}
               </button>
 
-              {/* Expanded snapshot data */}
-              {isExpanded && snap && (
-                <div className="px-4 pb-3">
-                  <pre className="bg-zinc-950 rounded-lg p-3 text-[11px] text-zinc-400 font-mono overflow-x-auto max-h-64 overflow-y-auto leading-relaxed">
-                    {formatJSON(snap.output_data)}
-                  </pre>
+              {/* Expanded: LLM calls + snapshot */}
+              {isExpanded && (
+                <div className="px-4 pb-3 space-y-2">
+                  {/* LLM calls table */}
+                  {nodeCalls.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-zinc-500">
+                            <th className="text-left py-1 pr-3 font-medium">Stage</th>
+                            <th className="text-left py-1 pr-3 font-medium">Model</th>
+                            <th className="text-right py-1 pr-3 font-medium">Tokens</th>
+                            <th className="text-right py-1 pr-3 font-medium">Cost</th>
+                            <th className="text-right py-1 pr-3 font-medium">Latency</th>
+                            <th className="text-center py-1 font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {nodeCalls.map((call) => (
+                            <tr key={call.id} className="text-zinc-400">
+                              <td className="py-1 pr-3">{call.stage}</td>
+                              <td className="py-1 pr-3 font-mono">{call.model.split('/').pop()}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">
+                                {((call.input_tokens || 0) + (call.output_tokens || 0)).toLocaleString()}
+                              </td>
+                              <td className="py-1 pr-3 text-right tabular-nums">
+                                {call.cost_usd != null ? `$${call.cost_usd.toFixed(4)}` : '-'}
+                              </td>
+                              <td className="py-1 pr-3 text-right tabular-nums">
+                                {call.latency_ms != null ? `${(call.latency_ms / 1000).toFixed(1)}s` : '-'}
+                              </td>
+                              <td className="py-1 text-center">
+                                {call.success ? (
+                                  <span className="text-emerald-500">ok</span>
+                                ) : (
+                                  <span className="text-red-400" title={call.error_message || ''}>fail</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Snapshot JSON (collapsible) */}
+                  {snap && (
+                    <div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowSnapshot(showSnapshot === stage ? null : stage);
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer"
+                      >
+                        <svg
+                          className={`w-3 h-3 transition-transform ${showSnapshot === stage ? 'rotate-90' : ''}`}
+                          fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                        Snapshot JSON
+                      </button>
+                      {showSnapshot === stage && (
+                        <pre className="mt-1.5 bg-zinc-950 rounded-lg p-3 text-[11px] text-zinc-400 font-mono overflow-x-auto max-h-64 overflow-y-auto leading-relaxed">
+                          {formatJSON(snap.output_data)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -157,7 +294,6 @@ export default function PipelineTimeline({ pipelineRunId, currentStage, pipeline
 function formatJSON(raw: string): string {
   try {
     const parsed = JSON.parse(raw);
-    // Truncate long strings for display
     const truncated = JSON.parse(JSON.stringify(parsed, (_, v) => {
       if (typeof v === 'string' && v.length > 500) return v.slice(0, 500) + '...';
       return v;

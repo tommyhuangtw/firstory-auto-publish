@@ -1,8 +1,8 @@
 /**
  * LangGraph Content Pipeline — StateGraph definition.
  *
- * Replaces n8n workflow. 13 stages (linear) + publish triggered after review:
- * fetch → classify → script → extractTools → translate → customContentInsert → enrichMemory → quality → meta → cover → tts → upload → notify → END
+ * Replaces n8n workflow. 12 stages (linear) + publish triggered after review:
+ * fetch → classify → script → extractTools → translate → customContentInsert → quality → meta → cover → tts → upload → notify → END
  * (pipeline pauses at 'pending_review'; publish is triggered via /api/episodes/:id/approve)
  */
 
@@ -29,7 +29,7 @@ import { scriptEnglish } from './nodes/scriptEnglish';
 import { extractTools } from './nodes/extractTools';
 import { translate } from './nodes/translate';
 import { customContentInsert } from './nodes/customContentInsert';
-import { enrichMemory } from './nodes/enrichMemory';
+
 import { qualityScore } from './nodes/qualityScore';
 import { generateMeta } from './nodes/generateMeta';
 import { generateCover } from './nodes/generateCover';
@@ -100,7 +100,7 @@ function buildGraph() {
     .addNode('extractTools', wrapNode('extractTools', extractTools))
     .addNode('translate', wrapNode('translate', translate))
     .addNode('customContentInsert', wrapNode('customContentInsert', customContentInsert))
-    .addNode('enrichMemory', wrapNode('enrichMemory', enrichMemory))
+
     .addNode('scoreQuality', wrapNode('scoreQuality', qualityScore))
     .addNode('generateMeta', wrapNode('generateMeta', generateMeta))
     .addNode('generateCover', wrapNode('generateCover', generateCover))
@@ -113,8 +113,7 @@ function buildGraph() {
     .addEdge('scriptEnglish', 'extractTools')
     .addEdge('extractTools', 'translate')
     .addEdge('translate', 'customContentInsert')
-    .addEdge('customContentInsert', 'enrichMemory')
-    .addEdge('enrichMemory', 'scoreQuality')
+    .addEdge('customContentInsert', 'scoreQuality')
     .addEdge('scoreQuality', 'generateMeta')
     .addEdge('generateMeta', 'generateCover')
     .addEdge('generateCover', 'synthesizeTts')
@@ -278,7 +277,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
  */
 const STAGE_ORDER = [
   'fetchYoutube', 'classify', 'scriptEnglish', 'extractTools', 'translate',
-  'customContentInsert', 'enrichMemory', 'scoreQuality', 'generateMeta',
+  'customContentInsert', 'scoreQuality', 'generateMeta',
   'generateCover', 'synthesizeTts', 'uploadAssets', 'notify',
 ] as const;
 
@@ -287,7 +286,7 @@ const STAGE_ORDER = [
  */
 const NODE_FNS: Record<string, (state: PipelineState) => Promise<Partial<PipelineState>>> = {
   fetchYoutube, classify, scriptEnglish, extractTools, translate,
-  customContentInsert, enrichMemory, scoreQuality: qualityScore,
+  customContentInsert, scoreQuality: qualityScore,
   generateMeta, generateCover, synthesizeTts: tts,
   uploadAssets, notify,
 };

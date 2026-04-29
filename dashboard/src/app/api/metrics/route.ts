@@ -6,7 +6,7 @@ export async function GET() {
 
   // Cost per episode — combined LLM + service costs, using episode_id as primary key
   const costPerEpisode = db.prepare(`
-    SELECT COALESCE(e.episode_number, e.id) as episode_number,
+    SELECT e.episode_number,
       COALESCE(lc.llm_cost, 0) as llm_cost,
       COALESCE(sc.tts_cost, 0) as tts_cost,
       COALESCE(sc.image_cost, 0) as image_cost,
@@ -24,7 +24,8 @@ export async function GET() {
       FROM service_costs WHERE episode_id IS NOT NULL
       GROUP BY episode_id
     ) sc ON sc.episode_id = e.id
-    ORDER BY e.id
+    WHERE e.episode_number IS NOT NULL
+    ORDER BY e.episode_number
   `).all();
 
   // Cost breakdown by stage (LLM stages + service types)

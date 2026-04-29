@@ -14,7 +14,7 @@ import { isBlocked, resolveCanonicalName } from './toolFamilies';
 
 const log = createChildLogger('memory:extractor');
 
-const EXTRACTION_MODEL = 'google/gemini-2.5-flash-lite';
+const EXTRACTION_MODEL = 'google/gemini-3.1-flash-lite-preview';
 
 // ── Types ──
 

@@ -133,8 +133,11 @@ export default function AnalyticsClient() {
       {/* Header + Upload */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-brand-cream">節目分析</h1>
-          <p className="text-sm text-zinc-400 mt-1">SoundOn 下載數據分析</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <span className="w-1 h-6 rounded-full bg-brand" />
+            節目分析
+          </h1>
+          <p className="text-brand-taupe text-sm mt-1">SoundOn 下載數據分析</p>
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -166,7 +169,7 @@ export default function AnalyticsClient() {
       )}
 
       {!hasData && !loading && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
           <p className="text-zinc-400 text-lg mb-2">尚無分析數據</p>
           <p className="text-zinc-500 text-sm">上傳 SoundOn CSV 檔案以開始分析</p>
         </div>
@@ -201,15 +204,15 @@ export default function AnalyticsClient() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 bg-zinc-900 p-1 rounded-lg w-fit">
+          <div className="flex gap-1 border-b border-zinc-800">
             {tabs.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
                   tab === t.key
-                    ? 'bg-brand/20 text-brand'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'text-brand border-brand'
+                    : 'text-zinc-400 border-transparent hover:text-zinc-200'
                 }`}
               >
                 {t.label}
@@ -221,15 +224,15 @@ export default function AnalyticsClient() {
           {tab === 'trend' && (
             <div className="space-y-4">
               {/* Range selector */}
-              <div className="flex gap-1">
+              <div className="flex gap-1 border-b border-zinc-800/50 pb-2">
                 {ranges.map((r) => (
                   <button
                     key={r.key}
                     onClick={() => setRange(r.key)}
-                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-[9px] ${
                       range === r.key
-                        ? 'bg-brand/20 text-brand'
-                        : 'text-zinc-500 hover:text-zinc-300'
+                        ? 'text-brand border-brand'
+                        : 'text-zinc-500 border-transparent hover:text-zinc-300'
                     }`}
                   >
                     {r.label}
@@ -237,8 +240,8 @@ export default function AnalyticsClient() {
                 ))}
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                <h3 className="text-sm font-medium text-zinc-300 mb-4">每日下載量</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">每日下載量</h3>
                 <ResponsiveContainer width="100%" height={320}>
                   <AreaChart data={data.dailyDownloads}>
                     <defs>
@@ -289,7 +292,7 @@ export default function AnalyticsClient() {
           {tab === 'ranking' && (
             <div className="space-y-4">
               {/* Sort selector */}
-              <div className="flex gap-2">
+              <div className="flex gap-1 border-b border-zinc-800/50 pb-2">
                 {[
                   { key: 'total_downloads', label: '總下載' },
                   { key: 'downloads_7d', label: '7天下載' },
@@ -299,10 +302,10 @@ export default function AnalyticsClient() {
                   <button
                     key={s.key}
                     onClick={() => setSort(s.key)}
-                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-[9px] ${
                       sort === s.key
-                        ? 'bg-brand/20 text-brand'
-                        : 'text-zinc-500 hover:text-zinc-300'
+                        ? 'text-brand border-brand'
+                        : 'text-zinc-500 border-transparent hover:text-zinc-300'
                     }`}
                   >
                     {s.label}
@@ -311,8 +314,8 @@ export default function AnalyticsClient() {
               </div>
 
               {/* Top 20 bar chart */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                <h3 className="text-sm font-medium text-zinc-300 mb-4">下載數 Top 20</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">下載數 Top 20</h3>
                 <ResponsiveContainer width="100%" height={400}>
                   <BarChart
                     data={data.episodes.slice(0, 20)}
@@ -338,7 +341,7 @@ export default function AnalyticsClient() {
               </div>
 
               {/* Episode table */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -388,8 +391,8 @@ export default function AnalyticsClient() {
           {tab === 'analysis' && (
             <div className="space-y-4">
               {/* Weekly trend */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                <h3 className="text-sm font-medium text-zinc-300 mb-4">每週平均下載量</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">每週平均下載量</h3>
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={data.weeklyAverages}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -427,8 +430,8 @@ export default function AnalyticsClient() {
 
               {/* Episode stats */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                  <h3 className="text-sm font-medium text-zinc-300 mb-3">集數統計</h3>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-3">集數統計</h3>
                   <div className="space-y-2 text-sm">
                     <StatRow label="已發佈集數" value={data.summary.totalEpisodes.toString()} />
                     <StatRow label="平均單集下載數" value={data.summary.avgDownloadsPerEpisode.toLocaleString()} />
@@ -444,8 +447,8 @@ export default function AnalyticsClient() {
                   </div>
                 </div>
 
-                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                  <h3 className="text-sm font-medium text-zinc-300 mb-3">下載數據摘要</h3>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-3">下載數據摘要</h3>
                   <div className="space-y-2 text-sm">
                     <StatRow label="不重複下載數" value={data.summary.totalUniqueDownloads.toLocaleString()} />
                     <StatRow label="總下載數" value={data.summary.totalDownloads.toLocaleString()} />
@@ -483,10 +486,10 @@ function SummaryCard({ label, value, sub, highlight }: {
   sub?: string;
   highlight?: 'green' | 'red';
 }) {
-  const valueColor = highlight === 'green' ? 'text-green-400' : highlight === 'red' ? 'text-red-400' : 'text-brand-cream';
+  const valueColor = highlight === 'green' ? 'text-green-400' : highlight === 'red' ? 'text-red-400' : 'text-zinc-100';
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-      <p className="text-xs text-zinc-500 mb-1">{label}</p>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+      <p className="text-xs text-brand-taupe uppercase tracking-wider mb-1">{label}</p>
       <p className={`text-xl font-bold ${valueColor}`}>{value}</p>
       {sub && <p className="text-xs text-zinc-500 mt-0.5">{sub}</p>}
     </div>

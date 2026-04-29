@@ -18,7 +18,7 @@ import type { PipelineState } from '../state';
 const log = createChildLogger('pipeline:cover');
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'covers');
-const SCENARIO_MODEL = 'google/gemini-3-flash-preview';
+const SCENARIO_MODEL = 'google/gemini-3.1-flash-lite-preview';
 const EXTRACTION_MODEL = 'google/gemini-3.1-flash-lite-preview';
 
 // n8n 5 reference images for kie.ai

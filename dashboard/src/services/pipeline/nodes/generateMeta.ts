@@ -12,6 +12,8 @@ import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:meta');
 
+const META_MODEL = 'google/gemini-3.1-flash-lite-preview';
+
 export async function generateMeta(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info('Generating metadata (titles, description, tags)');
 
@@ -36,16 +38,33 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
       .run(summary, state.episodeId);
   } catch { /* non-critical */ }
 
-  // Step 1: Generate 10 title candidates + select best (combined in one LLM call)
+  // Steps 1-3: Generate titles, description, tags in parallel (all depend only on summary)
   const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
     : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
-  const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
-    titlePrompt,
-    'title_gen',
-    { episodeId: state.episodeId, maxTokens: 2048, temperature: 0.7 }
-  );
+  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
+    : isRobot ? buildRobotDescriptionPrompt(summary)
+    : isWeekly ? buildWeeklyDescriptionPrompt(summary)
+    : buildDescriptionPrompt(summary);
+
+  const [titlesResult, descResult, tagsResult] = await Promise.all([
+    llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
+      titlePrompt,
+      'title_gen',
+      { episodeId: state.episodeId, maxTokens: 2048, temperature: 0.7, preferredModel: META_MODEL }
+    ),
+    llm.generateJSON<{ description: string }>(
+      descPrompt,
+      'description_gen',
+      { episodeId: state.episodeId, maxTokens: 1024, temperature: 0.7, preferredModel: META_MODEL }
+    ),
+    llm.generateJSON<{ tags: string[] }>(
+      buildTagsPrompt(summary, ''),
+      'tags_gen',
+      { episodeId: state.episodeId, maxTokens: 512, temperature: 0.5, preferredModel: META_MODEL }
+    ),
+  ]);
 
   const candidateTitles = titlesResult.success && titlesResult.data?.titles
     ? titlesResult.data.titles
@@ -61,32 +80,12 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   log.info({ count: candidateTitles.length, selectedTitle: selectedTitle.slice(0, 50) }, 'Titles generated and best selected');
 
-  // Step 3: Generate description (source links appended deterministically after LLM generation)
-  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
-    : isRobot ? buildRobotDescriptionPrompt(summary)
-    : isWeekly ? buildWeeklyDescriptionPrompt(summary)
-    : buildDescriptionPrompt(summary);
-  const descResult = await llm.generateJSON<{ description: string }>(
-    descPrompt,
-    'description_gen',
-    { episodeId: state.episodeId, maxTokens: 1024, temperature: 0.7 }
-  );
-
   const description = descResult.success && descResult.data?.description
     ? descResult.data.description
       .replace(/.*drive\.google\.com.*\n?/g, '')
       .replace(/.*點擊這裡收聽.*\n?/g, '')
       .trim()
     : getFallbackDescription();
-
-  // YouTube description reuses podcast description (format differences handled by descriptionAssembler)
-
-  // Step 4: Generate tags
-  const tagsResult = await llm.generateJSON<{ tags: string[] }>(
-    buildTagsPrompt(summary, selectedTitle),
-    'tags_gen',
-    { episodeId: state.episodeId, maxTokens: 512, temperature: 0.5 }
-  );
 
   const tags = tagsResult.success && tagsResult.data?.tags
     ? tagsResult.data.tags
@@ -152,7 +151,7 @@ ${content}
   const result = await llm.generate(
     prompt,
     'script_summary',
-    { episodeId, maxTokens: 2048, temperature: 0.3 }
+    { episodeId, maxTokens: 2048, temperature: 0.3, preferredModel: META_MODEL }
   );
 
   if (result.success && result.content) {
@@ -559,7 +558,7 @@ export async function regenerateTitles(
   const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
     titlePrompt,
     'title_gen',
-    { episodeId, maxTokens: 2048, temperature: 0.7 }
+    { episodeId, maxTokens: 2048, temperature: 0.7, preferredModel: META_MODEL }
   );
 
   const candidateTitles = titlesResult.success && titlesResult.data?.titles
@@ -600,7 +599,7 @@ export async function regenerateDescription(
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,
     'description_gen',
-    { episodeId, maxTokens: 1024, temperature: 0.7 }
+    { episodeId, maxTokens: 1024, temperature: 0.7, preferredModel: META_MODEL }
   );
 
   if (descResult.success && descResult.data?.description) {
