@@ -43,6 +43,20 @@ const FOOTER_FIELDS: SettingField[] = [
   },
 ];
 
+interface WordCountField {
+  key: string;
+  label: string;
+  description: string;
+  defaultValue: string;
+}
+
+const WORD_COUNT_FIELDS: WordCountField[] = [
+  { key: 'word_count_daily', label: 'Daily', description: '每日 AI 懶人報', defaultValue: '4500-5000' },
+  { key: 'word_count_weekly', label: 'Weekly', description: '懶人精選週報', defaultValue: '5000-5500' },
+  { key: 'word_count_robot', label: 'Robot', description: '機器人觀察週報', defaultValue: '5000-6000' },
+  { key: 'word_count_sysdesign', label: 'System Design', description: '系統設計懶懶學', defaultValue: '6500-7500' },
+];
+
 export default function SettingsPage() {
   const [presets, setPresets] = useState<AdPreset[]>([]);
   const [footerValues, setFooterValues] = useState<Record<string, string>>({});
@@ -500,6 +514,40 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* Word Count Targets */}
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">腳本字數設定</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            各單元的中文腳本目標字數範圍（格式：最小-最大，例如 4500-5000）
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {WORD_COUNT_FIELDS.map((field) => (
+              <div key={field.key} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-zinc-300">{field.label}</label>
+                  <span className="text-[10px] text-zinc-500">{field.description}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={footerValues[field.key] || field.defaultValue}
+                    onChange={(e) => setFooterValues(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    placeholder={field.defaultValue}
+                    className="w-32 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 font-mono"
+                  />
+                  <button
+                    onClick={() => handleSaveFooter(field.key)}
+                    disabled={saving === field.key}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-300 transition-colors cursor-pointer"
+                  >
+                    {saving === field.key ? '...' : '儲存'}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

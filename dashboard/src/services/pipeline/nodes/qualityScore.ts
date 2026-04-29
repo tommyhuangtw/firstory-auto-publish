@@ -8,9 +8,32 @@
 
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
+import { getDb } from '@/db';
 import type { PipelineState, QualityScore, QualityIteration } from '../state';
 
 const log = createChildLogger('pipeline:quality');
+
+/** Count non-whitespace characters in a script. */
+function countScriptChars(text: string): number {
+  return text.replace(/\s/g, '').length;
+}
+
+/** Read word count target from DB settings, fallback to defaults. */
+function getWordCountTarget(segmentType: string): [number, number] {
+  const key = `word_count_${segmentType}`;
+  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  if (row?.value) {
+    const match = row.value.match(/(\d+)\s*-\s*(\d+)/);
+    if (match) return [parseInt(match[1]), parseInt(match[2])];
+  }
+  const defaults: Record<string, [number, number]> = {
+    daily: [4500, 5000],
+    weekly: [5000, 5500],
+    robot: [5000, 6000],
+    sysdesign: [6500, 7500],
+  };
+  return defaults[segmentType] || [4500, 5000];
+}
 
 const SCORING_MODEL = 'openai/gpt-5.4';
 const REWRITE_MODEL = 'google/gemini-3.1-pro-preview';
@@ -40,6 +63,7 @@ const SCORING_SYSTEM_PROMPT = `你是一位極度嚴苛、追求完美的 Podcas
 
 開場必須為固定格式：
 "每天都有一堆新的AI工具冒出來，是不是常常不知道該從哪裡開始？別擔心，這裡是AI懶人報，每天幫你精選五個最多人討論的AI工具影片，每天十分鐘，讓AI走進你的日常生活，讓你不知不覺成為效率大師。"
+（注：「每天十分鐘」為品牌口號，非實際時長限制。請勿因腳本超過 10 分鐘而扣分。）
 （注意！！ 開場後僅能接續約 3-5 句過渡語，快速帶出主題並切入重點，不可超過一段太長的鋪陳！）
 
 結尾處必須有導流句與評分邀請：
@@ -55,10 +79,10 @@ const SCORING_SYSTEM_PROMPT = `你是一位極度嚴苛、追求完美的 Podcas
 2. 中英夾雜控制（20 分）
 3. 台灣用語友善度（20 分）
 4. 說明具體性與易懂度（20 分）
-5. 字數控制（15 分）`;
+5. 字數控制（15 分）— 目標字數為 __WORD_COUNT_TARGET__ 字。評分標準：落在目標範圍內＝13-15 分；偏差 500 字以內＝9-12 分；偏差 500-1000 字＝5-8 分；偏差超過 1000 字＝0-4 分。`;
 
 // n8n exact system prompt for 4.腳本重寫Agent
-const REWRITE_SYSTEM_PROMPT = `你是一位專業的 Podcast 腳本優化專家，擅長將技術性或資訊性內容，轉換成輕鬆、有故事感、適合口語朗讀的 Podcast 腳本，整體篇幅要落於4000-5000 字左右的長度。
+const REWRITE_SYSTEM_PROMPT = `你是一位專業的 Podcast 腳本優化專家，擅長將技術性或資訊性內容，轉換成輕鬆、有故事感、適合口語朗讀的 Podcast 腳本，整體篇幅要落於__REWRITE_WORD_COUNT__字左右的長度。
 
 🎯 任務說明：
 請根據評分 Agent 所提供的審稿建議，針對原始 Podcast 腳本進行大幅優化。你的目標是將內容轉換成 自然、親切、容易理解 的敘述，適合用來口語錄製，目標是產出一段適合直接餵給語音合成模型（Text-to-Speech）朗讀的稿件，語句需自然、親切、無干擾物，讓聽眾在「像聽朋友講話」的節奏中獲得實用資訊。
@@ -104,12 +128,18 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
 }`;
 
 function getScoringPrompt(segmentType: string): string {
-  if (segmentType === 'daily') return SCORING_SYSTEM_PROMPT;
+  const [targetMin, targetMax] = getWordCountTarget(segmentType);
+  const targetStr = `${targetMin}-${targetMax}`;
+
+  if (segmentType === 'daily') {
+    return SCORING_SYSTEM_PROMPT.replace('__WORD_COUNT_TARGET__', targetStr);
+  }
 
   const fixedOpening = segmentType === 'sysdesign' ? SYSDESIGN_FIXED_OPENING
     : segmentType === 'robot' ? ROBOT_FIXED_OPENING
     : WEEKLY_FIXED_OPENING;
   let prompt = SCORING_SYSTEM_PROMPT
+    .replace('__WORD_COUNT_TARGET__', targetStr)
     .replace(
       `開場必須為固定格式：
 "每天都有一堆新的AI工具冒出來，是不是常常不知道該從哪裡開始？別擔心，這裡是AI懶人報，每天幫你精選五個最多人討論的AI工具影片，每天十分鐘，讓AI走進你的日常生活，讓你不知不覺成為效率大師。"
@@ -139,7 +169,7 @@ ${fixedOpening}
 2. 中英夾雜控制（15 分）
 3. 台灣用語友善度（15 分）
 4. 說明具體性與易懂度（15 分）
-5. 字數控制（15 分）
+5. 字數控制（15 分）— 目標字數為 ${targetStr} 字。評分標準：落在目標範圍內＝13-15 分；偏差 500 字以內＝9-12 分；偏差 500-1000 字＝5-8 分；偏差超過 1000 字＝0-4 分。
 6. 結構流暢度（20 分）— 此項為「系統設計懶懶學」專屬評分項目，請嚴格審查以下三點：
    a. 素材來源歸因：開場是否有用 1-2 句提到參考影片的作者或頻道背景？（不可省略）
    b. 懸念式重點預覽：進入技術深潛之前，是否用 2-4 句列出「今天要回答的問題」（而非直接列技術名詞如 sharding、replication），讓聽眾帶著好奇心進入深潛？
@@ -180,20 +210,19 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
 🎙 ver5：最近的AI發展依然快得讓我害怕，不想錯過明天再繼續收聽AI懶人報囉，我是湯懶懶，我們明天見，掰掰！`;
 
 function getRewritePrompt(segmentType: string): string {
-  if (segmentType === 'daily') return REWRITE_SYSTEM_PROMPT;
+  const [rwMin, rwMax] = getWordCountTarget(segmentType);
+  const wordCountStr = `${rwMin}-${rwMax}`;
+
+  if (segmentType === 'daily') {
+    return REWRITE_SYSTEM_PROMPT.replace('__REWRITE_WORD_COUNT__', wordCountStr);
+  }
 
   const fixedOpening = segmentType === 'sysdesign' ? SYSDESIGN_FIXED_OPENING
     : segmentType === 'robot' ? ROBOT_FIXED_OPENING
     : WEEKLY_FIXED_OPENING;
-  const wordCount = segmentType === 'sysdesign' ? '6500-7500'
-    : segmentType === 'robot' ? '5000-6000'
-    : '4500-5500';
   const closingText = segmentType === 'sysdesign' ? SYSDESIGN_REWRITE_CLOSING : DAILY_REWRITE_CLOSING;
   let prompt = REWRITE_SYSTEM_PROMPT
-    .replace(
-      '整體篇幅要落於4000-5000 字左右的長度',
-      `整體篇幅要落於${wordCount} 字左右的長度`
-    )
+    .replace('__REWRITE_WORD_COUNT__', wordCountStr)
     .replace(
       `開場必須為固定格式：
 "每天都有一堆新的AI工具冒出來，是不是常常不知道該從哪裡開始？別擔心，這裡是AI懶人報，每天幫你精選五個最多人討論的AI工具影片，每天十分鐘，讓AI走進你的日常生活，讓你不知不覺成為效率大師。"
@@ -264,7 +293,10 @@ export async function qualityScore(state: PipelineState): Promise<Partial<Pipeli
     const structureFlowComment = segmentType === 'sysdesign' ? `
     "structure_flow": "請檢查：(a) 是否有提到素材來源的作者/頻道背景 (b) 進入技術深潛前是否有重點預覽 (c) 主題之間是否有自然轉場",` : '';
 
-    const scoringUserPrompt = `【待評分腳本】
+    const actualCharCount = countScriptChars(currentScript);
+    const [tMin, tMax] = getWordCountTarget(segmentType);
+
+    const scoringUserPrompt = `【待評分腳本】（本腳本實際字數：${actualCharCount} 字，目標：${tMin}-${tMax} 字）
 ${currentScript}
 ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : ''}
 請根據以上內容給予評分與建議。
@@ -358,6 +390,14 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
     const structureFlowFeedback = segmentType === 'sysdesign' && score.comments.structure_flow
       ? `\n結構流暢度（素材來源歸因、重點預覽、主題轉場）：${score.comments.structure_flow}\n` : '';
 
+    const [rwMin, rwMax] = getWordCountTarget(segmentType);
+    const rwActual = countScriptChars(currentScript);
+    const wordCountGuidance = rwActual < rwMin
+      ? `目前字數 ${rwActual} 字，低於目標 ${rwMin}-${rwMax} 字，請增加內容使篇幅更充實。`
+      : rwActual > rwMax
+      ? `目前字數 ${rwActual} 字，超過目標 ${rwMin}-${rwMax} 字，請精簡內容。`
+      : `目前字數 ${rwActual} 字，已在目標 ${rwMin}-${rwMax} 字範圍內，請維持相近篇幅。`;
+
     const rewriteUserPrompt = `【目前腳本版本】
 ${currentScript}
 
@@ -371,11 +411,11 @@ ${currentScript}
 
 表達清晰及小故事使用：${score.comments.clarity}
 
-字數限制： ${score.comments.word_count}
+字數控制： ${wordCountGuidance}
 ${structureFlowFeedback}
 整體建議： ${score.comments.summary}
 
-請根據建議重寫腳本，產出 ${segmentType === 'sysdesign' ? '6500-7500' : isRobot ? '5000-6000' : isWeekly ? '4500-5500' : '4000-4500'} 字的完整繁體中文腳本。`;
+請根據建議重寫腳本，產出 ${rwMin}-${rwMax} 字的完整繁體中文腳本。`;
 
     const rewriteResult = await llm.call({
       stage: 'script_refine',

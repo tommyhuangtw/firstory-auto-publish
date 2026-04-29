@@ -259,7 +259,7 @@ export function buildMemoryContext(
       brief += ` — last version discussed: ${t.latest_version_detail}`;
     }
     if (t.current_summary) {
-      brief += ` — previous coverage: ${t.current_summary.slice(0, 150)}`;
+      brief += ` — previous coverage: ${t.current_summary}`;
     }
     if (daysSinceLast > 30) {
       brief += ` [not mentioned for ${daysSinceLast} days — worth a brief refresher]`;
