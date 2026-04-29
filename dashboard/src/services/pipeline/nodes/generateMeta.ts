@@ -36,12 +36,12 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
       .run(summary, state.episodeId);
   } catch { /* non-critical */ }
 
-  // Step 1: Generate 10 title candidates
+  // Step 1: Generate 10 title candidates + select best (combined in one LLM call)
   const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
     : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
-  const titlesResult = await llm.generateJSON<{ titles: string[] }>(
+  const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
     titlePrompt,
     'title_gen',
     { episodeId: state.episodeId, maxTokens: 2048, temperature: 0.7 }
@@ -51,24 +51,15 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     ? titlesResult.data.titles
     : getFallbackTitles();
 
-  log.info({ count: candidateTitles.length }, 'Title candidates generated');
-
-  // Step 2: Select best title
-  const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
-    buildTitleSelectionPrompt(candidateTitles, summary),
-    'title_select',
-    { episodeId: state.episodeId, maxTokens: 512, temperature: 0.3 }
-  );
-
   let selectedTitle = candidateTitles[0];
-  if (selectResult.success && selectResult.data) {
-    const idx = (selectResult.data.bestIndex || 1) - 1;
+  if (titlesResult.success && titlesResult.data?.bestIndex) {
+    const idx = (titlesResult.data.bestIndex || 1) - 1;
     if (idx >= 0 && idx < candidateTitles.length) {
       selectedTitle = candidateTitles[idx];
     }
   }
 
-  log.info({ selectedTitle: selectedTitle.slice(0, 50) }, 'Title selected');
+  log.info({ count: candidateTitles.length, selectedTitle: selectedTitle.slice(0, 50) }, 'Titles generated and best selected');
 
   // Step 3: Generate description (source links appended deterministically after LLM generation)
   const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
@@ -88,20 +79,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
       .trim()
     : getFallbackDescription();
 
-  // Step 3.5: Generate YouTube description (longer format with timestamps + CTA)
-  const ytDescPrompt = isSysdesign ? buildSysdesignYoutubeDescriptionPrompt(summary)
-    : isRobot ? buildRobotYoutubeDescriptionPrompt(summary)
-    : isWeekly ? buildWeeklyYoutubeDescriptionPrompt(summary)
-    : buildYoutubeDescriptionPrompt(summary);
-  const ytDescResult = await llm.generateJSON<{ youtubeDescription: string }>(
-    ytDescPrompt,
-    'youtube_description_gen',
-    { episodeId: state.episodeId, maxTokens: 1536, temperature: 0.7 }
-  );
-
-  const youtubeDescription = ytDescResult.success && ytDescResult.data?.youtubeDescription
-    ? ytDescResult.data.youtubeDescription.trim()
-    : description; // Fallback to podcast description
+  // YouTube description reuses podcast description (format differences handled by descriptionAssembler)
 
   // Step 4: Generate tags
   const tagsResult = await llm.generateJSON<{ tags: string[] }>(
@@ -116,22 +94,19 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   // Append source links (sysdesign only) — deterministic, not LLM-generated
   let finalDescription = description;
-  let finalYtDescription = youtubeDescription;
   if (isSysdesign && (state.sourceLinks || []).length > 0) {
     const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
-    const linksBlock = `\n\n---\n📎 參考資料：\n\n${linksText}`;
-    finalDescription += linksBlock;
-    finalYtDescription += linksBlock;
+    finalDescription += `\n\n---\n📎 參考資料：\n\n${linksText}`;
   }
 
-  log.info({ descLength: finalDescription.length, ytDescLength: finalYtDescription.length, tagCount: tags.length }, 'Meta generation complete');
+  log.info({ descLength: finalDescription.length, tagCount: tags.length }, 'Meta generation complete');
 
   return {
     scriptSummary: summary,
     candidateTitles,
     selectedTitle,
     description: finalDescription,
-    youtubeDescription: finalYtDescription,
+    youtubeDescription: finalDescription,
     tags,
     status: 'tts',
   };
@@ -239,8 +214,17 @@ ${summary}
 • 2 個用模式D（免費/賺錢）
 • 1 個用模式E（秘密/危險）
 
+生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
+
+── 選擇評分依據（根據 293 集下載數據）──
+加分模式（每命中一個 +10 分）：A 顛覆性問句、B 具體數字、C 大品牌+強動詞、D 免費/賺錢、E 秘密/危險
+扣分雷區（每踩一個 -15 分）：小工具當主角、太技術、模糊形容詞、純教學式
+其他加分：+5 內容相關度高、+3 知名品牌、+2 長度適中
+
 以 JSON 格式回傳：
-{ "titles": ["標題1", "標題2", ..., "標題10"] }`;
+{ "titles": ["標題1", "標題2", ..., "標題10"], "bestIndex": 1, "bestTitle": "完整標題", "reason": "選擇理由" }
+
+bestIndex 為 1-based 索引。`;
 }
 
 function buildRobotTitlePrompt(summary: string): string {
@@ -277,8 +261,17 @@ ${summary}
 3. 不要加 EPxx 或類型標記
 4. 不要在標題中加入「週報」「本週精選」「一週回顧」等詞彙（系統會自動加上）
 
+生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
+
+── 選擇評分依據 ──
+加分模式（每命中一個 +10 分）：A 顛覆性問句、B 具體數字+衝擊感、C 大品牌+強動詞、D 秘密/恐懼/未來衝擊
+扣分雷區（每踩一個 -15 分）：小公司當主角、太技術、模糊形容詞
+其他加分：+5 內容相關度高、+3 知名品牌、+2 長度適中
+
 以 JSON 格式回傳：
-{ "titles": ["標題1", ..., "標題10"] }`;
+{ "titles": ["標題1", ..., "標題10"], "bestIndex": 1, "bestTitle": "完整標題", "reason": "選擇理由" }
+
+bestIndex 為 1-based 索引。`;
 }
 
 function buildWeeklyTitlePrompt(summary: string): string {
@@ -330,8 +323,17 @@ ${summary}
 • 2 個用模式D（免費/賺錢）
 • 1 個用模式E（秘密/危險）
 
+生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
+
+── 選擇評分依據（根據 293 集下載數據）──
+加分模式（每命中一個 +10 分）：A 顛覆性問句、B 具體數字+盤點、C 大品牌+強動詞、D 免費/賺錢、E 秘密/危險
+扣分雷區（每踩一個 -15 分）：小工具當主角、太技術、模糊形容詞、純教學式
+其他加分：+5 內容相關度高、+3 知名品牌、+2 長度適中
+
 以 JSON 格式回傳：
-{ "titles": ["標題1", "標題2", ..., "標題10"] }`;
+{ "titles": ["標題1", "標題2", ..., "標題10"], "bestIndex": 1, "bestTitle": "完整標題", "reason": "選擇理由" }
+
+bestIndex 為 1-based 索引。`;
 }
 
 function buildSysdesignTitlePrompt(summary: string): string {
@@ -370,8 +372,17 @@ ${summary}
 4. 不要加 EPxx 集數編號
 5. 不要在標題中加入「懶懶學」（系統會自動加上）
 
+生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
+
+── 選擇評分依據 ──
+加分模式（每命中一個 +10 分）：A 面試必考句型、B 數字+規模衝擊、C 知名系統+拆解動詞、D 對比/選擇困境
+扣分雷區（每踩一個 -15 分）：太學術、沒具體系統、純技術規格
+其他加分：+5 內容相關度高、+3 知名系統名、+2 長度適中
+
 以 JSON 格式回傳：
-{ "titles": ["標題1", ..., "標題10"] }`;
+{ "titles": ["標題1", ..., "標題10"], "bestIndex": 1, "bestTitle": "完整標題", "reason": "選擇理由" }
+
+bestIndex 為 1-based 索引。`;
 }
 
 function buildSysdesignDescriptionPrompt(summary: string): string {
@@ -397,60 +408,6 @@ ${summary}
 { "description": "完整描述" }`;
 }
 
-function buildSysdesignYoutubeDescriptionPrompt(summary: string): string {
-  return `根據以下「系統設計懶懶學」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
-
-內容摘要：
-${summary}
-
-格式要求：
-1. 開頭段落（2-3句帶出本集要拆解的系統架構）
-2. 本集架構重點（每個重點直接描述設計決策和 trade-off）
-
-注意：
-- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
-- 不要附上參考資料連結，系統會自動附加
-- 200-400字、繁體中文、技術但易讀
-
-以 JSON 格式回傳：
-{ "youtubeDescription": "完整描述主體" }`;
-}
-
-function buildTitleSelectionPrompt(titles: string[], summary: string): string {
-  const titleList = titles.map((t, i) => `${i + 1}. ${t}`).join('\n');
-  return `你是 Podcast 下載量優化專家。根據以下 5 大高下載模式，從候選標題中選出最可能衝高下載量的標題。
-
-候選標題：
-${titleList}
-
-內容摘要：
-${summary}
-
-── 評分依據（根據 293 集下載數據）──
-
-加分模式（每命中一個 +10 分）：
-A. 顛覆性問句（+35% 下載）：挑戰現有認知、製造 FOMO
-B. 具體數字（+30% 下載）：用數字創造可信度和好奇心
-C. 大品牌+強動詞（+25% 下載）：知名品牌搭配爆炸性動詞
-D. 免費/賺錢鉤子（+28% 下載）：直擊錢包痛點
-E. 秘密/禁止/危險（+22% 下載）：製造好奇心缺口
-
-扣分雷區（每踩一個 -15 分）：
-❌ 聽眾不認識的小工具當主角
-❌ 太技術導向的用詞
-❌ 模糊形容詞（威力驚人、太神了）
-❌ 純教學式標題
-
-其他加分項：
-+5 內容相關度高（標題反映腳本重點）
-+3 包含知名品牌名
-+2 長度適中（35-45字）
-
-請為每個標題打分，選出分數最高的那個。
-
-以 JSON 格式回傳：
-{ "bestIndex": 1, "bestTitle": "完整標題", "reason": "命中模式X和Y，品牌知名度高，具體理由..." }`;
-}
 
 function buildDescriptionPrompt(summary: string): string {
   return `根據以下內容生成 Podcast 描述，列出 5 個重點亮點。
@@ -541,74 +498,6 @@ function buildTagsPrompt(summary: string, title: string): string {
 { "tags": ["tag1", "tag2", ...] }`;
 }
 
-// ── YouTube Description Prompt Builders ──
-
-function buildYoutubeDescriptionPrompt(summary: string): string {
-  return `根據以下 Podcast 內容摘要，生成 YouTube 影片描述的「主體內容」部分。
-
-內容摘要：
-${summary}
-
-格式要求：
-1. 開頭段落（2-3句吸引人的簡介，包含本集主題）
-2. 本集重點（每個工具直接用名稱開頭，一行簡介其功能亮點和應用場景）
-
-範例格式：
-AI 工具百百種，每天都有新玩意兒...（開頭段落）
-
-🚀 本集精選 AI 工具：
-
-Claude Design：直接生成互動式網頁原型，3D 動畫、光影特效都能輕鬆搞定。
-Claude Code：自動檢查程式碼、抓錯，還能化身自動交易員、分析市場。
-自動化網站監控與修復 AI：半夜巡邏網站，發現攻擊自動修復並送出報告。
-
-注意：
-- 不要在每一行前面加「工具名稱：」這種標籤
-- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
-- 200-400字、繁體中文、不含外部連結
-
-以 JSON 格式回傳：
-{ "youtubeDescription": "完整描述主體" }`;
-}
-
-function buildRobotYoutubeDescriptionPrompt(summary: string): string {
-  return `根據以下「機器人觀察週報」內容摘要，生成 YouTube 影片描述的「主體內容」部分。
-
-內容摘要：
-${summary}
-
-格式要求：
-1. 開頭段落（2-3句點出本週機器人技術重大突破）
-2. 本週重點亮點（每個亮點直接用名稱開頭，一行簡介）
-
-注意：
-- 不要在每一行前面加「亮點名稱：」這種標籤
-- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
-- 200-400字、繁體中文、帶科技觀點
-
-以 JSON 格式回傳：
-{ "youtubeDescription": "完整描述主體" }`;
-}
-
-function buildWeeklyYoutubeDescriptionPrompt(summary: string): string {
-  return `根據以下《AI懶人精選週報》內容摘要，生成 YouTube 影片描述的「主體內容」部分。
-
-內容摘要：
-${summary}
-
-格式要求：
-1. 開頭段落（2-3句帶出本週 AI 工具圈最值得關注的趨勢）
-2. 本週精選工具列表（每個工具直接用名稱開頭，一行簡介其本週亮點）
-
-注意：
-- 不要在每一行前面加「工具名稱：」這種標籤
-- 不要加 CTA 區塊（訂閱、按讚等），系統會自動加上
-- 200-400字、繁體中文、帶週報回顧語氣
-
-以 JSON 格式回傳：
-{ "youtubeDescription": "完整描述主體" }`;
-}
-
 // ── Reusable Title Regeneration ──
 
 export async function regenerateTitles(
@@ -629,7 +518,7 @@ export async function regenerateTitles(
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
 
-  const titlesResult = await llm.generateJSON<{ titles: string[] }>(
+  const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
     titlePrompt,
     'title_gen',
     { episodeId, maxTokens: 2048, temperature: 0.7 }
@@ -639,15 +528,9 @@ export async function regenerateTitles(
     ? titlesResult.data.titles
     : getFallbackTitles();
 
-  const selectResult = await llm.generateJSON<{ bestIndex: number; bestTitle: string }>(
-    buildTitleSelectionPrompt(candidateTitles, summary),
-    'title_select',
-    { episodeId, maxTokens: 512, temperature: 0.3 }
-  );
-
   let selectedTitle = candidateTitles[0];
-  if (selectResult.success && selectResult.data) {
-    const idx = (selectResult.data.bestIndex || 1) - 1;
+  if (titlesResult.success && titlesResult.data?.bestIndex) {
+    const idx = (titlesResult.data.bestIndex || 1) - 1;
     if (idx >= 0 && idx < candidateTitles.length) {
       selectedTitle = candidateTitles[idx];
     }
