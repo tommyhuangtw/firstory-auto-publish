@@ -338,6 +338,77 @@ export class GmailService {
     await this.sendEmail(gmail, to, subject, html);
     log.info({ to, episodeNumber, type }, 'Pipeline notification email sent');
   }
+
+  /**
+   * Send publish failure notification email (partial platform failures).
+   */
+  async sendPublishFailureNotification(params: {
+    episodeNumber: number;
+    segmentType: string;
+    title: string;
+    publishErrors: Array<{ platform: string; error: string }>;
+    soundonUrl?: string;
+    youtubeUrl?: string;
+    igPostId?: string;
+  }): Promise<void> {
+    const gmail = this.ensureGmail();
+    const to = 'tommyhuang0511@gmail.com';
+    const { episodeNumber, segmentType, title, publishErrors, soundonUrl, youtubeUrl, igPostId } = params;
+
+    const segmentLabels: Record<string, string> = { daily: 'AI懶人報', weekly: 'AI精選週報', robot: '機器人週報', sysdesign: '系統設計' };
+    const segmentLabel = segmentLabels[segmentType] || segmentType;
+    const now = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+    const failedPlatforms = publishErrors.map((e) => e.platform).join(', ');
+
+    const subject = `[AI懶人報] 發布部分失敗 — EP${episodeNumber} ${failedPlatforms}`;
+
+    // Build platform status rows
+    const platforms = [
+      { name: 'SoundOn', ok: !!soundonUrl, url: soundonUrl },
+      { name: 'YouTube', ok: !!youtubeUrl, url: youtubeUrl },
+      { name: 'Instagram', ok: !!igPostId, url: igPostId ? `Post ID: ${igPostId}` : undefined },
+    ];
+
+    const platformRows = platforms.map((p) => {
+      const err = publishErrors.find((e) => e.platform === p.name);
+      if (err) {
+        return `<div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:12px 16px;margin:8px 0">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#991b1b">${p.name} — 失敗</p>
+          <p style="margin:0;font-size:12px;color:#7f1d1d;font-family:monospace;word-break:break-all">${err.error}</p>
+        </div>`;
+      }
+      if (p.ok) {
+        return `<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:0 8px 8px 0;padding:12px 16px;margin:8px 0">
+          <p style="margin:0;font-size:13px;color:#166534">${p.name} — 成功</p>
+        </div>`;
+      }
+      return `<div style="background:#f8fafc;border-left:4px solid #94a3b8;border-radius:0 8px 8px 0;padding:12px 16px;margin:8px 0">
+        <p style="margin:0;font-size:13px;color:#64748b">${p.name} — 略過</p>
+      </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc">
+      <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08)">
+        <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:32px;color:white">
+          <div style="display:inline-block;background:#f59e0b;color:white;padding:4px 12px;border-radius:6px;font-size:13px;font-weight:600;margin-bottom:12px">發布部分失敗</div>
+          <h1 style="margin:0 0 8px;font-size:24px">EP${episodeNumber} — ${segmentLabel}</h1>
+          <p style="margin:0;opacity:0.9;font-size:14px">${title}</p>
+          <p style="margin:8px 0 0;opacity:0.7;font-size:13px">${now}</p>
+        </div>
+        <div style="padding:32px">
+          <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">以下平台發布狀態：</p>
+          ${platformRows}
+          <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0">
+            <p style="margin:0;font-size:12px;color:#94a3b8">AI懶人報 Podcast Automation</p>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+
+    await this.sendEmail(gmail, to, subject, html);
+    log.info({ to, episodeNumber, failedPlatforms }, 'Publish failure notification email sent');
+  }
 }
 
 // Singleton

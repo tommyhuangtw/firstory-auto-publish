@@ -36,6 +36,7 @@ export default function ReviewClient({
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [publishErrors, setPublishErrors] = useState<Array<{ platform: string; error: string }>>([]);
 
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
@@ -85,7 +86,12 @@ export default function ReviewClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMessage('Approved! Publishing...');
+      if (data.publishErrors?.length) {
+        setPublishErrors(data.publishErrors);
+        setMessage('Published with partial failures — email notification sent');
+      } else {
+        setMessage('Approved! Published successfully.');
+      }
       router.refresh();
     } catch (err) {
       setMessage(`Error: ${(err as Error).message}`);
@@ -263,9 +269,22 @@ export default function ReviewClient({
 
       {/* Status message */}
       {message && (
-        <p className={`text-sm ${message.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
+        <p className={`text-sm ${message.startsWith('Error') || message.includes('failures') ? 'text-amber-400' : 'text-green-400'}`}>
           {message}
         </p>
+      )}
+
+      {/* Publish errors per platform */}
+      {publishErrors.length > 0 && (
+        <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium text-red-400">部分平台發布失敗</p>
+          {publishErrors.map((e, i) => (
+            <div key={i} className="text-xs text-red-300 font-mono">
+              <span className="font-semibold text-red-400">{e.platform}:</span> {e.error}
+            </div>
+          ))}
+          <p className="text-[11px] text-zinc-500 mt-2">可至 Republish 區塊重新發布失敗的平台</p>
+        </div>
       )}
 
       {/* Content Details — collapsible preview */}

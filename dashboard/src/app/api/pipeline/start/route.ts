@@ -62,11 +62,29 @@ export async function POST(request: NextRequest) {
     ).run(episodeId, segmentType);
     const pipelineRunId = Number(runResult.lastInsertRowid);
 
-    // Fire-and-forget: don't await
+    // Fire-and-forget: don't await — send email on failure
     startPipeline(episodeId, segmentType, pipelineRunId, {
       manualVideoUrls: manualVideoUrls || [],
-    }).catch(() => {
-      // Error handling is inside startPipeline (updates DB)
+    }).catch(async (error) => {
+      // DB is already updated by startPipeline; send email notification
+      try {
+        const { getGmailService } = await import('@/services/gmail');
+        const gmail = getGmailService();
+
+        const failedRun = getDb().prepare(
+          'SELECT current_stage FROM pipeline_runs WHERE id = ?'
+        ).get(pipelineRunId) as { current_stage: string | null } | undefined;
+
+        await gmail.sendPipelineNotification({
+          episodeNumber: episodeId,
+          segmentType,
+          failedStage: failedRun?.current_stage || null,
+          errorMessage: (error as Error).message,
+          type: 'failure',
+        });
+      } catch {
+        // Email is best-effort; pipeline error already logged
+      }
     });
 
     return NextResponse.json({

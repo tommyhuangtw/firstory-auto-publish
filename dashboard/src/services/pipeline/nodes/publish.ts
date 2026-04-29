@@ -37,6 +37,7 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
   log.info({ episodeId: state.episodeId, episodeNumber }, 'Publishing episode');
 
   const results: Partial<PipelineState> = { status: 'completed' };
+  const publishErrors: Array<{ platform: string; error: string }> = [];
 
   // SoundOn (Playwright)
   try {
@@ -44,7 +45,9 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
     results.soundonUrl = soundonUrl;
     log.info({ soundonUrl }, 'SoundOn published');
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'SoundOn publish failed');
+    const msg = (error as Error).message;
+    log.error({ error: msg }, 'SoundOn publish failed');
+    publishErrors.push({ platform: 'SoundOn', error: msg });
   }
 
   // YouTube (video creator + API upload)
@@ -53,7 +56,9 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
     results.youtubeUrl = youtubeUrl;
     log.info({ youtubeUrl }, 'YouTube published');
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'YouTube publish failed');
+    const msg = (error as Error).message;
+    log.error({ error: msg }, 'YouTube publish failed');
+    publishErrors.push({ platform: 'YouTube', error: msg });
   }
 
   // Instagram (cover image + caption)
@@ -67,7 +72,28 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
       log.info('Skipping Instagram (no cover URL, caption, or token)');
     }
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'Instagram post failed');
+    const msg = (error as Error).message;
+    log.error({ error: msg }, 'Instagram post failed');
+    publishErrors.push({ platform: 'Instagram', error: msg });
+  }
+
+  // Send email notification if any platform failed
+  if (publishErrors.length > 0) {
+    try {
+      const { getGmailService } = await import('@/services/gmail');
+      const gmail = getGmailService();
+      await gmail.sendPublishFailureNotification({
+        episodeNumber,
+        segmentType: state.segmentType,
+        title: state.selectedTitle,
+        publishErrors,
+        soundonUrl: results.soundonUrl,
+        youtubeUrl: results.youtubeUrl,
+        igPostId: results.igPostId,
+      });
+    } catch (emailErr) {
+      log.error({ error: (emailErr as Error).message }, 'Failed to send publish failure email');
+    }
   }
 
   // Update episode in DB
@@ -87,6 +113,7 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
     state.episodeId
   );
 
+  results.publishErrors = publishErrors;
   return results;
 }
 

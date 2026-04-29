@@ -88,6 +88,7 @@ export async function POST(
       totalCostUsd: (episode.total_cost_usd as number) || 0,
       error: '',
       coverError: '',
+      publishErrors: [],
       manualVideoUrls: [],
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     };

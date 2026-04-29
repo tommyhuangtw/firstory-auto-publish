@@ -50,11 +50,12 @@ export async function POST(
     const result = await publishEpisode(episodeId);
 
     return NextResponse.json({
-      message: 'Episode approved and publishing',
+      message: result.publishErrors?.length ? 'Episode published with errors' : 'Episode approved and published',
       episodeId,
       episodeNumber: result.episodeNumber,
       soundonUrl: result.soundonUrl,
       youtubeUrl: result.youtubeUrl,
+      publishErrors: result.publishErrors || [],
     });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

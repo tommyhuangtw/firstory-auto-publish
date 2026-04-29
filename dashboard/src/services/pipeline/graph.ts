@@ -267,6 +267,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     totalCostUsd: (episode.total_cost_usd as number) || 0,
     error: '',
     coverError: '',
+    publishErrors: [],
   };
 
   return publish(state);

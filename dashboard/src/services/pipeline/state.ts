@@ -156,6 +156,7 @@ export interface PipelineState {
   // ── Error ──
   error: string;
   coverError: string;
+  publishErrors: Array<{ platform: string; error: string }>;
 }
 
 /**
@@ -210,5 +211,6 @@ export function createInitialState(
     totalCostUsd: 0,
     error: '',
     coverError: '',
+    publishErrors: [],
   };
 }
