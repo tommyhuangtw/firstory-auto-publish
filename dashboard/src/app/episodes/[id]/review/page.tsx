@@ -153,7 +153,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
-  const sourceLinks: { title: string; url: string }[] = episode.source_links ? JSON.parse(episode.source_links) : [];
 
   // Cover candidates
   const coverCandidatesRaw = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
@@ -401,28 +400,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           pipelineRunId={pipelineRun?.id}
         />
 
-        {/* Source Links (sysdesign) */}
-        {sourceLinks.length > 0 && (
-          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-            <h3 className="text-sm font-medium text-zinc-300 mb-3">參考資料連結</h3>
-            <div className="space-y-2">
-              {sourceLinks.map((link, i) => (
-                <a
-                  key={i}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-teal-400 hover:text-teal-300 transition-colors"
-                >
-                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-1.135a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.5 8.25" />
-                  </svg>
-                  {link.title}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

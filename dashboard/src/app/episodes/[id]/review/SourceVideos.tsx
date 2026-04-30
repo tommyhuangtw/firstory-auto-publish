@@ -9,6 +9,7 @@ interface VideoSource {
   channelName?: string;
   channelTitle?: string;
   viewCount?: number;
+  publishedAt?: string;
   classification?: string;
   transcript?: string;
 }
@@ -151,6 +152,11 @@ export default function SourceVideos({ videos, canEdit, pipelineRunId }: Props) 
                       {v.viewCount != null && (
                         <span className="text-[11px] text-zinc-400 tabular-nums">
                           {v.viewCount.toLocaleString()} views
+                        </span>
+                      )}
+                      {v.publishedAt && (
+                        <span className="text-[11px] text-zinc-500 tabular-nums">
+                          {new Date(v.publishedAt).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })}
                         </span>
                       )}
                       {v.classification && (
