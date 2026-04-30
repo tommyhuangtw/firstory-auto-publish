@@ -75,7 +75,7 @@ Output a structured summary of 1500-2000 words.`,
   return result.content;
 }
 
-const SCRIPT_MODEL = 'openai/gpt-5.5';
+const SCRIPT_MODEL = 'google/gemini-3.1-pro-preview';
 
 // n8n exact system prompt for 機器人觀察週報 英文Podcast腳本產生器
 const ROBOT_SYSTEM_PROMPT = `You are an AI scriptwriter generating a polished, engaging robotics-focused podcast narration from a curated batch of robotics-related video summaries, research updates, and industry news.
