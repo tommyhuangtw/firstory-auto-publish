@@ -28,7 +28,7 @@ const DAILY_AUDIO_CONFIG = {
 };
 const WEEKLY_AUDIO_CONFIG = {
   speed: 1.08,
-  pitch_shift: 1.9,
+  pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
