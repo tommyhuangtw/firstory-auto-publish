@@ -15,7 +15,7 @@ import type { ResolvedTool } from './toolExtractor';
 
 const log = createChildLogger('memory:service');
 
-const COMPACTION_MODEL = 'google/gemini-2.5-flash-lite';
+const COMPACTION_MODEL = 'google/gemini-3.1-flash-lite-preview';
 const COMPACTION_THRESHOLD = 3; // Trigger compaction after this many mentions
 const MAX_SUMMARY_LENGTH = 300;
 
@@ -81,7 +81,7 @@ export async function upsertTools(episodeId: number, tools: ResolvedTool[], aire
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const getToolRow = db.prepare('SELECT id, mention_count, current_summary FROM tools WHERE canonical_name = ?');
+  const getToolRow = db.prepare('SELECT id, mention_count, current_summary, aliases FROM tools WHERE canonical_name = ?');
   const getFamilyId = db.prepare('SELECT id FROM tool_families WHERE family_name = ?');
 
   // Phase 1: Upsert all tools in a transaction
@@ -94,11 +94,21 @@ export async function upsertTools(episodeId: number, tools: ResolvedTool[], aire
       const familyId = familyRow?.id || null;
 
       // Check existing record before upsert
-      const existing = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number; current_summary: string | null } | undefined;
+      const existing = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number; current_summary: string | null; aliases: string | null } | undefined;
+
+      // Merge aliases: combine existing + new, deduplicate
+      let mergedAliases = tool.aliases;
+      if (existing?.aliases) {
+        try {
+          const oldAliases: string[] = JSON.parse(existing.aliases);
+          const combined = new Set([...oldAliases, ...tool.aliases]);
+          mergedAliases = [...combined];
+        } catch { /* keep new aliases if parse fails */ }
+      }
 
       upsertTool.run(
         tool.canonicalName,
-        JSON.stringify(tool.aliases),
+        JSON.stringify(mergedAliases),
         tool.category,
         episodeId,
         episodeId,

@@ -107,7 +107,6 @@ export interface PipelineState {
 
   // ── Stage 4.5: Memory Context ──
   memoryContext: MemoryContext | null;
-  memoryEnrichments: string[];
 
   // ── Stage 5: Quality ──
   qualityScore: QualityScore | null;
@@ -184,7 +183,6 @@ export function createInitialState(
     scriptZh: '',
     customContentInserted: false,
     memoryContext: null,
-    memoryEnrichments: [],
     qualityScore: null,
     qualityIterations: 0,
     qualityHistory: [],

@@ -61,7 +61,6 @@ export async function POST(
       scriptZh: (episode.script_zh as string) || '',
       customContentInserted: false,
       memoryContext: null,
-      memoryEnrichments: [],
       qualityScore: null,
       qualityIterations: 0,
       qualityHistory: [],

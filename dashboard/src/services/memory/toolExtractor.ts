@@ -234,8 +234,8 @@ function computeSignificance(
       // New tool: moderate significance
       score += 0.15;
     }
-  } catch {
-    // DB not available, use defaults
+  } catch (err) {
+    log.warn({ tool: canonicalName, error: (err as Error).message }, 'DB lookup failed during significance scoring, using defaults');
     score += 0.1;
   }
 

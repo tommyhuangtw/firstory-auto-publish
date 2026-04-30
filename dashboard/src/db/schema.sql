@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS tools (
   canonical_name TEXT UNIQUE NOT NULL,
   aliases TEXT,                       -- JSON array
   category TEXT,                      -- 'LLM' | 'DevTool' | 'Image' | 'Audio' | ...
-  first_episode INTEGER REFERENCES episodes(episode_number),
+  first_episode INTEGER,              -- stores episodes.id (not episode_number)
   latest_episode INTEGER,
   mention_count INTEGER DEFAULT 0,
   evolving_summary TEXT,              -- legacy, kept for migration

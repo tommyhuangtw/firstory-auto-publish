@@ -473,10 +473,15 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
   // n8n exact user prompt
   const userPrompt = `這是你需要翻譯的英文Podcast稿 : ${state.scriptEn}`;
 
-  const translatePrompt = isSysdesign ? SYSDESIGN_TRANSLATE_PROMPT
+  let translatePrompt = isSysdesign ? SYSDESIGN_TRANSLATE_PROMPT
     : isRobot ? ROBOT_TRANSLATE_PROMPT
     : isWeekly ? WEEKLY_TRANSLATE_PROMPT
     : SYSTEM_PROMPT;
+
+  // Inject audience memory context so translator doesn't over-explain known tools
+  if (state.memoryContext?.briefForScriptGen) {
+    translatePrompt += `\n\n---\n\n${state.memoryContext.briefForScriptGen}`;
+  }
 
   const result = await llm.call({
     stage: 'script_zh',
