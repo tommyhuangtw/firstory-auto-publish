@@ -21,14 +21,20 @@ const execAsync = promisify(exec);
 const VOAI_URL = 'https://connect.voai.ai/TTS/generate-dialogue';
 const DEFAULT_VOICE = { name: '昱翔', style: '預設', version: 'Neo' };
 const DAILY_AUDIO_CONFIG = {
-  speed: 1.09,
+  speed: 1.08,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
 const WEEKLY_AUDIO_CONFIG = {
-  speed: 1.1,
+  speed: 1.08,
   pitch_shift: 1.9,
+  style_weight: 0.8,
+  breath_pause: 0.15,
+};
+const ROBOT_AUDIO_CONFIG = {
+  speed: 1.06,
+  pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
@@ -46,6 +52,7 @@ const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
 function getAudioConfig(segmentType: string) {
   if (segmentType === 'weekly') return WEEKLY_AUDIO_CONFIG;
+  if (segmentType === 'robot') return ROBOT_AUDIO_CONFIG;
   if (segmentType === 'sysdesign') return SYSDESIGN_AUDIO_CONFIG;
   return DAILY_AUDIO_CONFIG;
 }
