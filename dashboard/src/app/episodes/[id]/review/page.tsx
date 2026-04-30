@@ -280,6 +280,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           tags={tags}
           soundonUrl={episode.soundon_url}
           youtubeUrl={episode.youtube_url}
+          igCaption={igCaption}
         />
 
         {/* Podcast IG 貼文 — independent section */}

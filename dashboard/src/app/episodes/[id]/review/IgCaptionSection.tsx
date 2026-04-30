@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
@@ -20,6 +20,24 @@ export default function IgCaptionSection({ episodeId, igCaption: initialCaption,
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Sync when server re-renders with updated prop (e.g. after title save)
+  useEffect(() => {
+    setCaption(initialCaption);
+    setSavedCaption(initialCaption);
+  }, [initialCaption]);
+
+  // Live preview: replace title in caption when user picks a different title
+  useEffect(() => {
+    function onTitleChanged(e: Event) {
+      const { oldTitle, newTitle } = (e as CustomEvent).detail;
+      if (oldTitle && newTitle && oldTitle !== newTitle) {
+        setCaption(prev => prev.replace(oldTitle, newTitle));
+      }
+    }
+    window.addEventListener('title-changed', onTitleChanged);
+    return () => window.removeEventListener('title-changed', onTitleChanged);
+  }, []);
 
   const isDirty = caption !== savedCaption;
 

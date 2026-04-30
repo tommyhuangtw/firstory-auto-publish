@@ -14,6 +14,7 @@ interface Props {
   tags: string[];
   soundonUrl: string | null;
   youtubeUrl: string | null;
+  igCaption: string;
 }
 
 export default function ReviewClient({
@@ -23,6 +24,7 @@ export default function ReviewClient({
   selectedTitle: initialTitle,
   description: initialDescription,
   tags,
+  igCaption: initialIgCaption,
 }: Props) {
   const router = useRouter();
   const [candidateTitles, setCandidateTitles] = useState(initialCandidates);
@@ -50,6 +52,12 @@ export default function ReviewClient({
     description !== savedDescription,
   [title, description, savedTitle, savedDescription]);
 
+  function handleTitleChange(newTitle: string) {
+    const oldTitle = title;
+    setTitle(newTitle);
+    window.dispatchEvent(new CustomEvent('title-changed', { detail: { oldTitle, newTitle } }));
+  }
+
   async function handleSave() {
     setSaving(true);
     setMessage('');
@@ -64,6 +72,18 @@ export default function ReviewClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      const titleChanged = title !== savedTitle;
+      // If title changed, also replace in IG caption
+      if (titleChanged && initialIgCaption && savedTitle) {
+        const updatedCaption = initialIgCaption.replace(savedTitle, title);
+        if (updatedCaption !== initialIgCaption) {
+          await fetch(`/api/episodes/${episodeId}/save-meta`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ igCaption: updatedCaption }),
+          });
+        }
+      }
       setSavedTitle(title);
       setSavedDescription(description);
       setMessage('已儲存');
@@ -197,7 +217,7 @@ export default function ReviewClient({
                   name="title"
                   value={t}
                   checked={title === t}
-                  onChange={() => setTitle(t)}
+                  onChange={() => handleTitleChange(t)}
                   className="mt-1 accent-blue-500"
                 />
                 <span className="text-sm text-zinc-200">{t}</span>
