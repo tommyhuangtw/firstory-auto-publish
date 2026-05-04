@@ -37,19 +37,27 @@ async function summarizeTranscript(
         role: 'system',
         content: `You are a senior software engineer summarizing a YouTube video about system design for a podcast script writer.
 
-Your job is to extract ALL important technical content — do not leave out key details. The podcast writer will use your summary as the sole source material.
+Your job is to extract ALL important technical content with MAXIMUM DETAIL — do not leave out key details. The podcast writer will use your summary as the sole source material. Since there are only 2-3 reference videos per episode, each summary must be comprehensive and deep.
 
-Focus on:
-- Core system architecture concepts, components, and data flow
-- Key design decisions and their trade-offs (why X over Y, what are the pros/cons)
-- Scaling strategies, real-world numbers, metrics, and performance data
-- Patterns relevant to system design interviews (what interviewers look for)
-- Engineering mindset, practical lessons, and things to watch out for
-- Failure scenarios, edge cases, and how the system handles them
+CRITICAL DETAILS TO PRESERVE (never compress or omit these):
+- Concrete numbers: QPS, latency (p50/p95/p99), storage sizes, user counts, growth rates, SLAs
+- Back-of-envelope calculations: capacity planning, bandwidth estimates, storage projections
+- Failure scenarios: what breaks, at what scale, why, how it was detected, how it was fixed
+- Trade-offs: what was given up to get what benefit (e.g., consistency for availability)
+- Architecture descriptions: component diagrams, data flow, request paths
+- Design decision reasoning: WHY they chose X over Y, not just WHAT they chose
+- Real incidents or war stories: outages, scaling challenges, lessons learned
+- Interview insights: if the speaker mentions "this is what interviewers look for", preserve verbatim
+
+OUTPUT STRUCTURE:
+1. System Overview (300-400 words): What the system does, scale, core challenge
+2. Core Design Decisions with Trade-offs (1500-2200 words): The MEAT — each major decision with reasoning, alternatives considered, and trade-offs accepted
+3. Scaling Challenges and Solutions (800-1000 words): What breaks at scale, how they solved it, with numbers
+4. Interview-Relevant Insights (300-400 words): Patterns, key takeaways, common follow-up questions
 
 Keep all technical terms in English (e.g., load balancer, consistent hashing, sharding).
-Include specific numbers, metrics, and real-world examples mentioned in the video.
-Output a structured summary of 1500-2000 words.`,
+Include ALL specific numbers, metrics, and real-world examples mentioned in the video.
+Output a structured summary of 3000-4000 words.`,
       },
       {
         role: 'user',
@@ -58,7 +66,7 @@ Output a structured summary of 1500-2000 words.`,
     ],
     options: {
       preferredModel: SUMMARIZE_MODEL,
-      maxTokens: 4096,
+      maxTokens: 8192,
       temperature: 0.3,
     },
   });
@@ -167,7 +175,7 @@ End with a natural, grounded close. For example:
 
 "That wraps up this week's robotics roundup — hopefully something here sparks an idea for your next experiment, your next build, or even your next research direction. See you in the next one."`;
 
-// System Design podcast script prompt — question-driven story arc
+// System Design podcast script prompt — question-driven story arc with deep technical dives
 const SYSDESIGN_SYSTEM_PROMPT = `You are an expert system design educator and podcast scriptwriter. You generate deep-dive, educational podcast narrations that teach listeners how large-scale systems work — but you do it through STORYTELLING, not lecturing.
 
 🧠 Your listener:
@@ -177,7 +185,7 @@ Engineers (junior to senior), system architects, CS students, and self-taught de
 Write a natural, spoken-style podcast script for a single narrator. Structure it as a STORY with a question-driven arc — each section should end with a question that pulls the listener into the next section. The content should be educational enough to ace a system design interview, but engaging enough that the listener never wants to pause.
 
 🕒 Target length:
-20-25 minutes (around 7500-8500 words)
+25-30 minutes (around 9000-10500 words)
 
 🏗️ Episode Structure — Question-Driven Story Arc:
 
@@ -193,38 +201,73 @@ Frame the core engineering puzzle as a PROBLEM to solve, not a list of requireme
 - Include real numbers that make the scale tangible ("that's 14 million rides per day — every single one needs a match in under 3 seconds")
 End with the question that drives the rest of the episode: "So how do you actually build something that handles this?"
 
-3. The Architecture Story (5-6 min, ~2000 words)
-Walk through the design as a NARRATIVE — decisions made in sequence, not a static diagram:
+3. The Architecture Story (4-5 min, ~1500 words)
+Walk through the high-level design as a NARRATIVE — decisions made in sequence, not a static diagram:
 - Start simple: "If you were building this from scratch with a small team, you'd probably start with..."
 - Then show why the naive approach breaks: "But here's where it falls apart at scale..."
 - Introduce the real architecture as the SOLUTION to that breakdown.
 Use the "show the struggle" technique: naive attempt → why it breaks → the real solution.
+Keep this section as an OVERVIEW — save the deep technical details for the Deep Dives section.
 
 ⏸️ BREATHING POINT: After this section, insert a 2-sentence recap:
 "So to recap: [one sentence summary]. The question now is: [next question that drives into the deep dive]."
 
-4. The Clever Decisions (6-7 min, ~2500 words)
-This is the MEAT — but structured as a chain of "why" questions, NOT a topic list:
-- "Why did they choose X over Y?" → explain the trade-off → "So what does this mean in practice?"
-- "But what happens when Z fails?" → explain failure handling → practical insight
-- Pick 3-5 of the most important, most interesting, and most worth explaining design decisions from the source material. Quality over quantity — go deep on fewer topics rather than shallow on many.
-- Each topic should take ~1.5-2 minutes, structured as: question → explanation → so-what takeaway.
+4. The Deep Dives (12-15 min, ~4500-5500 words) ⭐ THIS IS THE CORE VALUE
+This is the MEAT of the episode. Pick design decisions based on the source material — choose however many are needed to thoroughly cover the most important, most interesting, and most interview-relevant aspects (typically 3-6 topics). The rule is: EVERY topic you include MUST be explored deeply. If you can't go deep on a topic, don't include it as a standalone section — merge it into another topic as a brief mention.
 
-After each topic, insert a SO-WHAT moment:
-"The takeaway here is: [one practical insight the listener can remember]"
+📐 For EACH deep-dive topic, use this mandatory 5-part structure:
 
-⏸️ BREATHING POINT after every 2 topics: Insert a brief analogy, a real-world anecdote, or a quick recap before continuing.
+a) The Question (1-2 sentences)
+   Frame it as a problem the listener can relate to:
+   "So how do you handle writes when you have 50 million users hitting the same database?"
 
-5. What Breaks & What Scales (3-4 min, ~1200 words)
+b) The Naive Approach (~200-400 words)
+   Walk through the simplest solution a junior engineer would naturally try.
+   - Be SPECIFIC: describe the actual architecture, not abstract concepts
+   - Include concrete numbers: "If each write is 5KB, and you have 10K writes/sec, that's 50MB/s hitting a single master..."
+   - Build empathy: "This seems totally reasonable because at 1000 users, this works perfectly fine"
+   - Make the listener nod along: "Yeah, I would have done the same thing"
+
+c) Why It Breaks (~200-400 words)
+   Show the specific failure mode with numbers and real consequences:
+   - "But once you hit 100K concurrent users, that single master is seeing 50K writes/sec — way beyond what PostgreSQL can handle on a single node"
+   - Reference a real incident if available: "This is basically what happened to Twitter in 2008 with the fail whale"
+   - Make it visceral — the listener should FEEL the pain of this failure
+
+d) The Real Solution (~400-700 words)
+   Introduce the actual design decision with full detail:
+   - Concrete architecture: "They use a write-ahead log with async replication to 5 read replicas, partitioned by user_id using consistent hashing"
+   - Real numbers: "This gets them to 500K reads/sec with p99 latency under 50ms"
+   - Explain WHY this works where the naive approach failed
+   - Clearly state the trade-off: "You now have eventual consistency — a user might see stale data for up to 200ms after a write. They accepted this because..."
+   - If there's a back-of-envelope calculation, include it: "With 100M DAU, each making 10 requests/day, that's roughly 12,000 QPS — and during peak, multiply by 3x"
+
+e) So-What (1-2 sentences)
+   One practical insight the listener can take away:
+   "The core lesson: at scale, you MUST choose between optimizing for reads or writes — you can't have both. And for most social apps, reads outnumber writes 100:1, so optimize reads."
+
+📏 DEPTH RULES (CRITICAL):
+- You MUST include at least 2 back-of-envelope calculations across all deep dives
+- Every design decision MUST include a clear trade-off statement (what you sacrifice for what you gain)
+- If a topic doesn't have enough material for the full 5-part structure, DON'T make it a standalone section — fold it into another topic as a brief comparison or footnote
+- Numbers are NON-NEGOTIABLE: every deep dive must contain specific metrics (QPS, latency, storage, user counts, etc.)
+- Show the REASONING, not just the answer — "they chose X" is worthless without "because Y would have caused Z"
+
+⏸️ BREATHING POINT after every 2 topics: Insert a brief recap, analogy, or "zoom out" moment before continuing.
+
+5. What Breaks & What Scales (2-3 min, ~800 words)
 Frame as "the stress test" — make the listener feel the pressure:
 - "What happens when you go from 1,000 to 1 million users? What breaks first?"
-- Focus on 1-2 key scaling challenges, not an exhaustive list.
+- Focus on 1-2 key scaling challenges that WEREN'T already covered in the deep dives.
 - Include a real incident or war story if available — real failures are the most engaging content.
 
-6. Your Takeaways (2-3 min, ~800 words)
+6. Your Takeaways + Interview Edge (3-4 min, ~1200 words)
 - Distill 2-3 key architectural insights from this system — concise and memorable.
 - 🔗 PATTERN CONNECTION: Explicitly name the reusable design patterns (e.g., "This is a classic example of the CQRS pattern — you'll see this again in any system where reads vastly outnumber writes"). For each pattern, name 2-3 other well-known systems that use a similar approach.
-- The interview version: "If you're asked to design a similar system in an interview, the key insight to lead with is: [one sentence]"
+- 🎯 INTERVIEW EDGE (1-2 min):
+  - "If you get this system in an interview, here's your opening move: [one sentence framing]"
+  - 2-3 common follow-up questions interviewers ask about this type of system, with brief answer directions
+  - "The one thing that separates a good answer from a great answer is: [key differentiator]"
 - Close the loop: return to the opening question and answer it with what we've learned.
 
 📐 Pacing Rules (CRITICAL for listener retention):
@@ -487,7 +530,7 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
       .join('\n\n---\n\n');
   }
 
-  const targetWords = isSysdesign ? '8000' : isRobot ? '6000' : '5000';
+  const targetWords = isSysdesign ? '10000' : isRobot ? '6000' : '5000';
 
   // n8n exact user prompt
   const userPrompt = `Here is the compiled content (title, description, transcript) for all videos:
@@ -504,7 +547,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${targetWor
     ],
     options: {
       preferredModel: SCRIPT_MODEL,
-      maxTokens: isSysdesign ? 12288 : 8192,
+      maxTokens: isSysdesign ? 16384 : 8192,
       temperature: 0.7,
     },
   });
