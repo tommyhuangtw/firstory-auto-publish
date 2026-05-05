@@ -31,8 +31,8 @@ function loadModule(modulePath: string): any {
  */
 export async function extractBeats(episodeId: number, segmentType?: string) {
   const db = getDb();
-  const episode = db.prepare('SELECT selected_title, script_zh FROM episodes WHERE id = ?').get(episodeId) as
-    { selected_title: string | null; script_zh: string | null } | undefined;
+  const episode = db.prepare('SELECT selected_title, script_zh, script_summary FROM episodes WHERE id = ?').get(episodeId) as
+    { selected_title: string | null; script_zh: string | null; script_summary: string | null } | undefined;
 
   if (!episode?.script_zh) {
     throw new Error(`Episode ${episodeId} has no Chinese script`);
@@ -47,6 +47,7 @@ export async function extractBeats(episodeId: number, segmentType?: string) {
     episodeTitle: episode.selected_title || '',
     openRouter,
     segmentType,
+    scriptSummary: episode.script_summary || undefined,
   });
 
   log.info({ episodeId, beatCount: beats.length }, 'Extracted beats');
@@ -201,7 +202,7 @@ export async function generateShortsIgCaption(args: {
  * Regenerate the Reels cover image with a new headline.
  * Uses the same avatar as the original shorts and renders via Remotion.
  */
-export async function regenerateCover(shortsId: number, newHeadline: string, headlineY?: number): Promise<string> {
+export async function regenerateCover(shortsId: number, newHeadline: string, headlineY?: number, headlineFontSize?: number): Promise<string> {
   const db = getDb();
   const shorts = db.prepare('SELECT avatar_filename, cover_path, headlines_json, selected_headline_index FROM shorts WHERE id = ?').get(shortsId) as {
     avatar_filename: string | null;
@@ -216,9 +217,20 @@ export async function regenerateCover(shortsId: number, newHeadline: string, hea
   const { renderRemotionStill, stageAsset, rel, REMOTION_DIR } = pipelineModule;
 
   const SLOTH_IMAGES_DIR = path.join(REMOTION_DIR, 'public');
-  const avatarPath = shorts.avatar_filename
+  let avatarPath = shorts.avatar_filename
     ? path.join(SLOTH_IMAGES_DIR, shorts.avatar_filename)
     : null;
+
+  // Fallback: find any sloth avatar in the public dir
+  if (!avatarPath) {
+    const fsModule = loadModule('fs');
+    const files = (fsModule.readdirSync(SLOTH_IMAGES_DIR) as string[])
+      .filter((f: string) => f.startsWith('sloth_studio_') && f.endsWith('.png'));
+    if (files.length > 0) {
+      avatarPath = path.join(SLOTH_IMAGES_DIR, files[0]);
+      log.warn({ fallbackAvatar: files[0] }, 'No avatar_filename set, using fallback');
+    }
+  }
 
   if (!avatarPath) throw new Error('No avatar found for this shorts');
 
@@ -247,6 +259,9 @@ export async function regenerateCover(shortsId: number, newHeadline: string, hea
     if (headlineY != null) {
       coverProps.topPercent = headlineY;
     }
+    if (headlineFontSize != null) {
+      coverProps.fontSize = headlineFontSize;
+    }
     const propsPath = path.join(stageDir, 'cover_props.json');
     await fs.writeJSON(propsPath, coverProps, { spaces: 2 });
 
@@ -263,6 +278,72 @@ export async function regenerateCover(shortsId: number, newHeadline: string, hea
   } finally {
     await fs.remove(stageDir).catch(() => {});
   }
+}
+
+/**
+ * Publish a completed shorts video to YouTube Shorts.
+ */
+export async function publishShortsToYouTube(shortsId: number): Promise<{ videoId: string; videoUrl: string }> {
+  const db = getDb();
+  const shorts = db.prepare(
+    `SELECT s.video_path, s.cover_path, s.ig_caption, s.headlines_json, s.selected_headline_index,
+            s.episode_id, s.episode_number, e.segment_type
+     FROM shorts s
+     LEFT JOIN episodes e ON e.id = COALESCE(s.episode_id, s.episode_number)
+     WHERE s.id = ?`
+  ).get(shortsId) as {
+    video_path: string | null;
+    cover_path: string | null;
+    ig_caption: string | null;
+    headlines_json: string;
+    selected_headline_index: number;
+    episode_id: number | null;
+    episode_number: number;
+    segment_type: string | null;
+  } | undefined;
+
+  if (!shorts) throw new Error('Shorts not found');
+  if (!shorts.video_path) throw new Error('No video file available');
+
+  const headlines = JSON.parse(shorts.headlines_json);
+  const coverHeadline = headlines[shorts.selected_headline_index] || '';
+
+  // Build YouTube-specific title and description
+  const title = coverHeadline.slice(0, 100); // YouTube title max 100 chars
+
+  // Convert IG caption to YT description: strip hashtags, add podcast link
+  const isSysdesign = shorts.segment_type === 'sysdesign';
+  const showName = isSysdesign ? '系統設計懶懶學' : 'AI 懶人報';
+  let description = (shorts.ig_caption || coverHeadline)
+    .replace(/#[\w\u4e00-\u9fff]+/g, '') // remove hashtags
+    .trim();
+  description += `\n\n🎙️ 完整集數請收聽「${showName}」Podcast\n各大平台搜尋「${showName}」即可收聽`;
+
+  // Tags based on segment type
+  const tags = isSysdesign
+    ? ['系統設計', 'System Design', '架構', 'Software Engineering', '系統設計懶懶學', 'Podcast']
+    : ['AI', 'AI工具', '人工智慧', 'AI懶人報', 'Podcast', 'AI News'];
+
+  const { getYouTubeService } = await import('@/services/youtube');
+  const yt = getYouTubeService();
+  await yt.initialize();
+
+  const result = await yt.uploadVideo({
+    videoPath: shorts.video_path,
+    title,
+    description,
+    tags,
+    privacyStatus: 'public',
+    categoryId: '22', // People & Blogs
+    thumbnailPath: shorts.cover_path || undefined,
+  });
+
+  // Update DB
+  db.prepare('UPDATE shorts SET yt_video_id = ?, yt_video_url = ? WHERE id = ?')
+    .run(result.videoId, result.videoUrl, shortsId);
+
+  log.info({ shortsId, videoId: result.videoId }, 'Shorts published to YouTube');
+  return result;
 }
 
 function logShortsCosts(db: ReturnType<typeof getDb>, episodeId: number, shortsId: number) {

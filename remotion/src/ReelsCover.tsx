@@ -6,6 +6,7 @@ export type ReelsCoverProps = {
   backgroundImageSrc: string;
   paddingTop?: number;
   topPercent?: number;
+  fontSize?: number;
 };
 
 const resolveSrc = (src: string): string => {
@@ -18,7 +19,9 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
   backgroundImageSrc,
   paddingTop: customPaddingTop,
   topPercent,
+  fontSize: customFontSize,
 }) => {
+  const headlineFontSize = customFontSize ?? 96;
   // Determine headline positioning:
   // - If topPercent is provided (new API), use absolute top positioning
   // - Otherwise fall back to flex center + paddingTop (legacy)
@@ -58,7 +61,7 @@ export const ReelsCover: React.FC<ReelsCoverProps> = ({
         >
           <div
             style={{
-              fontSize: 96,
+              fontSize: headlineFontSize,
               fontWeight: 900,
               fontFamily: '"PingFang TC", "Noto Sans TC", system-ui, sans-serif',
               color: '#FFFFFF',

@@ -14,7 +14,7 @@ export async function GET(
   const db = getDb();
   const shorts = db.prepare(
     `SELECT id, episode_number, status, current_stage, error_log,
-            video_path, cover_path, ig_caption, ig_post_id,
+            video_path, cover_path, ig_caption, ig_post_id, yt_video_id, yt_video_url,
             beats_json, selected_beat_index, headlines_json, selected_headline_index,
             created_at, completed_at
      FROM shorts WHERE id = ?`

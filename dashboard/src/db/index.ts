@@ -56,6 +56,10 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN threads_caption TEXT');
   safeAlter('ALTER TABLE llm_calls ADD COLUMN input_messages TEXT');
   safeAlter('ALTER TABLE llm_calls ADD COLUMN output_content TEXT');
+  safeAlter('ALTER TABLE shorts ADD COLUMN yt_video_id TEXT');
+  safeAlter('ALTER TABLE shorts ADD COLUMN yt_video_url TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN yt_thumbnail_path TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN yt_hook_title TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {

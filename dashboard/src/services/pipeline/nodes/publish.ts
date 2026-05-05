@@ -82,6 +82,7 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
     try {
       const { getGmailService } = await import('@/services/gmail');
       const gmail = getGmailService();
+      await gmail.initialize();
       await gmail.sendPublishFailureNotification({
         episodeNumber,
         segmentType: state.segmentType,
@@ -125,7 +126,7 @@ export async function publishToSoundOnPlatform(state: PipelineState): Promise<st
   log.info({ formattedTitle }, 'Publishing to SoundOn');
 
   // Assemble final description with ad content + footer (buymeacoffee)
-  // Source links are already included by generateMeta via LLM prompt
+  // Source links are already appended by generateMeta (deterministic, not LLM)
   const { assemblePodcastDescription } = await import('@/services/descriptionAssembler');
   const finalDescription = assemblePodcastDescription(state.description);
 
@@ -146,14 +147,24 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   const formattedTitle = formatYoutubeTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to YouTube');
 
-  // Step 1: Generate composite YouTube thumbnail (brand + title | cover image)
-  const { generateYouTubeThumbnail } = await import('@/services/thumbnailGenerator');
-  const thumbnailPath = await generateYouTubeThumbnail({
-    title: state.selectedTitle,
-    episodeNumber: state.episodeNumber,
-    coverImagePath: state.coverPath,
-    segmentType: state.segmentType,
-  });
+  // Step 1: Use user-selected YouTube thumbnail, or fallback to generated composite
+  let thumbnailPath: string;
+  const { getDb } = await import('@/db');
+  const { default: fs } = await import('fs-extra');
+  const epRow = getDb().prepare('SELECT yt_thumbnail_path FROM episodes WHERE id = ?').get(state.episodeId) as { yt_thumbnail_path: string | null } | undefined;
+  if (epRow?.yt_thumbnail_path && fs.existsSync(epRow.yt_thumbnail_path)) {
+    thumbnailPath = epRow.yt_thumbnail_path;
+    log.info({ thumbnailPath }, 'Using user-selected YouTube thumbnail');
+  } else {
+    const { generateYouTubeThumbnail } = await import('@/services/thumbnailGenerator');
+    thumbnailPath = await generateYouTubeThumbnail({
+      title: state.selectedTitle,
+      episodeNumber: state.episodeNumber,
+      coverImagePath: state.coverPath,
+      segmentType: state.segmentType,
+    });
+    log.info({ thumbnailPath }, 'Using fallback generated thumbnail');
+  }
 
   // Step 2: Create video from audio + composite thumbnail (title + IG cover)
   const { createVideoFromAudio } = await import('@/services/videoCreator');
@@ -163,7 +174,7 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   });
 
   // Step 3: Assemble final YouTube description (ad + main + footer + hashtags)
-  // Source links are already included by generateMeta via LLM prompt
+  // Source links are already appended by generateMeta (deterministic, not LLM)
   const ytDesc = state.youtubeDescription || state.description;
   const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
   const finalDescription = assembleYoutubeDescription(ytDesc, state.tags);

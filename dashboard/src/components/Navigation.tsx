@@ -61,6 +61,23 @@ const navItems = [
     ),
   },
   {
+    href: '/thumbnail-compare', label: '縮圖比較',
+    icon: (
+      <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+      </svg>
+    ),
+  },
+  {
+    href: '/debug', label: 'Debug',
+    icon: (
+      <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.1-3.175a3.375 3.375 0 01-1.57-2.845V6.75a3.375 3.375 0 013.375-3.375h7.5A3.375 3.375 0 0119 6.75v2.4a3.375 3.375 0 01-1.57 2.845l-5.1 3.175a1.125 1.125 0 01-1.16 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.75v5.25m-3.75-3h7.5" />
+      </svg>
+    ),
+  },
+  {
     href: '/settings', label: 'Settings',
     icon: (
       <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

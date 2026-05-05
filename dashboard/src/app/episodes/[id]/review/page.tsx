@@ -16,6 +16,7 @@ import IgCaptionSection from './IgCaptionSection';
 import RegenerateCoverButton from './RegenerateCoverButton';
 import FbCaptionSection from './FbCaptionSection';
 import ThreadsCaptionSection from './ThreadsCaptionSection';
+import YouTubeThumbnailSection from './YouTubeThumbnailSection';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,8 @@ interface Episode {
   tags: string | null;
   audio_path: string | null;
   cover_path: string | null;
+  yt_thumbnail_path: string | null;
+  yt_hook_title: string | null;
   source_videos: string | null;
   quality_score: number | null;
   total_cost_usd: number | null;
@@ -177,13 +180,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   // Get latest shorts for this episode
   const shortsRow = db.prepare(
     `SELECT id, status, current_stage, error_log, video_path, cover_path,
-            ig_caption, ig_post_id, beats_json, selected_beat_index,
+            ig_caption, ig_post_id, yt_video_id, yt_video_url,
+            beats_json, selected_beat_index,
             headlines_json, selected_headline_index, avatar_filename
      FROM shorts WHERE episode_id = ? ORDER BY id DESC LIMIT 1`
   ).get(episodeId) as {
     id: number; status: string; current_stage: string | null; error_log: string | null;
     video_path: string | null; cover_path: string | null; ig_caption: string | null;
-    ig_post_id: string | null; beats_json: string | null; selected_beat_index: number | null;
+    ig_post_id: string | null; yt_video_id: string | null; yt_video_url: string | null;
+    beats_json: string | null; selected_beat_index: number | null;
     headlines_json: string | null; selected_headline_index: number | null;
     avatar_filename: string | null;
   } | undefined;
@@ -268,6 +273,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           )}
         </div>
 
+        {/* YouTube Thumbnail */}
+        <YouTubeThumbnailSection
+          episodeId={episode.id}
+          selectedTitle={episode.selected_title || ''}
+          savedHookTitle={episode.yt_hook_title}
+          savedThumbnailPath={episode.yt_thumbnail_path}
+          canEdit={canEdit}
+        />
+
         {/* Interactive Review Section (title picker, approve/reject, collapsible details) */}
         <ReviewClient
           episodeId={episode.id}
@@ -310,8 +324,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         /> */}
 
-        {/* Retry Controls — quick access for failed episodes */}
-        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing') && (
+        {/* Retry Controls — quick access for failed/stuck episodes */}
+        {pipelineRun && (episode.status === 'failed' || episode.status === 'pending_review' || episode.status === 'publishing' || (episode.status === 'generating' && pipelineRun.status === 'failed')) && (
           <RetryControls
             pipelineRunId={pipelineRun.id}
             failedStage={pipelineRun.status === 'failed' ? pipelineRun.current_stage : null}

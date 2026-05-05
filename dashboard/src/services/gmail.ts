@@ -409,6 +409,11 @@ export class GmailService {
     await this.sendEmail(gmail, to, subject, html);
     log.info({ to, episodeNumber, failedPlatforms }, 'Publish failure notification email sent');
   }
+  async sendTestEmail(to: string, subject: string, html: string): Promise<void> {
+    const gmail = this.ensureGmail();
+    await this.sendEmail(gmail, to, subject, html);
+    log.info({ to }, 'Test email sent');
+  }
 }
 
 // Singleton
