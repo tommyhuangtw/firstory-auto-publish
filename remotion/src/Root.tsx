@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition, Still } from 'remotion';
 import { ShortVideo, ShortVideoProps } from './ShortVideo';
 import { ReelsCover, ReelsCoverProps } from './ReelsCover';
+import { YouTubeThumbnail, YouTubeThumbnailProps } from './YouTubeThumbnail';
 
 const FPS = 30;
 const WIDTH = 1080;
@@ -48,6 +49,16 @@ export const RemotionRoot: React.FC = () => {
           headline: 'AI駭客太狂了',
           backgroundImageSrc: 'sloth_studio_01.png',
         } as ReelsCoverProps}
+      />
+      <Still
+        id="YouTubeThumbnail"
+        component={YouTubeThumbnail}
+        width={1280}
+        height={720}
+        defaultProps={{
+          hookText: '免費寫 Code',
+          segmentType: 'daily',
+        } as YouTubeThumbnailProps}
       />
     </>
   );

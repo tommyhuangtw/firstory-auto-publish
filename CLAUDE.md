@@ -1,4 +1,128 @@
 # CLAUDE.md
 
+## Coding Guidelines (Karpathy Skills)
+開發時必須遵守以下 4 原則（來自 andrej-karpathy-skills）：
+
+1. **Think Before Coding** — 不假設、不隱藏困惑、明確列出 assumptions。多種做法時先呈現選項，不要默默選一個。
+2. **Simplicity First** — 最少程式碼解決問題。不加未要求的功能、不為單次使用建 abstraction、不處理不可能的 error scenarios。
+3. **Surgical Changes** — 只改必要的部分。不「順便改善」旁邊的 code/comments/formatting。只清理自己造成的 orphans。
+4. **Goal-Driven Execution** — 把模糊需求轉成可驗證的 success criteria，loop 直到驗證通過。
+
 ## Git Commit 偏好
 - **不要**在 commit message 中加入 `Co-Authored-By` 行
+
+## 專案架構
+- **重構方向**: 完全移除 n8n，用 Next.js + LangGraph + SQLite 重建
+- **完整計畫**: 見 `docs/platform-refactor-plan.md`
+- **Dashboard 專案**: `dashboard/` (Next.js 14 + TypeScript)
+- **原有程式碼**: `src/`, `web-console/` 保留至遷移完成
+- **資料庫**: SQLite (`dashboard/data/podcast.db`)
+
+---
+
+## 重構進度記錄
+
+### Phase 1: Foundation
+
+#### 2026-04-24 — Steps 1-8: 基礎建設完成
+- 更新 CLAUDE.md 加入重構進度記錄區塊
+- 初始化 Next.js 14 專案 (`dashboard/`)，安裝 TypeScript, Tailwind, ESLint
+- 安裝核心 dependencies: `better-sqlite3`, `pino`, `pino-pretty`, `node-cron`
+- 建立 SQLite schema (`dashboard/src/db/schema.sql`) — 7 tables: episodes, tools, episode_tool_mentions, llm_calls, pipeline_runs, youtube_sources, platform_analytics
+- 建立 DB connection module (`dashboard/src/db/index.ts`) — WAL mode, auto-migration
+- 建立 Pino logger (`dashboard/src/lib/logger.ts`) — dev pretty print, prod JSON
+- Port OpenRouterService → `dashboard/src/services/llmService.ts` — 新增自動 LLM call logging 到 llm_calls table（model, tokens, cost, latency）
+- 建立 API routes: `/api/health`, `/api/episodes` (GET/POST), `/api/pipeline/status`
+- 建立 Dashboard 首頁 (`dashboard/src/app/page.tsx`) — 顯示 DB 狀態、episodes 數、pipeline runs
+- 更新 `.gitignore` — 加入 dashboard 相關忽略規則
+- **驗證通過**: build 成功、health API 回傳 `{status: "ok", db: "connected", tables: 7}`、episodes 回傳空陣列
+
+#### 2026-04-24 — Steps 9-12: Google Services + Scheduler
+- 安裝 `googleapis`, `fs-extra` 及其 type definitions
+- 建立 shared Google Auth module (`dashboard/src/lib/googleAuth.ts`) — OAuth2 token load/save/refresh，Drive/Gmail/YouTube 共用
+- Port GoogleDriveService → `dashboard/src/services/googleDrive.ts` — 上傳/下載/串流，使用 shared auth
+- Port GmailService → `dashboard/src/services/gmail.ts` — 標題選擇/縮圖選擇 email 發送
+- Port YouTubeService → `dashboard/src/services/youtube.ts` — 影片上傳、縮圖設定、頻道資訊
+- 建立 Scheduler service (`dashboard/src/services/scheduler.ts`) — node-cron 排程管理，支援 register/start/stop/manual trigger
+- 新增 API route: `/api/scheduler/status`
+- **驗證通過**: build 成功，6 個 routes 正常（含 `/api/scheduler/status`）
+- **Phase 1 完成** — Foundation layer 全部到位
+
+### Phase 2: Content Pipeline (LangGraph)
+
+#### 2026-04-24 — LangGraph Pipeline 建置
+- 安裝 `@langchain/langgraph`, `@langchain/core`
+- 定義 Pipeline State (`dashboard/src/services/pipeline/state.ts`) — 完整的 PipelineState 型別，含 videos, scripts, quality, meta, audio 等欄位
+- 建立 7 個 Pipeline Nodes:
+  - `fetchYoutube.ts` — YouTube Data API v3 搜尋 + Apify 字幕擷取，去重、篩選（views/likes/duration）、取 top 5
+  - `classify.ts` — Gemini Flash Lite 分類（is_tool/not_tool 或 is_robotics/non_robotics），parallel execution
+  - `scriptEnglish.ts` — Gemini Pro 生成 5000-6000 字英文講稿
+  - `translate.ts` — Gemini Pro 翻譯為台灣繁體中文口語化，保留英文工具名
+  - `qualityScore.ts` — 4 維度評分（accuracy, engagement, structure, naturalness），threshold 85 分，max 2 次 refinement
+  - `generateMeta.ts` — 10 個候選標題 → 選最佳 → 生成描述 → 生成 YouTube tags（完整 port contentGenerator.js 邏輯）
+  - `tts.ts` — VoAI TTS 合成（完整 port voai.js: 300 字 chunk → batch-5 → FFmpeg concat）
+  - `publish.ts` — SoundOn + YouTube 發布（Phase 3 完整實作，目前 placeholder）
+- 建立 LangGraph StateGraph (`dashboard/src/services/pipeline/graph.ts`) — 使用 Annotation API，linear flow: START → fetch → classify → script → translate → quality → meta → tts → END
+- Pipeline 完成後自動更新 episodes + pipeline_runs tables
+- 新增 API routes:
+  - `POST /api/pipeline/start` — 啟動 pipeline（episodeNumber + segmentType）
+  - `POST /api/episodes/:id/approve` — 人工審核通過後觸發發布
+- **驗證通過**: build 成功，8 個 routes 正常
+- **Phase 2 核心完成** — LangGraph pipeline 取代 n8n workflow
+
+### Phase 3: Review Flow + Publisher
+
+#### 2026-04-24 — Review UI + Publisher 實作
+- ��立 Navigation component (`dashboard/src/components/Navigation.tsx`) — desktop sidebar + mobile bottom bar
+- 更新 layout.tsx — 套用 Navigation，metadata 改為 "AI Podcast Dashboard"
+- 建立 Audio Streaming API (`/api/audio/[...path]`) — HTTP Range requests 支援 mobile Safari
+- 建立 Episodes 列表頁 (`/episodes`) — status badges, quality scores, cost 顯示
+- 建立 Review 頁面 (`/episodes/[id]/review`) — audio player, title picker, description editor, approve/reject 按鈕
+- 建立 ReviewClient 互動元件 — client-side state management for title/description editing
+- 新增 API routes:
+  - `POST /api/episodes/:id/reject` — 拒絕 episode，記錄 rejection reason
+  - `GET /api/episodes/:id/status` — 查詢 episode 狀態 + publish URLs
+- Port SoundOn uploader → `dashboard/src/services/soundon.ts` — Playwright 自動化（login → new episode → upload → fill → publish）
+- 建立 Video Creator (`dashboard/src/services/videoCreator.ts`) — FFmpeg audio + image → MP4
+- 更新 publish node — 接入 SoundOn publisher + YouTube upload（lazy import, graceful fallback）
+- 安裝 `playwright` dependency
+- **驗證通過**: build 成功，13 個 routes，完整 approve/reject flow 測試通過
+- **Phase 3 完成** — Review UI + Publisher 全部到位
+
+### Phase 4: Memory System
+
+#### 2026-04-25 — Tool Extraction + Memory UI 實作
+- 建立 Tool Extraction Service (`dashboard/src/services/memory/toolExtractor.ts`) — 用 Gemini Flash Lite 從英文講稿擷取 AI 工具名稱、分類、上下文
+- 建立 Memory Service (`dashboard/src/services/memory/memoryService.ts`) — tools/episode_tool_mentions DB 操作，回顧語句生成
+- 新增 Pipeline Node `extractTools` — 在 scriptEnglish 之後執行，擷取工具 → 存入 DB
+- 新增 Pipeline Node `enrichMemory` — 在 translate 之後執行，注入回顧語句到中文講稿
+- 更新 Pipeline Graph: 9 nodes（新增 extractTools + enrichMemory），flow: script → extractTools → translate → enrichMemory → quality
+- 建立 Memory 瀏覽 UI (`/memory`) — 工具列表（category filter, search），卡片式排版
+- 建立 Tool 詳情頁 (`/memory/[name]`) — 出現次數、首次/最近 episode、evolving summary、episode timeline
+- Navigation 加入 Memory 連結
+- **驗證通過**: build 成功，15 個 routes，Memory UI category filter + search + 404 全部正常
+- **Phase 4 完成** — Tool Memory System 全部到位
+
+### Phase 5: Evaluation Dashboard
+
+#### 2026-04-25 — LLM Metrics Dashboard 實作
+- 安裝 `recharts` 視覺化套件
+- 建立 Metrics API (`/api/metrics`) — 彙整 costPerEpisode, costByStage, qualityTrend, pipelineRuns, summary
+- 建立 Metrics 頁面 (`/metrics`) — Recharts 圖表：Cost per Episode (BarChart), Quality Score Trend (LineChart), Cost by Stage 表格, Pipeline Runs 列表
+- Navigation 加入 Metrics 連結
+- **驗證通過**: build 成功，16 個 routes，API 回傳正確資料結構，metrics 頁面 200 OK
+- **Phase 5 完成** — Evaluation Dashboard 到位
+
+### UI 補強
+
+#### 2026-04-25 — Pipeline 追蹤 + 錯誤顯示 + Scheduler UI + 封面預覽
+- Pipeline 啟動改為 fire-and-forget（`/api/pipeline/start` 不再 blocking）
+- 新增 `/api/pipeline/status/[id]` — 單筆 pipeline run 狀態查詢
+- NewEpisodeForm 加入即時進度追蹤 — 9 階段 progress indicator + 2 秒 polling
+- Episodes 列表顯示 generating 狀態的 current_stage（JOIN pipeline_runs）
+- Review 頁面顯示 pipeline 錯誤（紅色 error_log section）
+- Review 頁面新增封面圖預覽（cover_path）
+- 建立 Scheduler 管理頁面（`/scheduler`）— job 列表、手動觸發
+- 新增 `/api/scheduler/trigger` — 手動觸發排程任務
+- Navigation 加入 Scheduler 連結
+- **驗證通過**: build 成功，20 個 routes，pipeline start 立即回傳（0.02s）

@@ -1,0 +1,112 @@
+import { getDb } from '@/db';
+import { formatLocalDateTime, getLocalDayOfWeek } from '@/lib/formatDate';
+import VoaiUsageCard from '@/components/VoaiUsageCard';
+
+export const dynamic = 'force-dynamic';
+
+const segmentLabels: Record<string, string> = {
+  daily: 'AI懶人報',
+  weekly: 'AI精選週報',
+  robot: '機器人週報',
+};
+
+const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+export default function Dashboard() {
+  const db = getDb();
+
+  const tableCount = (db.prepare("SELECT count(*) as c FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get() as { c: number }).c;
+  const episodeCount = (db.prepare('SELECT count(*) as c FROM episodes').get() as { c: number }).c;
+  const recentRuns = db.prepare(`SELECT count(*) as c FROM pipeline_runs WHERE started_at > datetime('now', '-7 days')`).get() as { c: number };
+  const episodes = db.prepare(
+    'SELECT id, episode_number, segment_type, status, created_at FROM episodes ORDER BY id DESC LIMIT 5'
+  ).all() as { id: number; episode_number: number | null; segment_type: string; status: string; created_at: string }[];
+
+  return (
+    <div className="p-8">
+      <header className="mb-8 flex items-center gap-5">
+        <img src="/logo-sm.png" alt="AI懶人報" className="w-16 h-16 rounded-xl" />
+        <div>
+          <h1 className="text-3xl font-bold">AI懶人報</h1>
+          <p className="text-brand-taupe mt-1">Podcast Automation Dashboard</p>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* DB Status */}
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Database</h2>
+          <p className="text-2xl font-bold mt-2">
+            <span className="text-green-400">Connected</span>
+          </p>
+          <p className="text-zinc-400 text-sm mt-1">{tableCount} tables</p>
+        </div>
+
+        {/* Episodes */}
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Episodes</h2>
+          <p className="text-2xl font-bold mt-2">{episodeCount}</p>
+          <p className="text-zinc-400 text-sm mt-1">total episodes</p>
+        </div>
+
+        {/* Pipeline */}
+        <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Pipeline</h2>
+          <p className="text-2xl font-bold mt-2">{recentRuns.c}</p>
+          <p className="text-zinc-400 text-sm mt-1">recent runs (7d)</p>
+        </div>
+
+        {/* VoAI TTS Usage */}
+        <VoaiUsageCard />
+      </div>
+
+      {/* Recent Episodes */}
+      <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span className="w-1 h-5 rounded-full bg-brand" />
+          Recent Episodes
+        </h2>
+        {episodes.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-zinc-300 border-b border-zinc-800">
+                <th className="text-left py-2">Episode</th>
+                <th className="text-left py-2">Segment</th>
+                <th className="text-left py-2">Status</th>
+                <th className="text-left py-2">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {episodes.map((ep) => {
+                let label: string;
+                if (ep.episode_number) {
+                  label = `EP ${ep.episode_number}`;
+                } else if (ep.created_at) {
+                  const dayLabel = DAY_LABELS[getLocalDayOfWeek(ep.created_at)] || '';
+                  const dateStr = formatLocalDateTime(ep.created_at).split(' ')[0] || '';
+                  label = `${dateStr} (${dayLabel})`;
+                } else {
+                  label = `#${ep.id}`;
+                }
+                return (
+                  <tr key={ep.id} className="border-b border-zinc-800/50">
+                    <td className="py-2">{label}</td>
+                    <td className="py-2">{segmentLabels[ep.segment_type] || ep.segment_type}</td>
+                    <td className="py-2">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-zinc-800">
+                        {ep.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-zinc-300">{formatLocalDateTime(ep.created_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-zinc-400">No episodes yet. Start a pipeline to generate your first episode.</p>
+        )}
+      </div>
+    </div>
+  );
+}

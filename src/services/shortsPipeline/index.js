@@ -71,7 +71,11 @@ async function runShortsPipeline({
   podcastScript: externalScript,
   selectedBeat,
   coverHeadline,
+  onStageChange,
+  avatarFilename,
+  segmentType,
 }) {
+  const reportStage = onStageChange || (() => {});
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   workDir = workDir || path.join(PROJECT_ROOT, 'temp', `shorts_${ts}`);
@@ -79,8 +83,10 @@ async function runShortsPipeline({
   await fs.ensureDir(workDir);
   await fs.ensureDir(path.dirname(outputPath));
 
-  // Pick a random pre-generated sloth image for this run
-  const avatarImagePath = pickRandomSlothImage();
+  // Use user-selected avatar or pick random
+  const avatarImagePath = avatarFilename
+    ? path.join(SLOTH_IMAGES_DIR, avatarFilename)
+    : pickRandomSlothImage();
   console.log(`\n🦥 Avatar: ${path.basename(avatarImagePath)}`);
 
   const manifest = {
@@ -111,8 +117,9 @@ async function runShortsPipeline({
   }
 
   // ── Stage 1: Highlight extraction (narration script) ────────────────────
+  reportStage('extractHighlight');
   console.log('\n━━━ Stage 1/7: Generate narration script ━━━');
-  const plan = await extractHighlight({ episodeTitle, podcastScript, selectedBeat });
+  const plan = await extractHighlight({ episodeTitle, podcastScript, selectedBeat, segmentType });
   await fs.writeJSON(path.join(workDir, '01_plan.json'), plan, { spaces: 2 });
   manifest.stages.highlight = { stub: !!plan._stub, ...plan };
   console.log(`   hook: ${plan.hook_script}`);
@@ -120,6 +127,7 @@ async function runShortsPipeline({
   console.log(`   outro: ${plan.outro_script}`);
 
   // ── Stage 2: VoAI TTS — synthesize all three segments ──────────────────
+  reportStage('tts');
   console.log('\n━━━ Stage 2/7: VoAI TTS (hook + narration + outro) ━━━');
   const hookAudioPath = path.join(workDir, '02_hook.m4a');
   const narrationAudioPath = path.join(workDir, '02_narration.m4a');
@@ -131,6 +139,7 @@ async function runShortsPipeline({
   console.log(`   hook: ${hook.durationSec.toFixed(1)}s | narration: ${narration.durationSec.toFixed(1)}s | outro: ${outro.durationSec.toFixed(1)}s`);
 
   // ── Stage 3: Whisper on TTS audio for word-level caption timestamps ────
+  reportStage('whisper');
   console.log('\n━━━ Stage 3/7: Whisper on TTS for caption sync ━━━');
   const [hookTranscription, narrationTranscription, outroTranscription] = await Promise.all([
     transcribe(hook.path).catch(err => { console.warn(`   [caption-sync] hook transcription failed: ${err.message}`); return null; }),
@@ -143,6 +152,7 @@ async function runShortsPipeline({
 
   // ── Stage 4: Sloth videos (Kling 2.6 I2V) ─────────────────────────────
   // Generate 2 x 10s clips in parallel: hook (talking) + outro (CTA)
+  reportStage('slothVideo');
   console.log('\n━━━ Stage 4/7: Sloth videos (Kling 2.6) ━━━');
   const slothHookVideoPath = path.join(workDir, '04_sloth_hook.mp4');
   const slothOutroVideoPath = path.join(workDir, '04_sloth_outro.mp4');
@@ -161,6 +171,7 @@ async function runShortsPipeline({
   }
 
   // ── Stage 5: B-roll (Pexels + optional kie.ai Veo hero clip) ──────────
+  reportStage('broll');
   console.log('\n━━━ Stage 5/7: B-roll ━━━');
   const brollDir = path.join(workDir, 'broll');
   const pexelsResults = await fetchBrollAll(plan.broll_keywords, brollDir);
@@ -180,6 +191,7 @@ async function runShortsPipeline({
   manifest.stages.broll = brollResults;
 
   // ── Stage 6: Concat master audio: hook → narration → outro ─────────────
+  reportStage('concatAudio');
   console.log('\n━━━ Stage 6/7: Concat master audio ━━━');
   const masterAudioPath = path.join(workDir, '06_master.m4a');
   await concatAudio([hook.path, narration.path, outro.path], masterAudioPath);
@@ -188,6 +200,7 @@ async function runShortsPipeline({
   manifest.stages.masterAudio = { path: masterAudioPath, durationSec: masterDuration };
 
   // ── Stage 7: Stage assets + build Remotion props + render ──────────────
+  reportStage('render');
   console.log('\n━━━ Stage 7/7: Stage assets + build Remotion props + render ━━━');
   const stageDir = path.join(REMOTION_DIR, 'public', `run_${ts}`);
   await fs.ensureDir(stageDir);
@@ -358,7 +371,7 @@ function makeFabricatedCaption(text, startSec, endSec) {
  * Visible-length-aware phrase chunker that never splits English words.
  */
 const CAPTION_BREAK_RE = /([，。！？、；：,.!?;:])/;
-const CAPTION_CHUNK_MAX = 16;
+const CAPTION_CHUNK_MAX = 20;
 
 function splitIntoCaptionChunks(cleaned) {
   if (!cleaned) return [];
@@ -514,20 +527,18 @@ function groupWordsIntoChunks(mappedWords, maxLen) {
 }
 
 /**
- * Build captions from Whisper word-level transcription of TTS audio.
- * Uses Whisper's own words and timings directly (TTS → Whisper is a closed loop,
- * so Whisper's recognized text matches the script and its timestamps are accurate).
+ * Build captions using the ORIGINAL script text (accurate) with Whisper's
+ * overall time range (accurate timing). Whisper's individual word text is
+ * discarded because it often contains homophone errors and English casing issues.
  */
 function pushWhisperCaptions(captions, scriptText, whisperWords, offset) {
   if (!whisperWords || whisperWords.length === 0) return;
 
-  const mapped = whisperWords.map(w => ({
-    text: w.word,
-    start: w.start + offset,
-    end: w.end + offset,
-  }));
+  const t0 = whisperWords[0].start + offset;
+  const t1 = whisperWords[whisperWords.length - 1].end + offset;
 
-  buildCaptionsFromMappedWords(captions, mapped);
+  // Use original script text with Whisper's time range
+  pushFabricatedCaptions(captions, scriptText, t0, t1);
 }
 
 /**

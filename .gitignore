@@ -25,6 +25,11 @@ google-token.json
 !vercel.json
 !config/google-credentials.example.json
 !remotion/tsconfig.json
+!dashboard/package.json
+!dashboard/package-lock.json
+!dashboard/tsconfig.json
+!dashboard/next.config.ts
+!dashboard/postcss.config.mjs
 
 # Temporary files
 temp/
@@ -86,3 +91,12 @@ remotion/node_modules/
 remotion/test_asset/
 remotion/lanrenbao_ig_photos/
 remotion/public/
+
+# Dashboard (Next.js)
+dashboard/.next/
+dashboard/data/*.db
+dashboard/data/*.db-wal
+dashboard/data/*.db-shm
+dashboard/node_modules/
+dashboard/scripts/test-*.ts
+dashboard/scripts/seed-memory.mjs

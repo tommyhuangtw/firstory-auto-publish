@@ -172,7 +172,9 @@ const AnimatedHeadline: React.FC<{
       style={{
         alignItems: 'center',
         justifyContent: 'flex-start',
-        paddingTop: 80,
+        paddingTop: 160,
+        paddingLeft: 60,
+        paddingRight: 60,
         opacity,
         transform: `translateY(${translateY}px)`,
       }}
@@ -182,11 +184,14 @@ const AnimatedHeadline: React.FC<{
           backgroundColor: 'rgba(255, 220, 70, 0.95)',
           color: '#1a1a2e',
           padding: '24px 56px',
-          borderRadius: 999,
+          borderRadius: 32,
           fontSize: 64,
           fontWeight: 900,
           letterSpacing: 2,
           boxShadow: '0 12px 30px rgba(0,0,0,0.4)',
+          whiteSpace: 'pre-line' as const,
+          textAlign: 'center' as const,
+          maxWidth: 900,
         }}
       >
         {headline}
