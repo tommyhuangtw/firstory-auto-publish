@@ -8,9 +8,25 @@
 import { getLLMService } from '@/services/llmService';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
-import type { PipelineState } from '../state';
+import type { PipelineState, SourceLink } from '../state';
 
 const log = createChildLogger('pipeline:meta');
+
+/** Append source links section to a description string. Reusable across pipeline and API. */
+export function appendSourceLinks(description: string, sourceLinks: SourceLink[] | undefined): string {
+  if (!sourceLinks || sourceLinks.length === 0) return description;
+  const linksText = sourceLinks.map(l => {
+    const meta: string[] = [];
+    if (l.publishedAt) {
+      const d = new Date(l.publishedAt);
+      if (!isNaN(d.getTime())) meta.push(d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' }));
+    }
+    if (l.viewCount) meta.push(`${l.viewCount.toLocaleString()} views`);
+    const metaStr = meta.length > 0 ? `（${meta.join('・')}）` : '';
+    return `${l.title}${metaStr}\n${l.url}`;
+  }).join('\n\n');
+  return `${description}\n\n---\n📎 參考資料：\n\n${linksText}`;
+}
 
 const META_MODEL = 'google/gemini-3.1-flash-lite-preview';
 
@@ -91,12 +107,8 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     ? tagsResult.data.tags
     : getFallbackTags();
 
-  // Append source links (sysdesign only) — deterministic, not LLM-generated
-  let finalDescription = description;
-  if (isSysdesign && (state.sourceLinks || []).length > 0) {
-    const linksText = state.sourceLinks.map(l => `${l.title}\n${l.url}`).join('\n\n');
-    finalDescription += `\n\n---\n📎 參考資料：\n\n${linksText}`;
-  }
+  // Append source links — deterministic, not LLM-generated
+  const finalDescription = appendSourceLinks(description, state.sourceLinks);
 
   log.info({ descLength: finalDescription.length, tagCount: tags.length }, 'Meta generation complete');
 
@@ -128,7 +140,7 @@ async function summarizeScript(
     ? 'AI懶人精選週報'
     : 'AI懶人報（每日）';
 
-  const prompt = `你是一位 Podcast 內容分析專家。請將以下「${segmentContext}」的完整腳本濃縮成一份結構化摘要，確保不遺漏任何重要工具或主題。
+  const prompt = `你是一位 Podcast 內容分析專家。請將以下「${segmentContext}」的完整腳本濃縮成一份結構化摘要，確保不遺漏任何重要洞察。
 
 完整腳本：
 ${content}
@@ -137,8 +149,7 @@ ${content}
 
 1. **本集主題**（1-2 句）：本集的核心主題是什麼？
 
-2. **提到的工具/品牌**（列表）：列出所有提到的 AI 工具、公司或品牌名稱，以及它們的關鍵更新或功能亮點。格式：
-   - 工具名稱：一句話描述亮點
+2. **核心洞察**（5 點）：本集最重要的 5 個 insights，可以是工具介紹、新觀點、方法論、趨勢分析或實戰經驗。每個 insight 用一句話描述重點，再用一句話說明為什麼重要。
 
 3. **主要論點與觀點**（3-5 點）：腳本中最有力的論述、爭議性觀點、或令人驚訝的發現
 
@@ -165,11 +176,12 @@ ${content}
 
 // ── Prompt Builders (ported from contentGenerator.js) ──
 
-function buildTitlePrompt(summary: string): string {
+function buildTitlePrompt(summary: string, userPrompt?: string): string {
+  const userDirection = userPrompt ? `\n\n── 用戶指定的標題方向 ──\n${userPrompt}\n請特別圍繞以上方向來生成標題，但仍需遵守下方的模式與規則。` : '';
   return `你是一位經驗豐富的 Podcast 製作人，專門打造高下載量的標題。根據 297 集的下載數據分析（Top 60 平均 1,250 下載 vs 中段 750 vs Bottom 250），以下模式能顯著提升點擊率。請根據內容生成10個標題。
 
 內容摘要：
-${summary}
+${summary}${userDirection}
 
 ── 高下載量的 6 大爆款模式（每個標題至少要使用 1 個模式）──
 
@@ -239,11 +251,12 @@ ${summary}
 bestIndex 為 1-based 索引。`;
 }
 
-function buildRobotTitlePrompt(summary: string): string {
+function buildRobotTitlePrompt(summary: string, userPrompt?: string): string {
+  const userDirection = userPrompt ? `\n\n── 用戶指定的標題方向 ──\n${userPrompt}\n請特別圍繞以上方向來生成標題，但仍需遵守下方的模式與規則。` : '';
   return `你是一位專注於機器人科技的 Podcast 製作人，專門打造高下載量的標題。根據 297 集下載數據分析，請根據以下「機器人觀察週報」內容生成10個標題。
 
 內容摘要：
-${summary}
+${summary}${userDirection}
 
 ── 高下載量的 5 大爆款模式（每個標題至少用 1 個）──
 
@@ -295,11 +308,12 @@ ${summary}
 bestIndex 為 1-based 索引。`;
 }
 
-function buildWeeklyTitlePrompt(summary: string): string {
+function buildWeeklyTitlePrompt(summary: string, userPrompt?: string): string {
+  const userDirection = userPrompt ? `\n\n── 用戶指定的標題方向 ──\n${userPrompt}\n請特別圍繞以上方向來生成標題，但仍需遵守下方的模式與規則。` : '';
   return `你是一位經驗豐富的 Podcast 製作人，專門製作《AI懶人精選週報》。根據 297 集的下載數據分析（Top 60 平均 1,250 下載 vs 中段 750 vs Bottom 250），以下模式能顯著提升點擊率。請根據本週精選內容生成10個標題。
 
 內容摘要：
-${summary}
+${summary}${userDirection}
 
 ── 高下載量的 6 大爆款模式（每個標題至少要使用 1 個模式）──
 
@@ -369,11 +383,12 @@ ${summary}
 bestIndex 為 1-based 索引。`;
 }
 
-function buildSysdesignTitlePrompt(summary: string): string {
+function buildSysdesignTitlePrompt(summary: string, userPrompt?: string): string {
+  const userDirection = userPrompt ? `\n\n── 用戶指定的標題方向 ──\n${userPrompt}\n請特別圍繞以上方向來生成標題，但仍需遵守下方的模式與規則。` : '';
   return `你是一位專注於系統設計教學的 Podcast 製作人，專門打造高下載量的標題。請根據以下「系統設計懶懶學」內容生成10個標題。
 
 內容摘要：
-${summary}
+${summary}${userDirection}
 
 ── 高下載量的爆款模式（每個標題至少用 1 個）──
 
@@ -423,7 +438,7 @@ bestIndex 為 1-based 索引。`;
 }
 
 function buildSysdesignDescriptionPrompt(summary: string): string {
-  return `根據以下「系統設計懶懶學」內容生成 Podcast 描述，列出本集系統設計重點。
+  return `根據以下「系統設計懶懶學」內容生成 Podcast 描述，抽出本集最重要的 insights。
 
 內容摘要：
 ${summary}
@@ -431,15 +446,20 @@ ${summary}
 格式：
 開頭段落（用 1-2 句帶出本集要拆解的系統及其規模）🏗️
 
-接下來用 💡 和 👉 列出 3-5 個重點（可以是架構決策、設計模式、擴展策略等）：
-💡 一句話描述這個架構重點
-👉 為什麼這個設計決策重要
+接下來列出 3-5 個核心洞察（可以是架構決策、設計模式、擴展策略、工程觀點等）。
+每個洞察兩行：
+💡 短標題（5-15 字，點出關鍵詞）
+👉 一句話說明為什麼這個設計決策重要
 
-⚠️ 注意：💡 後面直接寫一句完整的話
-❌ 錯誤：💡 Consistent Hashing：分散式系統的核心技術
-✅ 正確：💡 Uber 用 Consistent Hashing 解決了百萬司機的即時配對問題
+每個洞察之間空一行，方便閱讀。
 
-要求：200-400字、技術含量但口語化、不含外部連結（參考資料會由系統自動附加）
+範例：
+💡 Consistent Hashing 即時配對
+👉 Uber 靠這招解決百萬司機的毫秒級配對問題
+
+⚠️ 注意：💡 是短標題，不要寫成完整長句。👉 是一句精簡補充。
+
+要求：200-350字、技術含量但口語化、精簡好讀、不含外部連結（參考資料會由系統自動附加）
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
@@ -447,7 +467,7 @@ ${summary}
 
 
 function buildDescriptionPrompt(summary: string): string {
-  return `根據以下內容生成 Podcast 描述，列出 5 個重點亮點。
+  return `根據以下內容生成 Podcast 描述，抽出 5 個最重要的 insights。
 
 內容摘要：
 ${summary}
@@ -455,24 +475,32 @@ ${summary}
 格式：
 開頭段落（用 1-2 句吸引人的話帶出本集主題）🚀
 
-接下來用 💡 和 👉 列出 5 個重點（可以是工具亮點、應用場景或重要觀點）：
-💡 一句話描述這個亮點
-👉 應用場景和價值
+接下來列出 5 個核心洞察（可以是工具介紹、新觀點、方法論、趨勢或實戰經驗——不要硬湊工具，根據內容決定）。
+每個洞察兩行：
+💡 短標題（5-15 字，點出關鍵詞）
+👉 一句話說明為什麼重要或實際影響
 
-⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
-❌ 錯誤：💡 Claude Code：你的程式碼助手學會排程任務了！
-❌ 錯誤：💡 向量資料庫：AI 的長期記憶海馬迴！
-✅ 正確：💡「Claude Code」學會排程任務，變成你 24 小時不打烊的專屬工程師！
-✅ 正確：💡「向量資料庫」讓 AI 擁有長期記憶，搜尋精準度直接飆升！
+每個洞察之間空一行，方便閱讀。
 
-要求：200-400字、輕鬆有趣、不含外部連結
+範例：
+💡 Claude Code 全天候自動寫程式
+👉 駐紮終端機 24 小時不停工，把繁瑣的維護和除錯全部外包給 AI
+
+💡 AI 從聊天機器人進化成代理式工程
+👉 不再只是回答問題，而是能主動規劃、執行、驗證整個開發流程
+
+⚠️ 注意：💡 是短標題，不要寫成完整長句。👉 是一句精簡補充。
+❌ 錯誤：💡 Claude Code：你的程式碼助手學會排程任務了！（太長，像句子不像標題）
+✅ 正確：💡 Claude Code 全天候自動寫程式
+
+要求：200-350字、輕鬆有趣、精簡好讀、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
 function buildRobotDescriptionPrompt(summary: string): string {
-  return `根據以下「機器人觀察週報」內容生成 Podcast 描述，列出 5 個重點亮點。
+  return `根據以下「機器人觀察週報」內容生成 Podcast 描述，抽出 5 個最重要的 insights。
 
 內容摘要：
 ${summary}
@@ -480,40 +508,48 @@ ${summary}
 格式：
 開頭段落（點出本週機器人圈重大趨勢）🤖
 
-接下來用 💡 和 👉 列出 5 個重點（可以是機器人、公司、技術突破或應用場景）：
-💡 一句話描述這個亮點
-👉 產業影響或未來展望
+接下來列出 5 個核心洞察（可以是機器人產品、技術突破、產業觀點、應用趨勢或商業策略——根據內容決定）。
+每個洞察兩行：
+💡 短標題（5-15 字，點出關鍵詞）
+👉 一句話說明產業影響或為什麼值得關注
 
-⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
-❌ 錯誤：💡 Tesla Optimus：人形機器人取得重大突破！
-✅ 正確：💡「Tesla Optimus」走出工廠，首度在真實環境完成搬運任務！
+每個洞察之間空一行，方便閱讀。
 
-要求：200-400字、輕鬆但有科技觀點、不含外部連結
+範例：
+💡 Tesla Optimus 走出工廠
+👉 首度在真實環境完成搬運任務，人形機器人離商用又近一步
+
+⚠️ 注意：💡 是短標題，不要寫成完整長句。👉 是一句精簡補充。
+
+要求：200-350字、輕鬆但有科技觀點、精簡好讀、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
 }
 
 function buildWeeklyDescriptionPrompt(summary: string): string {
-  return `根據以下《AI懶人精選週報》內容生成 Podcast 描述，列出 5 個重點亮點。
+  return `根據以下《AI懶人精選週報》內容生成 Podcast 描述，抽出 5 個最重要的 insights。
 
 內容摘要：
 ${summary}
 
 格式：
-開頭段落（點出本週 AI 工具圈最值得關注的趨勢）🚀
+開頭段落（點出本週 AI 圈最值得關注的趨勢）🚀
 
-接下來用 💡 和 👉 列出 5 個重點（可以是工具亮點、應用場景或重要觀點）：
-💡 一句話描述這個亮點
-👉 應用場景和價值
+接下來列出 5 個核心洞察（可以是工具介紹、新觀點、方法論、趨勢或實戰經驗——不要硬湊工具，根據內容決定）。
+每個洞察兩行：
+💡 短標題（5-15 字，點出關鍵詞）
+👉 一句話說明為什麼重要或實際影響
 
-⚠️ 注意：💡 後面直接寫一句完整的話，不要用「工具名稱：」當開頭標題。
-❌ 錯誤：💡 Claude Code：你的程式碼助手學會排程任務了！
-❌ 錯誤：💡 向量資料庫：AI 的長期記憶海馬迴！
-✅ 正確：💡「Claude Code」學會排程任務，變成你 24 小時不打烊的專屬工程師！
-✅ 正確：💡「向量資料庫」讓 AI 擁有長期記憶，搜尋精準度直接飆升！
+每個洞察之間空一行，方便閱讀。
 
-要求：200-400字、輕鬆有趣、帶有「一週回顧」的語氣、不含外部連結
+範例：
+💡 Claude Code 全天候自動寫程式
+👉 駐紮終端機 24 小時不停工，把繁瑣的維護和除錯全部外包給 AI
+
+⚠️ 注意：💡 是短標題，不要寫成完整長句。👉 是一句精簡補充。
+
+要求：200-350字、輕鬆有趣、精簡好讀、帶有「一週回顧」的語氣、不含外部連結
 
 以 JSON 格式回傳：
 { "description": "完整描述" }`;
@@ -541,6 +577,7 @@ export async function regenerateTitles(
   segmentType: string,
   scriptContent: string,
   episodeId?: number,
+  userPrompt?: string,
 ): Promise<{ candidateTitles: string[]; selectedTitle: string }> {
   const llm = getLLMService();
   const isRobot = segmentType === 'robot';
@@ -550,10 +587,10 @@ export async function regenerateTitles(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
-    : isRobot ? buildRobotTitlePrompt(summary)
-    : isWeekly ? buildWeeklyTitlePrompt(summary)
-    : buildTitlePrompt(summary);
+  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary, userPrompt)
+    : isRobot ? buildRobotTitlePrompt(summary, userPrompt)
+    : isWeekly ? buildWeeklyTitlePrompt(summary, userPrompt)
+    : buildTitlePrompt(summary, userPrompt);
 
   const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
     titlePrompt,

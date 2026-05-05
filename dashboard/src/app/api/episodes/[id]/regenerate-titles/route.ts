@@ -6,7 +6,7 @@ import { createChildLogger } from '@/lib/logger';
 const log = createChildLogger('api:regenerate-titles');
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -15,6 +15,9 @@ export async function POST(
     if (isNaN(episodeId)) {
       return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
     }
+
+    const body = await request.json().catch(() => ({}));
+    const userPrompt = typeof body.prompt === 'string' ? body.prompt.trim() : undefined;
 
     const db = getDb();
     const episode = db.prepare(
@@ -30,12 +33,13 @@ export async function POST(
       return NextResponse.json({ error: 'No script content available' }, { status: 400 });
     }
 
-    log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating titles');
+    log.info({ episodeId, segmentType: episode.segment_type, hasUserPrompt: !!userPrompt }, 'Regenerating titles');
 
     const { candidateTitles, selectedTitle } = await regenerateTitles(
       episode.segment_type,
       scriptContent,
       episodeId,
+      userPrompt || undefined,
     );
 
     db.prepare(

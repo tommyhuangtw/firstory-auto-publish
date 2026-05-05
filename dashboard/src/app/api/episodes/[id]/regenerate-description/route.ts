@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/db';
-import { regenerateDescription } from '@/services/pipeline/nodes/generateMeta';
+import { regenerateDescription, appendSourceLinks } from '@/services/pipeline/nodes/generateMeta';
 import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('api:regenerate-description');
@@ -18,8 +18,8 @@ export async function POST(
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT segment_type, script_zh, script_en FROM episodes WHERE id = ?'
-    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
+      'SELECT segment_type, script_zh, script_en, source_links FROM episodes WHERE id = ?'
+    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null; source_links: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -32,11 +32,15 @@ export async function POST(
 
     log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating description');
 
-    const description = await regenerateDescription(
+    const baseDescription = await regenerateDescription(
       episode.segment_type,
       scriptContent,
       episodeId,
     );
+
+    // Append source links (same as pipeline generateMeta)
+    const sourceLinks = JSON.parse(episode.source_links || '[]');
+    const description = appendSourceLinks(baseDescription, sourceLinks);
 
     // Save to both description and youtube_description
     db.prepare(

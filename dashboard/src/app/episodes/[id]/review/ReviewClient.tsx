@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
@@ -39,10 +39,17 @@ export default function ReviewClient({
   const [showReject, setShowReject] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [publishErrors, setPublishErrors] = useState<Array<{ platform: string; error: string }>>([]);
+  const [titlePrompt, setTitlePrompt] = useState('');
 
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
   const [savedDescription, setSavedDescription] = useState(initialDescription);
+
+  // Track IG caption locally so title replacements accumulate correctly
+  const [trackedIgCaption, setTrackedIgCaption] = useState(initialIgCaption);
+  useEffect(() => {
+    setTrackedIgCaption(initialIgCaption);
+  }, [initialIgCaption]);
 
   const canReview = status === 'pending_review';
   const canEdit = status === 'pending_review' || status === 'published' || status === 'approved' || status === 'publishing';
@@ -55,6 +62,10 @@ export default function ReviewClient({
   function handleTitleChange(newTitle: string) {
     const oldTitle = title;
     setTitle(newTitle);
+    // Update tracked IG caption so the next save writes the correct value
+    if (oldTitle && newTitle && oldTitle !== newTitle) {
+      setTrackedIgCaption(prev => prev.replace(oldTitle, newTitle));
+    }
     window.dispatchEvent(new CustomEvent('title-changed', { detail: { oldTitle, newTitle } }));
   }
 
@@ -62,28 +73,22 @@ export default function ReviewClient({
     setSaving(true);
     setMessage('');
     try {
+      const titleChanged = title !== savedTitle;
+      // Build a single save payload — include igCaption when title changed
+      const payload: Record<string, string> = {
+        selectedTitle: title,
+        description,
+      };
+      if (titleChanged && trackedIgCaption) {
+        payload.igCaption = trackedIgCaption;
+      }
       const res = await fetch(`/api/episodes/${episodeId}/save-meta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selectedTitle: title,
-          description,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      const titleChanged = title !== savedTitle;
-      // If title changed, also replace in IG caption
-      if (titleChanged && initialIgCaption && savedTitle) {
-        const updatedCaption = initialIgCaption.replace(savedTitle, title);
-        if (updatedCaption !== initialIgCaption) {
-          await fetch(`/api/episodes/${episodeId}/save-meta`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ igCaption: updatedCaption }),
-          });
-        }
-      }
       setSavedTitle(title);
       setSavedDescription(description);
       setMessage('已儲存');
@@ -146,6 +151,8 @@ export default function ReviewClient({
     try {
       const res = await fetch(`/api/episodes/${episodeId}/regenerate-titles`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: titlePrompt }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -204,6 +211,17 @@ export default function ReviewClient({
             <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Title</h2>
             {canEdit && regenerateButton(handleRegenerateTitles, regenerating, '重新生成標題', '生成中...')}
           </div>
+          {canEdit && (
+            <div className="mb-3">
+              <textarea
+                value={titlePrompt}
+                onChange={(e) => setTitlePrompt(e.target.value)}
+                placeholder="輸入你想聚焦的主題或方向（可選）..."
+                rows={2}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-none"
+              />
+            </div>
+          )}
           <div className="space-y-2">
             {candidateTitles.map((t, i) => (
               <label
