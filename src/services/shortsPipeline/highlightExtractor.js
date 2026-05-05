@@ -90,7 +90,7 @@ ${essenceBeats.map((b, i) => `\n[候選 ${i + 1}] ${b.text}${b.reason ? `\n  （
  *
  * @returns {Promise<Array<{text: string, reason: string}>>} — empty array on failure
  */
-async function extractEssence({ podcastScript, episodeTitle, openRouter, segmentType }) {
+async function extractEssence({ podcastScript, episodeTitle, openRouter, segmentType, scriptSummary }) {
   if (!podcastScript || !podcastScript.trim()) return [];
 
   const isSysdesign = segmentType === 'sysdesign';
@@ -103,6 +103,13 @@ async function extractEssence({ podcastScript, episodeTitle, openRouter, segment
 - 這些段落做成 Shorts 最能吸引工程師/技術人員的注意
 ` : '';
 
+  const insightsGuide = scriptSummary ? `
+🎯 本集核心洞察（Shorts 主題必須對齊這些重點）：
+${scriptSummary}
+
+請優先選出對應這些核心洞察的段落。每個 beat 應該對應其中一個 insight，而非隨機挑選。
+` : '';
+
   const prompt = `
 你是一位專門整理 podcast 精華的編輯。下面是一集 podcast 的完整講稿，請你列出 3–5 個「本集精華」候選段落。每個候選段落的標準：
 
@@ -113,11 +120,11 @@ async function extractEssence({ podcastScript, episodeTitle, openRouter, segment
 - ❌ 不可以是結尾 CTA（「記得訂閱」「點資訊欄」「下次見」之類）
 - ❌ 不可以是廣告段落（「贊助」「折扣」「課程連結」「限時優惠」「自動化流程」「加入自動化行列」「使用我的折扣碼」「企業 AI 落地」「費用減免」「填表申請」之類）
 - ❌ 不可以是「接下來我會介紹」「先講第一個」這種只是段落標題、沒有實質內容的過場句
-${sysdesignExtra}
+${sysdesignExtra}${insightsGuide}
 輸出**嚴格 JSON**（不要加 markdown code fence、不要任何前後說明文字）：
 {
   "beats": [
-    { "text": "......(逐字複製的連續一段)......", "reason": "這段為什麼吸引人" }
+    { "title": "5-15字的短標題，點出這段的核心重點", "text": "......(逐字複製的連續一段)......", "reason": "這段為什麼吸引人（對應哪個核心洞察）" }
   ]
 }
 
@@ -144,7 +151,7 @@ ${podcastScript}
     }
     const beats = parsed.beats
       .filter(b => b && typeof b.text === 'string' && b.text.trim().length >= 30)
-      .map(b => ({ text: b.text.trim(), reason: (b.reason || '').trim() }));
+      .map(b => ({ title: (b.title || '').trim(), text: b.text.trim(), reason: (b.reason || '').trim() }));
     console.log(`✅ [essence] Extracted ${beats.length} beat(s) from Airtable script`);
     return beats;
   } catch (err) {

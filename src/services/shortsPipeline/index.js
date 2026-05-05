@@ -371,7 +371,7 @@ function makeFabricatedCaption(text, startSec, endSec) {
  * Visible-length-aware phrase chunker that never splits English words.
  */
 const CAPTION_BREAK_RE = /([，。！？、；：,.!?;:])/;
-const CAPTION_CHUNK_MAX = 16;
+const CAPTION_CHUNK_MAX = 20;
 
 function splitIntoCaptionChunks(cleaned) {
   if (!cleaned) return [];
@@ -527,20 +527,18 @@ function groupWordsIntoChunks(mappedWords, maxLen) {
 }
 
 /**
- * Build captions from Whisper word-level transcription of TTS audio.
- * Uses Whisper's own words and timings directly (TTS → Whisper is a closed loop,
- * so Whisper's recognized text matches the script and its timestamps are accurate).
+ * Build captions using the ORIGINAL script text (accurate) with Whisper's
+ * overall time range (accurate timing). Whisper's individual word text is
+ * discarded because it often contains homophone errors and English casing issues.
  */
 function pushWhisperCaptions(captions, scriptText, whisperWords, offset) {
   if (!whisperWords || whisperWords.length === 0) return;
 
-  const mapped = whisperWords.map(w => ({
-    text: w.word,
-    start: w.start + offset,
-    end: w.end + offset,
-  }));
+  const t0 = whisperWords[0].start + offset;
+  const t1 = whisperWords[whisperWords.length - 1].end + offset;
 
-  buildCaptionsFromMappedWords(captions, mapped);
+  // Use original script text with Whisper's time range
+  pushFabricatedCaptions(captions, scriptText, t0, t1);
 }
 
 /**
