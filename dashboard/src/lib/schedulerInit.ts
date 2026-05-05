@@ -168,6 +168,7 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
 
     // 1. Send failure notification email
     const gmail = getGmailService();
+    await gmail.initialize();
     try {
       await gmail.sendPipelineNotification({
         episodeNumber: episodeId, segmentType, failedStage,

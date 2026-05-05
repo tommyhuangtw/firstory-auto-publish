@@ -317,11 +317,31 @@ export async function retryFromStage(
   }
   if (!episodeId) throw new Error(`Cannot resolve episode for pipeline run ${pipelineRunId}`);
 
-  // Rebuild state from snapshots
-  const snapshots = db.prepare(
+  // Rebuild state from snapshots — try this run first, fallback to latest run with snapshots for same episode
+  let snapshotRunId = pipelineRunId;
+  let snapshots = db.prepare(
     `SELECT stage, output_data FROM pipeline_snapshots
      WHERE pipeline_run_id = ? ORDER BY id ASC`
   ).all(pipelineRunId) as { stage: string; output_data: string }[];
+
+  if (snapshots.length === 0 && episodeId) {
+    const fallbackRun = db.prepare(
+      `SELECT pr.id FROM pipeline_runs pr
+       JOIN pipeline_snapshots ps ON ps.pipeline_run_id = pr.id
+       WHERE pr.episode_id = ?
+       GROUP BY pr.id
+       ORDER BY pr.id DESC LIMIT 1`
+    ).get(episodeId) as { id: number } | undefined;
+    if (fallbackRun) {
+      snapshotRunId = fallbackRun.id;
+      snapshots = db.prepare(
+        `SELECT stage, output_data FROM pipeline_snapshots
+         WHERE pipeline_run_id = ? ORDER BY id ASC`
+      ).all(snapshotRunId) as { stage: string; output_data: string }[];
+      log.info({ pipelineRunId, snapshotRunId, snapshotCount: snapshots.length },
+        'No snapshots in requested run, using fallback run');
+    }
+  }
 
   // Create initial state, then layer snapshots up to (before) fromStage
   const state = createInitialState(

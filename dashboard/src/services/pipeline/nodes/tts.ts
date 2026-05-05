@@ -39,7 +39,7 @@ const ROBOT_AUDIO_CONFIG = {
   breath_pause: 0.15,
 };
 const SYSDESIGN_AUDIO_CONFIG = {
-  speed: 1.07,
+  speed: 1.05,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
@@ -63,7 +63,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
   const audioConfig = getAudioConfig(state.segmentType);
   const rawText = state.scriptZh || '';
   if (!rawText) {
-    return { audioPath: '', audioDurationSec: 0, status: 'pending_review', error: 'No script for TTS' };
+    throw new Error('No script for TTS — scriptZh is empty (possible snapshot reconstruction failure)');
   }
 
   // Text cleaning for TTS (matches n8n 清理文字供TTS使用)
@@ -108,24 +108,38 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
 
   try {
     const chunkPaths: string[] = [];
+    let currentBatchSize = BATCH_SIZE;
 
-    for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
-      const batch = chunks.slice(batchStart, batchStart + BATCH_SIZE);
-      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(chunks.length / BATCH_SIZE);
-      log.info({ batch: batchNum, total: totalBatches, size: batch.length }, 'Processing batch');
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += currentBatchSize) {
+      const batch = chunks.slice(batchStart, batchStart + currentBatchSize);
+      const batchNum = Math.floor(batchStart / currentBatchSize) + 1;
+      const totalBatches = Math.ceil(chunks.length / currentBatchSize);
+      log.info({ batch: batchNum, total: totalBatches, size: batch.length, batchSize: currentBatchSize }, 'Processing batch');
 
-      const paths = await Promise.all(
-        batch.map(async (chunk, i) => {
-          const chunkPath = path.join(chunkDir, `chunk_${String(batchStart + i).padStart(3, '0')}.mp3`);
-          await synthesizeChunk(chunk, chunkPath, apiKey, audioConfig);
-          return chunkPath;
-        })
-      );
-      chunkPaths.push(...paths);
+      try {
+        const paths = await Promise.all(
+          batch.map(async (chunk, i) => {
+            const chunkPath = path.join(chunkDir, `chunk_${String(batchStart + i).padStart(3, '0')}.mp3`);
+            await synthesizeChunk(chunk, chunkPath, apiKey, audioConfig);
+            return chunkPath;
+          })
+        );
+        chunkPaths.push(...paths);
+      } catch (err) {
+        if (currentBatchSize > 1) {
+          log.warn({ batch: batchNum, error: (err as Error).message },
+            'Batch failed, downgrading to sequential (batch size 1)');
+          currentBatchSize = 1;
+          // Re-process this batch from the start, now one at a time
+          batchStart -= batch.length;
+          await sleep(BATCH_WAIT_MS);
+          continue;
+        }
+        throw err; // Sequential also failed — give up
+      }
 
       // Rate limit between batches
-      if (batchStart + BATCH_SIZE < chunks.length) {
+      if (batchStart + currentBatchSize < chunks.length) {
         await sleep(BATCH_WAIT_MS);
       }
     }

@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       try {
         const { getGmailService } = await import('@/services/gmail');
         const gmail = getGmailService();
+        await gmail.initialize();
 
         const failedRun = getDb().prepare(
           'SELECT current_stage FROM pipeline_runs WHERE id = ?'
