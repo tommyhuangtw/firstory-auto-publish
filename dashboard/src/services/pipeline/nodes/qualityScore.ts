@@ -220,17 +220,17 @@ ${fixedOpening}
    — 11-15 分：大部分自然，但有幾段明顯書面感或 AI 生成感
    — 6-10 分：整體偏書面或公式化，轉場生硬，語氣不一致
    — 0-5 分：像在讀論文或唸稿，完全沒有聊天感
-   ✅ 加分指標：語句流暢、節奏自然，有轉折詞或口語連接詞；偶爾加入聽眾互動語氣；句型有高低起伏、情緒表現適當；少量使用自然口語節奏的語助詞（「啦」「吧」「嘛」等）；描述常見場景引發共鳴（如「書籤存了一堆根本沒回去看」）；敘述者有鮮明個性，對不同架構設計有不同反應；有真實觀點和態度
-   ❌ 扣分指標：長句過多或語法複雜，如報告式、論文式敘述；重複使用單一口氣（如全篇都是「這個工具可以...」「這個工具也可以...」）；沒有情緒語助詞，全篇聽感平淡；語助詞使用位置不合理或機械性過度使用；全篇像中性資訊播報，對每個主題的態度都一樣；沒有任何個人反應或觀點
+   ✅ 加分指標：語句流暢、節奏自然，有轉折詞或口語連接詞；偶爾加入聽眾互動語氣；句型有高低起伏、情緒表現適當；少量使用自然口語節奏的語助詞（「啦」「吧」「嘛」等）；描述常見場景引發共鳴（如「書籤存了一堆根本沒回去看」）；敘述者有鮮明個性，對不同架構設計有不同反應；有真實觀點和態度；收尾方式多樣化（回扣式、重新定義式、比喻式等），不會每段都用「這段的重點是...」
+   ❌ 扣分指標：長句過多或語法複雜，如報告式、論文式敘述；重複使用單一口氣（如全篇都是「這個工具可以...」「這個工具也可以...」）；沒有情緒語助詞，全篇聽感平淡；語助詞使用位置不合理或機械性過度使用；全篇像中性資訊播報，對每個主題的態度都一樣；沒有任何個人反應或觀點；每段都用公式化收尾（如「這段的重點是...」「核心概念是...」）
 
-2. 中英夾雜控制（10 分）
-   評估是否僅保留必要的英文專有名詞，其餘使用自然中文。
-   — 8-10 分：只有必要的專有名詞用英文，其餘全部自然中文
-   — 5-7 分：有少數非必要英文詞，但不影響聽感
-   — 2-4 分：頻繁出現不必要的英文詞或整句英文
-   — 0-1 分：中英夾雜嚴重，影響聽眾理解
-   ✅ 加分指標：僅保留必要專有名詞（如 ChatGPT、sharding、replication、consistent hashing）；台灣工程師熟悉的字眼保留英文（GitHub / Bug / Debug / Prompt / QPS / latency）
-   ❌ 扣分指標：非必要詞彙使用英文；混合式語句（如「UI 很 friendly」「這個 tool 的功能很強」）
+2. 中英夾雜控制（15 分）
+   評估是否僅保留必要的英文專有名詞，其餘使用自然中文。注意：聽眾包含非工程師的科技愛好者，英文術語的門檻要比純工程師社群更嚴格。
+   — 13-15 分：只有必要的專有名詞用英文，其餘全部自然中文
+   — 9-12 分：有少數非必要英文詞，但不影響聽感
+   — 4-8 分：頻繁出現不必要的英文詞或整句英文
+   — 0-3 分：中英夾雜嚴重，影響聽眾理解
+   ✅ 加分指標：僅保留必要專有名詞（如 App, API, server, bug, CPU）；其他技術術語都有附中文解釋
+   ❌ 扣分指標：非必要詞彙使用英文；混合式語句（如「UI 很 friendly」「這個 tool 的功能很強」）；大量未解釋的英文術語讓非工程師聽眾跟不上
 
 3. 台灣用語友善度（10 分）
    評估是否使用偏向中國大陸詞彙、語感不符合台灣聽眾習慣。
@@ -238,44 +238,59 @@ ${fixedOpening}
    — 5-7 分：有 1-3 個大陸用語需要修正
    — 2-4 分：有 4-7 個大陸用語
    — 0-1 分：大量大陸用語，不像台灣人講話
-   ✅ 加分指標：全文用詞自然、接地氣，貼近台灣用語生活化語詞（如「比較順」「跑起來很快」「用起來很直覺」）；「伺服器」而非「服務器」；「資料庫」而非「數據庫」
+   ✅ 加分指標：全文用詞自然、接地氣，貼近台灣用語生活化語詞（如「比較順」「跑起來很快」「用起來很直覺」）；「伺服器」而非「服務器」；「資料庫」而非「數據庫」；比喻使用台灣情境（好市多、捷運、蝦皮、Line 群組）
    ❌ 扣分指標：中國常用語出現（如「體驗感」「上線」「智能」「高效」「訴求」「落地」「場景」「賦能」「視覺化」「服務器」「數據庫」等）
 
-4. 技術深度與具體性（20 分）— 系統設計懶懶學核心評分項目
+4. 技術深度與具體性（15 分）— 系統設計懶懶學核心評分項目
    評估每個設計決策是否有足夠深度讓 junior engineer 真正學到東西，能在面試中應用。
-   — 16-20 分：
+   — 13-15 分：
      ✓ 每個設計決策都有完整的「naive approach → 為什麼壞掉 → 真正解法 → trade-off」結構
      ✓ 包含具體數字（QPS、latency、storage）和 back-of-envelope calculation（至少 2 個）
      ✓ 清楚說明 trade-offs（犧牲什麼換什麼，為什麼可以接受）
      ✓ 技術細節足夠深入，聽完能在面試中說出具體的方案和數字
-   — 11-15 分：
+   — 9-12 分：
      有深入說明，但 1-2 個主題只是表面帶過
      有數字但缺少計算推導過程
      有提 trade-offs 但沒深入解釋為什麼選這個方向
-   — 6-10 分：
+   — 5-8 分：
      多數只講「是什麼」，沒講「為什麼」和「trade-off」
      缺少具體數字和計算
      沒有 naive approach → real solution 的對比故事
-   — 0-5 分：
+   — 0-4 分：
      只有表面技術描述，像是維基百科的摘要
      沒有數字、trade-offs、失敗案例
      聽完無法在面試中應用任何具體知識
    ✅ 加分指標：每個深潛完整5部分（問題→直覺解→壞掉→真解→收尾）、2+計算推導、trade-off 討論附理由、真實失敗案例、pattern recognition（跨系統的 pattern 連結）
    ❌ 扣分指標：只講「是什麼」不講「為什麼」、沒有具體數字、沒有 naive vs real 對比、trade-off 只是一句話帶過、所有主題深度一樣淺
 
-5. 字數控制（15 分）— 目標字數為 ${targetStr} 字。
-   — 13-15 分：落在目標範圍內
-   — 9-12 分：偏差 500 字以內
-   — 5-8 分：偏差 500-1000 字
-   — 0-4 分：偏差超過 1000 字
+5. 字數控制（10 分）— 目標字數為 ${targetStr} 字。
+   — 9-10 分：落在目標範圍內
+   — 6-8 分：偏差 500 字以內
+   — 3-5 分：偏差 500-1000 字
+   — 0-2 分：偏差超過 1000 字
    注意：如果字數超過上限但技術深度保持完整，不應過度扣分。技術深度 > 字數控制。
 
-6. 結構流暢度（25 分）— 此項為「系統設計懶懶學」專屬評分項目，請嚴格審查以下要點：
+6. 結構流暢度（20 分）— 此項為「系統設計懶懶學」專屬評分項目，請嚴格審查以下要點：
    a. 素材來源歸因：開場是否有用 1-2 句提到參考影片的作者或頻道背景？（不可省略）
    b. 懸念式重點預覽：進入技術深潛之前，是否用 2-4 句列出「今天要回答的問題」（而非直接列技術名詞如 sharding、replication），讓聽眾帶著好奇心進入深潛？
    c. 節奏與消化性：(i) 每個技術主題之間是否用問句驅動轉場（而非平淡的「接下來我們來看」）？(ii) 密集技術段落後是否有 recap 或 so-what 收尾句？(iii) 整體是否有「呼吸感」，不會連續 6 分鐘以上的密集技術內容沒有喘息？
    d. 深潛完整性：每個深潛主題是否都完整展開（問題→直覺解→壞掉→真解→收尾）？有沒有只是蜻蜓點水帶過的主題？
-   e. 數字推算：是否有至少 2 個 back-of-envelope 數字推算（QPS、storage、latency budget 等）？`;
+   e. 數字推算：是否有至少 2 個 back-of-envelope 數字推算（QPS、storage、latency budget 等）？
+
+7. 聽覺友善度（10 分）— 確保內容適合「用聽的」，非工程師聽眾也能跟上
+   — 9-10 分：
+     ✓ 零程式碼：完全沒有 SQL、函數、schema、pseudo-code
+     ✓ 術語皆有解釋：每個非日常技術詞第一次出現時都有一句白話解釋或比喻
+     ✓ 呼吸感充足：每個主題之間都有喘息段落，沒有連續超過 4 分鐘密集技術轟炸
+     ✓ 聽眾定位正確：面向非工程師科技愛好者 + junior engineer，不預設聽眾有分散式系統背景
+   — 6-8 分：
+     沒有程式碼，但有 1-2 個術語沒解釋，或某段缺少呼吸點
+   — 3-5 分：
+     有少量程式碼片段，多個術語未解釋，聽眾可能跟不上
+   — 0-2 分：
+     包含大段程式碼、大量未解釋術語、聽眾完全無法理解
+   ✅ 加分指標：術語都有生活化比喻（「你可以想像成...」）、技術段落後有收尾、節奏有快有慢
+   ❌ 扣分指標（任一出現都應重扣）：出現 SQL 語句、出現 schema 定義、超過 5 個專業術語沒解釋、連續超過 1500 字沒有喘息`;
 
     // Use regex to replace everything from 🎧 to the end of the scoring block
     const scoringBlockStart = prompt.indexOf('🎧 評分項目與權重：');
@@ -369,7 +384,10 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
 - 保留 pattern recognition 段落（跨系統的 pattern 連結）
 - 如果某個 topic 的深度不夠，rewrite 時應該補充具體數字和 trade-off 說明，而不是刪除該段落
 - 改善的重點放在語氣自然度和台灣用語，不是刪減技術內容
-- 技術深度 > 字數控制：寧可字數稍微超標，也不可為了控字數而犧牲深度`;
+- 技術深度 > 字數控制：寧可字數稍微超標，也不可為了控字數而犧牲深度
+- 如果腳本中有任何程式碼（SQL、schema、function call），必須全部轉換為口語描述
+- 如果有術語沒有解釋，補上一句白話說明或比喻
+- 如果有連續超過 1200 字的密集技術段落沒有喘息，插入 recap 或比喻段落`;
   }
 
   return prompt;
@@ -399,9 +417,11 @@ export async function qualityScore(state: PipelineState): Promise<Partial<Pipeli
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     // ── Score the script (GPT-5.4) ──
     const structureFlowScore = segmentType === 'sysdesign' ? `
-    "structure_flow": 0` : '';
+    "structure_flow": 0,
+    "audio_safety": 0` : '';
     const structureFlowComment = segmentType === 'sysdesign' ? `
-    "structure_flow": "請檢查：(a) 素材來源歸因 (b) 懸念式重點預覽 (c) 問句驅動轉場 (d) 每個深潛主題是否完整展開5部分 (e) 是否有至少2個back-of-envelope數字推算",` : '';
+    "structure_flow": "請檢查：(a) 素材來源歸因 (b) 懸念式重點預覽 (c) 問句驅動轉場 (d) 每個深潛主題是否完整展開5部分 (e) 是否有至少2個back-of-envelope數字推算",
+    "audio_safety": "請檢查：(a) 是否有任何程式碼（SQL/schema/pseudo-code）(b) 非日常術語是否都有白話解釋 (c) 是否有連續超過1500字沒有喘息段落的區段 (d) 內容是否面向非工程師科技愛好者+junior engineer",` : '';
 
     const actualCharCount = countScriptChars(currentScript);
     const [tMin, tMax] = getWordCountTarget(segmentType);
@@ -465,6 +485,7 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
         clarity: data.score?.clarity ?? 0,
         word_count: data.score?.word_count ?? 0,
         ...(segmentType === 'sysdesign' && { structure_flow: data.score?.structure_flow ?? 0 }),
+        ...(segmentType === 'sysdesign' && { audio_safety: data.score?.audio_safety ?? 0 }),
       },
       comments: {
         chat_feel: data.comments?.chat_feel ?? '',
@@ -473,6 +494,7 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
         clarity: data.comments?.clarity ?? '',
         word_count: data.comments?.word_count ?? '',
         ...(segmentType === 'sysdesign' && { structure_flow: data.comments?.structure_flow ?? '' }),
+        ...(segmentType === 'sysdesign' && { audio_safety: data.comments?.audio_safety ?? '' }),
         summary: data.comments?.summary ?? '',
       },
     };
@@ -499,6 +521,8 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
 
     const structureFlowFeedback = segmentType === 'sysdesign' && score.comments.structure_flow
       ? `\n結構流暢度（素材來源歸因、重點預覽、主題轉場）：${score.comments.structure_flow}\n` : '';
+    const audioSafetyFeedback = segmentType === 'sysdesign' && score.comments.audio_safety
+      ? `\n聽覺友善度（程式碼、術語解釋、呼吸點）：${score.comments.audio_safety}\n` : '';
 
     const [rwMin, rwMax] = getWordCountTarget(segmentType);
     const rwActual = countScriptChars(currentScript);
@@ -533,7 +557,7 @@ ${currentScript}
 表達清晰及小故事使用：${score.comments.clarity}
 
 字數控制： ${wordCountGuidance}
-${structureFlowFeedback}
+${structureFlowFeedback}${audioSafetyFeedback}
 整體建議： ${score.comments.summary}
 
 請根據建議重寫腳本，產出 ${rwMin}-${rwMax} 字的完整繁體中文腳本。`;
@@ -587,8 +611,8 @@ function sanitizeLLMJson(text: string): string {
 }
 
 export function parseScoringResponse(content: string): {
-  score: { chat_feel: number; eng_mix: number; tw_localization: number; clarity: number; word_count: number; structure_flow?: number; total: number };
-  comments: { chat_feel: string; eng_mix: string; tw_localization: string; clarity: string; word_count: string; structure_flow?: string; summary: string };
+  score: { chat_feel: number; eng_mix: number; tw_localization: number; clarity: number; word_count: number; structure_flow?: number; audio_safety?: number; total: number };
+  comments: { chat_feel: string; eng_mix: string; tw_localization: string; clarity: string; word_count: string; structure_flow?: string; audio_safety?: string; summary: string };
 } | null {
   try {
     const trimmed = content.trim();
@@ -622,6 +646,7 @@ export function parseScoringResponse(content: string): {
         clarity: s.clarity ?? 0,
         word_count: s.word_count ?? 0,
         ...(s.structure_flow != null && { structure_flow: s.structure_flow }),
+        ...(s.audio_safety != null && { audio_safety: s.audio_safety }),
         total: s.total ?? 0,
       },
       comments: {
@@ -631,6 +656,7 @@ export function parseScoringResponse(content: string): {
         clarity: c.clarity ?? '',
         word_count: c.word_count ?? '',
         ...(c.structure_flow != null && { structure_flow: c.structure_flow }),
+        ...(c.audio_safety != null && { audio_safety: c.audio_safety }),
         summary: c.summary ?? '',
       },
     };

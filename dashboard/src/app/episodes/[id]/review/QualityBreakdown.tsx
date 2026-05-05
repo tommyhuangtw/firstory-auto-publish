@@ -11,6 +11,7 @@ interface QualityScore {
     clarity: number;
     word_count: number;
     structure_flow?: number;
+    audio_safety?: number;
   };
   comments: {
     chat_feel: string;
@@ -19,6 +20,7 @@ interface QualityScore {
     clarity: string;
     word_count: string;
     structure_flow?: string;
+    audio_safety?: string;
     summary: string;
   };
 }
@@ -30,7 +32,7 @@ interface Props {
   wordCount: number | null;
 }
 
-type DimensionKey = 'chat_feel' | 'eng_mix' | 'tw_localization' | 'clarity' | 'word_count' | 'structure_flow';
+type DimensionKey = 'chat_feel' | 'eng_mix' | 'tw_localization' | 'clarity' | 'word_count' | 'structure_flow' | 'audio_safety';
 
 const BASE_DIMENSIONS: { key: DimensionKey; label: string; max: number; color: string }[] = [
   { key: 'chat_feel', label: '聊天感', max: 25, color: 'bg-violet-500' },
@@ -43,10 +45,11 @@ const BASE_DIMENSIONS: { key: DimensionKey; label: string; max: number; color: s
 const SYSDESIGN_DIMENSIONS: { key: DimensionKey; label: string; max: number; color: string }[] = [
   { key: 'chat_feel', label: '聊天感', max: 20, color: 'bg-violet-500' },
   { key: 'eng_mix', label: '中英夾雜', max: 15, color: 'bg-blue-500' },
-  { key: 'tw_localization', label: '台灣用語', max: 15, color: 'bg-cyan-500' },
-  { key: 'clarity', label: '��體性', max: 15, color: 'bg-emerald-500' },
-  { key: 'word_count', label: '字數', max: 15, color: 'bg-amber-500' },
+  { key: 'tw_localization', label: '台灣用語', max: 10, color: 'bg-cyan-500' },
+  { key: 'clarity', label: '具體性', max: 15, color: 'bg-emerald-500' },
+  { key: 'word_count', label: '字數', max: 10, color: 'bg-amber-500' },
   { key: 'structure_flow', label: '結構流暢', max: 20, color: 'bg-teal-500' },
+  { key: 'audio_safety', label: '聽覺友善', max: 10, color: 'bg-rose-500' },
 ];
 
 export default function QualityBreakdown({ qualityScore, qualityIterations, totalCost, wordCount }: Props) {
@@ -89,7 +92,7 @@ export default function QualityBreakdown({ qualityScore, qualityIterations, tota
       <div className="space-y-3">
         {dimensions.map(({ key, label, max, color }) => {
           const value = qualityScore.dimensions[key] ?? 0;
-          const pct = (value / max) * 100;
+          const pct = Math.min((value / max) * 100, 100);
           return (
             <div key={key}>
               <div className="flex items-center justify-between text-xs mb-1">
@@ -112,7 +115,7 @@ export default function QualityBreakdown({ qualityScore, qualityIterations, tota
         onClick={() => setShowComments(!showComments)}
         className="mt-4 text-xs text-zinc-400 hover:text-zinc-300 transition-colors cursor-pointer"
       >
-        {showComments ? '���藏評語' : '顯示評���'}
+        {showComments ? '隱藏評語' : '顯示評語'}
       </button>
 
       {showComments && (

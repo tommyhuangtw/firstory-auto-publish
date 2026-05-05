@@ -28,6 +28,7 @@ export interface QualityScore {
     clarity: number;
     word_count: number;
     structure_flow?: number; // sysdesign only
+    audio_safety?: number; // sysdesign only
   };
   comments: {
     chat_feel: string;
@@ -36,6 +37,7 @@ export interface QualityScore {
     clarity: string;
     word_count: string;
     structure_flow?: string; // sysdesign only
+    audio_safety?: string; // sysdesign only
     summary: string;
   };
 }
