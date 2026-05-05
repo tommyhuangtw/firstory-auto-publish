@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -51,6 +51,8 @@ interface AnalyticsData {
 
 type Tab = 'trend' | 'ranking' | 'analysis';
 type Range = '7d' | '30d' | '90d' | '360d' | 'all';
+type SortKey = 'episode_number' | 'total_downloads' | 'downloads_7d' | 'downloads_30d' | 'duration_sec' | 'published_at';
+type SortDir = 'asc' | 'desc';
 
 // ---------- Component ----------
 
@@ -62,6 +64,8 @@ export default function AnalyticsClient() {
   const [sort, setSort] = useState('total_downloads');
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const [tableSort, setTableSort] = useState<SortKey | null>(null);
+  const [tableSortDir, setTableSortDir] = useState<SortDir>('desc');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
@@ -78,6 +82,30 @@ export default function AnalyticsClient() {
   }, [range, sort]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const sortedEpisodes = useMemo(() => {
+    if (!data?.episodes) return [];
+    if (!tableSort) return data.episodes;
+    return [...data.episodes].sort((a, b) => {
+      const key = tableSort;
+      const av = a[key];
+      const bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+      return tableSortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [data?.episodes, tableSort, tableSortDir]);
+
+  const handleTableSort = (key: SortKey) => {
+    if (tableSort === key) {
+      setTableSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setTableSort(key);
+      setTableSortDir('desc');
+    }
+  };
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -314,31 +342,51 @@ export default function AnalyticsClient() {
               </div>
 
               {/* Top 20 bar chart */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">下載數 Top 20</h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart
-                    data={data.episodes.slice(0, 20)}
-                    layout="vertical"
-                    margin={{ left: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis type="number" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="title"
-                      width={280}
-                      tick={{ fill: '#a1a1aa', fontSize: 10 }}
-                      tickFormatter={(t: string) => t.length > 40 ? t.slice(0, 40) + '...' : t}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8 }}
-                      labelStyle={{ color: '#e4e4e7', fontSize: 11 }}
-                    />
-                    <Bar dataKey="total_downloads" name="不重複下載數" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {(() => {
+                const chartMeta: Record<string, { title: string; dataKey: string; label: string; color: string }> = {
+                  total_downloads: { title: 'TOP 20 — 總下載數', dataKey: 'total_downloads', label: '總下載數', color: '#3b82f6' },
+                  downloads_7d: { title: 'TOP 20 — 近 7 天下載數', dataKey: 'downloads_7d', label: '7 天下載數', color: '#22c55e' },
+                  downloads_30d: { title: 'TOP 20 — 近 30 天下載數', dataKey: 'downloads_30d', label: '30 天下載數', color: '#a855f7' },
+                  published_at: { title: '最近 20 集', dataKey: 'total_downloads', label: '總下載數', color: '#64748b' },
+                };
+                const cm = chartMeta[sort] || chartMeta.total_downloads;
+                const chartData = data.episodes.slice(0, 20).map(ep => ({
+                  ...ep,
+                  shortTitle: `EP${ep.episode_number ?? '?'} - ${ep.title.length > 30 ? ep.title.slice(0, 30) + '…' : ep.title}`,
+                }));
+                return (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                    <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">{cm.title}</h3>
+                    <ResponsiveContainer width="100%" height={520}>
+                      <BarChart
+                        data={chartData}
+                        layout="vertical"
+                        margin={{ left: 10, right: 20 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                        <XAxis type="number" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
+                        <YAxis
+                          type="category"
+                          dataKey="shortTitle"
+                          width={260}
+                          tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8 }}
+                          labelStyle={{ color: '#e4e4e7', fontSize: 12 }}
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          formatter={(value: any) => [Number(value).toLocaleString(), cm.label]}
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          labelFormatter={(_: any, payload: any) =>
+                            payload?.[0]?.payload?.title || ''
+                          }
+                        />
+                        <Bar dataKey={cm.dataKey} name={cm.label} fill={cm.color} radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
 
               {/* Episode table */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
@@ -346,17 +394,17 @@ export default function AnalyticsClient() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-zinc-800 text-zinc-400 text-left">
-                        <th className="px-4 py-3 font-medium">#</th>
+                        <SortTh label="#" sortKey="episode_number" active={tableSort} dir={tableSortDir} onClick={handleTableSort} />
                         <th className="px-4 py-3 font-medium">標題</th>
-                        <th className="px-4 py-3 font-medium text-right">總下載</th>
-                        <th className="px-4 py-3 font-medium text-right">7天</th>
-                        <th className="px-4 py-3 font-medium text-right">30天</th>
-                        <th className="px-4 py-3 font-medium text-right">時長</th>
-                        <th className="px-4 py-3 font-medium">發佈日期</th>
+                        <SortTh label="總下載" sortKey="total_downloads" active={tableSort} dir={tableSortDir} onClick={handleTableSort} align="right" />
+                        <SortTh label="7天" sortKey="downloads_7d" active={tableSort} dir={tableSortDir} onClick={handleTableSort} align="right" />
+                        <SortTh label="30天" sortKey="downloads_30d" active={tableSort} dir={tableSortDir} onClick={handleTableSort} align="right" />
+                        <SortTh label="時長" sortKey="duration_sec" active={tableSort} dir={tableSortDir} onClick={handleTableSort} align="right" />
+                        <SortTh label="發佈日期" sortKey="published_at" active={tableSort} dir={tableSortDir} onClick={handleTableSort} />
                       </tr>
                     </thead>
                     <tbody>
-                      {data.episodes.map((ep, i) => (
+                      {sortedEpisodes.map((ep, i) => (
                         <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                           <td className="px-4 py-2.5 text-zinc-500">
                             {ep.episode_number ?? '—'}
@@ -504,6 +552,28 @@ function StatRow({ label, value, truncate }: { label: string; value: string; tru
         {value}
       </span>
     </div>
+  );
+}
+
+function SortTh({ label, sortKey, active, dir, onClick, align }: {
+  label: string;
+  sortKey: SortKey;
+  active: SortKey | null;
+  dir: SortDir;
+  onClick: (key: SortKey) => void;
+  align?: 'right';
+}) {
+  const isActive = active === sortKey;
+  return (
+    <th
+      className={`px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-200 transition-colors ${align === 'right' ? 'text-right' : ''} ${isActive ? 'text-brand' : ''}`}
+      onClick={() => onClick(sortKey)}
+    >
+      {label}
+      {isActive && (
+        <span className="ml-1 text-xs">{dir === 'desc' ? '▼' : '▲'}</span>
+      )}
+    </th>
   );
 }
 
