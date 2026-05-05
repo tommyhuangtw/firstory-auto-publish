@@ -11,6 +11,8 @@ interface ShortsData {
   cover_path: string | null;
   ig_caption: string | null;
   ig_post_id: string | null;
+  yt_video_id: string | null;
+  yt_video_url: string | null;
   beats_json: string | null;
   selected_beat_index: number | null;
   headlines_json: string | null;
@@ -20,6 +22,7 @@ interface ShortsData {
 }
 
 interface Beat {
+  title?: string;
   text: string;
   reason: string;
 }
@@ -59,8 +62,10 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
   const [coverHeadlineCandidates, setCoverHeadlineCandidates] = useState<string[]>([]);
   const [regeneratingHeadlines, setRegeneratingHeadlines] = useState(false);
   const [headlineY, setHeadlineY] = useState(37); // percentage from top (default matches Remotion paddingTop: 400/1080 ≈ 37%)
+  const [headlineFontSize, setHeadlineFontSize] = useState(96); // Remotion fontSize in 1080w space
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialShorts?.avatar_path ? `/api/audio${initialShorts.avatar_path}` : null);
   const [regeneratingCover, setRegeneratingCover] = useState(false);
+  const [coverDirty, setCoverDirty] = useState(!initialShorts?.cover_path);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
 
@@ -89,7 +94,12 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
         setBeats(s.beats_json ? JSON.parse(s.beats_json) : []);
         setSelectedBeatIdx(s.selected_beat_index);
         setHeadlines(s.headlines_json ? JSON.parse(s.headlines_json) : []);
-        setStep('select_headline');
+        if (s.video_path) {
+          // Video already exists (e.g. cover was regenerated after completion)
+          setStep('completed');
+        } else {
+          setStep('select_headline');
+        }
         setExpanded(true);
         break;
       case 'generating':
@@ -237,11 +247,14 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
   }, [selectedHeadlineIdx, shortsId, customHeadline, headlines]);
 
   const [publishStage, setPublishStage] = useState<'cover' | 'upload' | null>(null);
+  const [ytWarning, setYtWarning] = useState('');
 
-  const handlePublish = useCallback(async () => {
+  const handlePublish = useCallback(async (platform: 'ig' | 'yt' | 'all') => {
     if (!shortsId) return;
-    if (!confirm('確定要發布到 Instagram Reels？')) return;
+    const labels = { ig: 'Instagram Reels', yt: 'YouTube Shorts', all: 'Instagram + YouTube' };
+    if (!confirm(`確定要發布到 ${labels[platform]}？`)) return;
     setError('');
+    setYtWarning('');
     setStep('publishing');
     try {
       // Step 1: Regenerate cover with latest headline + position
@@ -250,23 +263,30 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
         const coverRes = await fetch('/api/shorts/regenerate-cover', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY }),
+          body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY, headlineFontSize }),
         });
         const coverData = await coverRes.json();
         if (!coverRes.ok) throw new Error(coverData.error);
         setShorts((prev) => prev ? { ...prev, cover_path: coverData.coverPath } : prev);
       }
 
-      // Step 2: Publish to Instagram
+      // Step 2: Publish
       setPublishStage('upload');
       const res = await fetch(`/api/shorts/publish/${shortsId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: igCaption }),
+        body: JSON.stringify({ caption: igCaption, platform }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setShorts((prev) => prev ? { ...prev, ig_post_id: data.igPostId, status: 'published' } : prev);
+      setShorts((prev) => prev ? {
+        ...prev,
+        ig_post_id: data.igPostId || prev.ig_post_id,
+        yt_video_id: data.ytVideoId || prev.yt_video_id,
+        yt_video_url: data.ytVideoUrl || prev.yt_video_url,
+        status: 'published',
+      } : prev);
+      if (data.warning) setYtWarning(data.warning);
       setStep('published');
     } catch (err) {
       setError((err as Error).message);
@@ -274,11 +294,10 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
     } finally {
       setPublishStage(null);
     }
-  }, [shortsId, igCaption, coverHeadline, headlineY]);
+  }, [shortsId, igCaption, coverHeadline, headlineY, headlineFontSize]);
 
   const handleRestart = useCallback(() => {
-    // Reuse existing beats — same script always produces same highlights.
-    // Keep avatar selection and shortsId, just reset beat/headline choices.
+    // Reuse existing beats — keep avatar selection and shortsId, just reset beat/headline choices.
     const existingBeats = beats;
     setShorts(null);
     setSelectedBeatIdx(null);
@@ -296,6 +315,27 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
       setStep('idle');
     }
   }, [beats]);
+
+  const handleRegenerateBeats = useCallback(async () => {
+    setError('');
+    setSelectedBeatIdx(null);
+    setStep('loading_beats');
+    try {
+      const res = await fetch('/api/shorts/beats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ episodeId, avatarFilename: selectedAvatar || shorts?.avatar_filename, segmentType }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setShortsId(data.shortsId);
+      setBeats(data.beats);
+      setStep('select_beat');
+    } catch (err) {
+      setError((err as Error).message);
+      setStep('select_beat');
+    }
+  }, [episodeId, selectedAvatar, shorts?.avatar_filename, segmentType]);
 
   const handleRegenerateIgCaption = useCallback(async () => {
     if (!shortsId) return;
@@ -345,17 +385,18 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
       const res = await fetch('/api/shorts/regenerate-cover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY }),
+        body: JSON.stringify({ shortsId, headline: coverHeadline.trim(), headlineY, headlineFontSize }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setShorts((prev) => prev ? { ...prev, cover_path: data.coverPath } : prev);
+      setCoverDirty(false);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setRegeneratingCover(false);
     }
-  }, [shortsId, coverHeadline, headlineY]);
+  }, [shortsId, coverHeadline, headlineY, headlineFontSize]);
 
   const handleRemakeVideo = useCallback(() => {
     // Go back to beat selection, keeping existing beats and shortsId
@@ -509,22 +550,30 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                         className="mt-1 accent-violet-500"
                       />
                       <div>
-                        <p className="text-xs text-zinc-300 leading-relaxed">{beat.text.slice(0, 150)}...</p>
-                        {beat.reason && (
-                          <p className="text-[10px] text-zinc-500 mt-1">{beat.reason}</p>
+                        {beat.title && (
+                          <p className="text-sm font-medium text-zinc-200 mb-0.5">{beat.title}</p>
                         )}
+                        <p className="text-[11px] text-zinc-400 leading-relaxed">{beat.reason || beat.text.slice(0, 120) + '...'}</p>
                       </div>
                     </div>
                   </label>
                 ))}
               </div>
-              <button
-                onClick={handleSelectBeat}
-                disabled={selectedBeatIdx === null}
-                className="w-full py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-sm font-medium transition-colors cursor-pointer"
-              >
-                下一步：選擇封面標題
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRegenerateBeats}
+                  className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-sm transition-colors cursor-pointer"
+                >
+                  重新生成主題
+                </button>
+                <button
+                  onClick={handleSelectBeat}
+                  disabled={selectedBeatIdx === null}
+                  className="flex-1 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-sm font-medium transition-colors cursor-pointer"
+                >
+                  下一步：選擇封面標題
+                </button>
+              </div>
             </div>
           )}
 
@@ -650,15 +699,33 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
           {/* Step: Completed / Publishing / Published — Preview + Actions */}
           {(step === 'completed' || step === 'publishing' || step === 'published') && shorts && (
             <div className="pt-4 space-y-4">
-              {/* Published badge */}
-              {step === 'published' && (
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm">已發布到 Instagram Reels</span>
+              {/* Published badges */}
+              {(shorts.ig_post_id || shorts.yt_video_id) && (
+                <div className="space-y-1.5">
                   {shorts.ig_post_id && (
-                    <span className="text-[10px] text-zinc-500 ml-1">Post ID: {shorts.ig_post_id}</span>
+                    <div className="flex items-center gap-2 text-emerald-400">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm">已發布 Instagram Reels</span>
+                      <span className="text-[10px] text-zinc-500 ml-1">Post ID: {shorts.ig_post_id}</span>
+                    </div>
+                  )}
+                  {shorts.yt_video_id && (
+                    <div className="flex items-center gap-2 text-emerald-400">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm">已發布 YouTube Shorts</span>
+                      {shorts.yt_video_url && (
+                        <a href={shorts.yt_video_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline ml-1">
+                          查看影片
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  {ytWarning && (
+                    <p className="text-[11px] text-yellow-400">{ytWarning}</p>
                   )}
                 </div>
               )}
@@ -703,23 +770,27 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                     </button>
                   </div>
                 </div>
-                {/* Live CSS preview — mirrors Remotion ReelsCover layout (1080×1920) */}
-                {avatarUrl && (
-                  <div className="rounded-lg border border-zinc-700 overflow-hidden mb-2" style={{ width: 128, height: Math.round(128 * 16 / 9) }}>
-                    <div className="relative w-full h-full">
-                      <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover brightness-[0.85]" />
+                {/* Single cover display: show rendered image when up-to-date, CSS preview when editing */}
+                <div className="rounded-lg border border-zinc-700 overflow-hidden mb-2" style={{ width: 128, height: Math.round(128 * 16 / 9) }}>
+                  {!coverDirty && shorts?.cover_path ? (
+                    <img
+                      src={`/api/audio${shorts.cover_path}?t=${shorts.cover_path}`}
+                      alt="封面"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="relative w-full h-full bg-zinc-800">
+                      {avatarUrl && <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover brightness-[0.85]" />}
                       <div className="absolute inset-0" style={{
                         background: 'linear-gradient(to bottom, transparent 35%, rgba(20,10,5,0.65) 55%, rgba(20,10,5,0.65) 75%, transparent 92%)'
                       }} />
-                      {/* Remotion: paddingTop on 1920h, padding 0 80px on 1080w, fontSize 96 on 1080w */}
-                      {/* Preview: 128w × 227h, scale = 128/1080 ≈ 0.1185 */}
                       <div className="absolute inset-x-0 flex justify-center text-center" style={{
                         top: `${headlineY}%`,
-                        paddingLeft: 9,   /* 80 * 128/1080 ≈ 9.5 */
+                        paddingLeft: 9,
                         paddingRight: 9,
                       }}>
                         <p className="text-white font-black whitespace-pre-line" style={{
-                          fontSize: 11,     /* 96 * 128/1080 ≈ 11.4 */
+                          fontSize: Math.round(headlineFontSize * 128 / 1080),
                           lineHeight: 1.3,
                           textShadow: '0 1px 3px rgba(0,0,0,0.7)',
                           letterSpacing: '0.02em',
@@ -728,16 +799,16 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                         </p>
                       </div>
                       <p className="absolute font-semibold text-white/50" style={{
-                        bottom: 5,        /* 80 * 227/1920 ≈ 9.5, but smaller looks better */
+                        bottom: 5,
                         right: 5,
-                        fontSize: 3,      /* 28 * 128/1080 ≈ 3.3 */
+                        fontSize: 3,
                         letterSpacing: '0.1em',
                       }}>
                         AI懶人報 PODCAST
                       </p>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
                 {/* Headline candidates */}
                 {coverHeadlineCandidates.length > 0 && (
                   <div className="space-y-1 mb-2">
@@ -745,7 +816,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                     {coverHeadlineCandidates.map((h, i) => (
                       <button
                         key={i}
-                        onClick={() => { setCoverHeadline(h); setCoverHeadlineCandidates([]); }}
+                        onClick={() => { setCoverHeadline(h); setCoverHeadlineCandidates([]); setCoverDirty(true); }}
                         className={`block w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors cursor-pointer ${
                           coverHeadline === h
                             ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
@@ -759,7 +830,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 )}
                 <textarea
                   value={coverHeadline}
-                  onChange={(e) => setCoverHeadline(e.target.value)}
+                  onChange={(e) => { setCoverHeadline(e.target.value); setCoverDirty(true); }}
                   placeholder="封面標題（按 Enter 換行）..."
                   rows={2}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 resize-y"
@@ -771,10 +842,22 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                     min={0}
                     max={70}
                     value={headlineY}
-                    onChange={(e) => setHeadlineY(Number(e.target.value))}
+                    onChange={(e) => { setHeadlineY(Number(e.target.value)); setCoverDirty(true); }}
                     className="flex-1 h-1 accent-violet-500 cursor-pointer"
                   />
                   <span className="text-[10px] text-zinc-500 tabular-nums w-6 text-right">{headlineY}%</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] text-zinc-500 shrink-0">標題大小</span>
+                  <input
+                    type="range"
+                    min={60}
+                    max={140}
+                    value={headlineFontSize}
+                    onChange={(e) => { setHeadlineFontSize(Number(e.target.value)); setCoverDirty(true); }}
+                    className="flex-1 h-1 accent-violet-500 cursor-pointer"
+                  />
+                  <span className="text-[10px] text-zinc-500 tabular-nums w-6 text-right">{headlineFontSize}</span>
                 </div>
               </div>
 
@@ -801,16 +884,40 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 />
               </div>
 
-              {/* Publish button */}
-              <button
-                onClick={handlePublish}
-                disabled={step === 'publishing'}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white text-sm font-medium transition-all cursor-pointer"
-              >
-                {step === 'publishing'
-                  ? (publishStage === 'cover' ? '生成封面中...' : '發布中...')
-                  : 'Publish to Instagram'}
-              </button>
+              {/* Publish buttons */}
+              <div className="space-y-2">
+                {step === 'publishing' ? (
+                  <div className="w-full py-2.5 rounded-lg bg-zinc-700 text-center text-white text-sm font-medium">
+                    {publishStage === 'cover' ? '生成封面中...' : '發布中...'}
+                  </div>
+                ) : (
+                  <>
+                    {/* Show "Publish All" when at least one platform is not yet published */}
+                    {(!shorts.ig_post_id || !shorts.yt_video_id) && (
+                      <button
+                        onClick={() => handlePublish('all')}
+                        className="w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-sm font-medium transition-all cursor-pointer"
+                      >
+                        IG + YouTube 同步發布
+                      </button>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePublish('ig')}
+                        className="flex-1 py-2 rounded-lg bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 text-white text-sm font-medium transition-all cursor-pointer"
+                      >
+                        {shorts.ig_post_id ? '重新發布 IG' : '僅發布 IG'}
+                      </button>
+                      <button
+                        onClick={() => handlePublish('yt')}
+                        className="flex-1 py-2 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-sm font-medium transition-all cursor-pointer"
+                      >
+                        {shorts.yt_video_id ? '重新發布 YouTube' : '僅發布 YouTube'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Remake actions */}
               <div className="flex gap-2 pt-1 border-t border-zinc-800">
