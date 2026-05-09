@@ -37,6 +37,8 @@ import { tts } from './nodes/tts';
 import { uploadAssets } from './nodes/uploadAssets';
 import { notify } from './nodes/notify';
 import { publish } from './nodes/publish';
+import { concatMp3s, generateSilence } from './nodes/tts';
+import fs from 'fs';
 
 const log = createChildLogger('pipeline');
 
@@ -174,6 +176,9 @@ export async function startPipeline(
 
     // Update episode
     updateEpisodeFromState(db, finalState, episodeId);
+
+    // Merge sponsor audio if active preset exists
+    await mergeSponsorAudioForEpisode(db, episodeId, finalState.audioPath);
 
     // Mark selected videos as used (only on success)
     markVideosUsed(db, finalState, episodeId);
@@ -411,6 +416,7 @@ export async function retryFromStage(
     ).run(newRunId);
 
     updateEpisodeFromState(db, currentState, episodeId);
+    await mergeSponsorAudioForEpisode(db, episodeId, currentState.audioPath);
     markVideosUsed(db, currentState, episodeId);
 
     log.info({ newRunId, fromStage }, 'Retry completed');
@@ -484,6 +490,55 @@ function markVideosUsed(
     stmt.run(episodeId, vid);
   }
   log.info({ table, count: videoIds.length, episodeId }, 'Marked videos as used');
+}
+
+/**
+ * Merge active sponsor audio with episode audio (prepend + 0.3s silence gap).
+ * Called after pipeline completion. Stores original audio path for re-merge.
+ */
+async function mergeSponsorAudioForEpisode(
+  db: ReturnType<typeof getDb>,
+  episodeId: number,
+  episodeAudioPath: string
+) {
+  try {
+    const activeSponsor = db.prepare(`
+      SELECT id, audio_path FROM sponsor_audio_presets
+      WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))
+      LIMIT 1
+    `).get() as { id: number; audio_path: string } | undefined;
+
+    if (!activeSponsor?.audio_path || !fs.existsSync(activeSponsor.audio_path)) {
+      return;
+    }
+
+    if (!episodeAudioPath || !fs.existsSync(episodeAudioPath)) {
+      log.warn({ episodeId }, 'Episode audio not found, skipping sponsor merge');
+      return;
+    }
+
+    const mergedPath = episodeAudioPath.replace(/\.mp3$/, '_sponsor.mp3');
+    const silencePath = episodeAudioPath.replace(/\.mp3$/, '_silence.mp3');
+
+    await generateSilence(silencePath, 0.3);
+    await concatMp3s([activeSponsor.audio_path, silencePath, episodeAudioPath], mergedPath);
+
+    // Clean up silence file
+    try { fs.unlinkSync(silencePath); } catch { /* ignore */ }
+
+    // Save original audio path and update to merged version
+    db.prepare(`
+      UPDATE episodes SET
+        sponsor_original_audio_path = ?,
+        sponsor_audio_id = ?,
+        audio_path = ?
+      WHERE id = ?
+    `).run(episodeAudioPath, activeSponsor.id, mergedPath, episodeId);
+
+    log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor audio merged');
+  } catch (err) {
+    log.warn({ episodeId, error: (err as Error).message }, 'Sponsor audio merge failed, continuing without');
+  }
 }
 
 /**

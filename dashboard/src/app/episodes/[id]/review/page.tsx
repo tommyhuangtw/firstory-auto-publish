@@ -15,6 +15,7 @@ import ShortsSection from './ShortsSection';
 import IgCaptionSection from './IgCaptionSection';
 import RegenerateCoverButton from './RegenerateCoverButton';
 import AudioSection from './AudioSection';
+import SponsorAudioSelector from './SponsorAudioSelector';
 import FbCaptionSection from './FbCaptionSection';
 import ThreadsCaptionSection from './ThreadsCaptionSection';
 import YouTubeThumbnailSection from './YouTubeThumbnailSection';
@@ -52,6 +53,7 @@ interface Episode {
   threads_caption: string | null;
   threads_post_id: string | null;
   source_links: string | null;
+  sponsor_audio_id: number | null;
   created_at: string;
   approved_at: string | null;
   published_at: string | null;
@@ -270,6 +272,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             hasOriginal={!!(db.prepare('SELECT original_audio_path FROM episodes WHERE id = ?').get(episodeId) as { original_audio_path: string | null } | undefined)?.original_audio_path}
           />
         </div>
+
+        {/* Sponsor Audio Selection */}
+        <SponsorAudioSelector
+          episodeId={episode.id}
+          initialSponsorId={episode.sponsor_audio_id}
+        />
 
         {/* YouTube Thumbnail */}
         <YouTubeThumbnailSection

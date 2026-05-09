@@ -196,6 +196,17 @@ CREATE TABLE IF NOT EXISTS ad_presets (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS sponsor_audio_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  script_text TEXT NOT NULL,
+  audio_path TEXT NOT NULL,
+  audio_duration_sec REAL,
+  is_active INTEGER DEFAULT 0,
+  expires_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS shorts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   episode_number INTEGER,             -- nullable; episode_id is the primary reference

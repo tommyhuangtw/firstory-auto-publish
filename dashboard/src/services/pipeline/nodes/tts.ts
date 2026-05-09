@@ -48,6 +48,12 @@ const CHUNK_MAX_LEN = 190;
 const BATCH_SIZE = 2;
 const BATCH_WAIT_MS = 3000;
 
+export const SPONSOR_AUDIO_CONFIG = {
+  speed: 1.12,
+  pitch_shift: 1.5,
+  style_weight: 0.8,
+  breath_pause: 0.15,
+};
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
 function getAudioConfig(segmentType: string) {
@@ -164,7 +170,7 @@ function splitSentences(text: string): string[] {
 
 const visibleLen = (s: string) => (s || '').replace(/\s+/g, '').length;
 
-function buildChunks(text: string, maxLen: number = CHUNK_MAX_LEN): string[] {
+export function buildChunks(text: string, maxLen: number = CHUNK_MAX_LEN): string[] {
   const sentences = splitSentences(text);
   const result: string[] = [];
   let buf: string[] = [];
@@ -206,7 +212,7 @@ function buildChunks(text: string, maxLen: number = CHUNK_MAX_LEN): string[] {
 
 // ── Synthesis ──
 
-async function synthesizeChunk(chunk: string, outPath: string, apiKey: string, audioConfig = DAILY_AUDIO_CONFIG): Promise<void> {
+export async function synthesizeChunk(chunk: string, outPath: string, apiKey: string, audioConfig = DAILY_AUDIO_CONFIG): Promise<void> {
   const sanitized = chunk.replace(/"/g, '');
 
   const resp = await withRetry(
@@ -255,7 +261,7 @@ async function synthesizeChunk(chunk: string, outPath: string, apiKey: string, a
 
 // ── FFmpeg ──
 
-async function concatMp3s(chunkPaths: string[], finalPath: string): Promise<void> {
+export async function concatMp3s(chunkPaths: string[], finalPath: string): Promise<void> {
   if (chunkPaths.length === 0) throw new Error('No chunks to concat');
   if (chunkPaths.length === 1) {
     await fs.copy(chunkPaths[0], finalPath);
@@ -265,7 +271,7 @@ async function concatMp3s(chunkPaths: string[], finalPath: string): Promise<void
   const chunkDir = path.dirname(chunkPaths[0]);
   const listFile = path.join(chunkDir, 'concat_list.txt');
   const listContent = chunkPaths
-    .map((p) => `file '${path.basename(p).replace(/'/g, "'\\''")}'`)
+    .map((p) => `file '${path.resolve(p).replace(/'/g, "'\\''")}'`)
     .join('\n');
   await fs.writeFile(listFile, listContent);
 
@@ -273,15 +279,21 @@ async function concatMp3s(chunkPaths: string[], finalPath: string): Promise<void
     await execAsync(`ffmpeg -y -nostdin -f concat -safe 0 -i "${listFile}" -c copy "${finalPath}"`);
   } catch {
     log.warn('Stream copy failed, re-encoding');
-    await execAsync(`ffmpeg -y -nostdin -f concat -safe 0 -i "${listFile}" -c:a aac -b:a 192k "${finalPath}"`);
+    await execAsync(`ffmpeg -y -nostdin -f concat -safe 0 -i "${listFile}" -c:a libmp3lame -b:a 192k "${finalPath}"`);
   }
 }
 
-async function probeDuration(audioPath: string): Promise<number> {
+export async function probeDuration(audioPath: string): Promise<number> {
   const { stdout } = await execAsync(
     `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
   );
   return parseFloat(stdout.trim());
+}
+
+export async function generateSilence(outPath: string, durationSec: number, sampleRate = 32000): Promise<void> {
+  await execAsync(
+    `ffmpeg -y -nostdin -f lavfi -i anullsrc=channel_layout=mono:sample_rate=${sampleRate} -t ${durationSec.toFixed(2)} -c:a libmp3lame -b:a 128k "${outPath}"`
+  );
 }
 
 async function makeSilentStub(text: string, outPath: string) {

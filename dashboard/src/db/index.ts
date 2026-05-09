@@ -64,6 +64,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN audio_duration_sec REAL');
   safeAlter('ALTER TABLE episodes ADD COLUMN title_history TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN hook_title_history TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_audio_id INTEGER REFERENCES sponsor_audio_presets(id)');
+  safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_original_audio_path TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {
