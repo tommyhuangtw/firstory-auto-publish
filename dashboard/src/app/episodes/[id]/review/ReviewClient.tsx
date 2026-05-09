@@ -9,6 +9,7 @@ interface Props {
   status: string;
   segmentType: string;
   candidateTitles: string[];
+  titleHistory: { titles: string[]; prompt: string | null; ts: string }[];
   selectedTitle: string;
   description: string;
   tags: string[];
@@ -21,6 +22,7 @@ export default function ReviewClient({
   episodeId,
   status,
   candidateTitles: initialCandidates,
+  titleHistory: initialTitleHistory,
   selectedTitle: initialTitle,
   description: initialDescription,
   tags,
@@ -40,6 +42,8 @@ export default function ReviewClient({
   const [showDetails, setShowDetails] = useState(false);
   const [publishErrors, setPublishErrors] = useState<Array<{ platform: string; error: string }>>([]);
   const [titlePrompt, setTitlePrompt] = useState('');
+  const [titleHistory, setTitleHistory] = useState(initialTitleHistory);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
@@ -156,6 +160,10 @@ export default function ReviewClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      // Push current batch to local history before replacing
+      if (candidateTitles.length > 0) {
+        setTitleHistory(prev => [{ titles: candidateTitles, prompt: titlePrompt || null, ts: new Date().toISOString() }, ...prev]);
+      }
       setCandidateTitles(data.candidateTitles);
       setTitle(data.selectedTitle);
       setSavedTitle(data.selectedTitle);
@@ -250,6 +258,51 @@ export default function ReviewClient({
             placeholder="Or type a custom title..."
             className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
           />
+          {/* Title History */}
+          {titleHistory.length > 0 && (
+            <div className="mt-3 border-t border-zinc-800 pt-3">
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                <svg className={`w-3 h-3 transition-transform ${showHistory ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+                歷史批次（{titleHistory.length}）
+              </button>
+              {showHistory && (
+                <div className="mt-2 space-y-3">
+                  {titleHistory.map((batch, bi) => (
+                    <div key={bi} className="bg-zinc-800/50 rounded p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] text-zinc-500">
+                          {new Date(batch.ts).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {batch.prompt && (
+                          <span className="text-[10px] text-zinc-600 truncate max-w-[200px]" title={batch.prompt}>
+                            prompt: {batch.prompt}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {batch.titles.map((t, ti) => (
+                          <button
+                            key={ti}
+                            onClick={() => handleTitleChange(t)}
+                            className={`block w-full text-left text-xs px-2 py-1 rounded transition-colors cursor-pointer ${
+                              title === t ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50'
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 

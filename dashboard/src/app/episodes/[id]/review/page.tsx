@@ -29,6 +29,7 @@ interface Episode {
   script_en: string | null;
   script_zh: string | null;
   candidate_titles: string | null;
+  title_history: string | null;
   selected_title: string | null;
   description: string | null;
   youtube_description: string | null;
@@ -37,6 +38,7 @@ interface Episode {
   cover_path: string | null;
   yt_thumbnail_path: string | null;
   yt_hook_title: string | null;
+  hook_title_history: string | null;
   source_videos: string | null;
   quality_score: number | null;
   total_cost_usd: number | null;
@@ -155,6 +157,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   }
 
   const candidateTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
+  const titleHistory: { titles: string[]; prompt: string | null; ts: string }[] = episode.title_history ? JSON.parse(episode.title_history) : [];
   const tags: string[] = episode.tags ? JSON.parse(episode.tags) : [];
   const sourceVideos = episode.source_videos ? JSON.parse(episode.source_videos) : [];
 
@@ -274,6 +277,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           selectedTitle={episode.selected_title || ''}
           savedHookTitle={episode.yt_hook_title}
           savedThumbnailPath={episode.yt_thumbnail_path}
+          hookTitleHistory={episode.hook_title_history ? JSON.parse(episode.hook_title_history) : []}
           canEdit={canEdit}
         />
 
@@ -284,6 +288,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           status={episode.status}
           segmentType={episode.segment_type}
           candidateTitles={candidateTitles}
+          titleHistory={titleHistory}
           selectedTitle={episode.selected_title || ''}
           description={episode.description || ''}
           tags={tags}

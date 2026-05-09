@@ -26,7 +26,7 @@ const { extractHighlight } = require('./highlightExtractor');
 const { concatAudio, getDuration } = require('./audioCutter');
 const { synthesize } = require('./voai');
 const { fetchAll: fetchBrollAll } = require('./pexels');
-const { generateHeroBroll, generateSlothVideo, SLOTH_HOOK_PROMPT, SLOTH_OUTRO_PROMPT } = require('./kieai');
+const { generateSlothVideo, SLOTH_HOOK_PROMPT, SLOTH_OUTRO_PROMPT } = require('./kieai');
 const glob = require('glob');
 
 const execAsync = promisify(exec);
@@ -170,24 +170,16 @@ async function runShortsPipeline({
     throw err;
   }
 
-  // ── Stage 5: B-roll (Pexels + optional kie.ai Veo hero clip) ──────────
+  // ── Stage 5: B-roll (Pexels + Kling hook video as hero) ──────────
   reportStage('broll');
   console.log('\n━━━ Stage 5/7: B-roll ━━━');
   const brollDir = path.join(workDir, 'broll');
   const pexelsResults = await fetchBrollAll(plan.broll_keywords, brollDir);
 
-  let brollResults = pexelsResults;
-  if (process.env.ENABLE_KIE_HERO_BROLL === 'true' && plan.broll_keywords.length > 0) {
-    try {
-      const heroPath = path.join(brollDir, 'hero_veo.mp4');
-      const heroKeyword = plan.broll_keywords[0];
-      const hero = await generateHeroBroll({ keyword: heroKeyword, outPath: heroPath });
-      brollResults = [hero, ...pexelsResults];
-      console.log(`   [broll] Veo hero clip prepended — ${brollResults.length} clips total`);
-    } catch (err) {
-      console.warn(`   [broll] Veo hero generation failed, falling back to Pexels only: ${err.message}`);
-    }
-  }
+  // Reuse Kling hook video as hero B-roll (replaces Veo3)
+  const hookHeroBroll = { path: slothHookVideoPath, source: 'kling_hook' };
+  const brollResults = [hookHeroBroll, ...pexelsResults];
+  console.log(`   [broll] Kling hook video prepended as hero — ${brollResults.length} clips total`);
   manifest.stages.broll = brollResults;
 
   // ── Stage 6: Concat master audio: hook → narration → outro ─────────────

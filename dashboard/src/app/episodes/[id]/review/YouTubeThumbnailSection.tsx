@@ -13,6 +13,7 @@ interface Props {
   selectedTitle: string;
   savedHookTitle: string | null;
   savedThumbnailPath: string | null;
+  hookTitleHistory: { titles: string[]; ts: string }[];
   canEdit: boolean;
 }
 
@@ -21,10 +22,13 @@ export default function YouTubeThumbnailSection({
   selectedTitle,
   savedHookTitle,
   savedThumbnailPath,
+  hookTitleHistory: initialHookTitleHistory,
   canEdit,
 }: Props) {
   const [hookTitle, setHookTitle] = useState(savedHookTitle || '');
   const [candidates, setCandidates] = useState<string[]>([]);
+  const [hookTitleHistory, setHookTitleHistory] = useState(initialHookTitleHistory);
+  const [showHookHistory, setShowHookHistory] = useState(false);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
 
   const [thumbnails, setThumbnails] = useState<ThumbnailOption[]>([]);
@@ -51,14 +55,18 @@ export default function YouTubeThumbnailSection({
 
   const generateHookTitles = async () => {
     setLoadingCandidates(true);
-    setCandidates([]);
     try {
       const res = await fetch(`/api/episodes/${episodeId}/yt-thumbnail/hook-titles`, {
         method: 'POST',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setCandidates(data.candidates || []);
+      const newCandidates = data.candidates || [];
+      // Push current batch to local history before replacing
+      if (candidates.length > 0) {
+        setHookTitleHistory(prev => [{ titles: candidates, ts: new Date().toISOString() }, ...prev]);
+      }
+      setCandidates(newCandidates);
     } catch {
       // silently fail
     } finally {
@@ -167,9 +175,15 @@ export default function YouTubeThumbnailSection({
           <button
             onClick={generateHookTitles}
             disabled={!canEdit || loadingCandidates}
-            className="px-3 py-2 text-sm bg-zinc-700 text-zinc-300 rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+            className="px-3 py-2 text-sm bg-zinc-700 text-zinc-300 rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors whitespace-nowrap flex items-center gap-1.5"
           >
-            {loadingCandidates ? '...' : 'AI 標題'}
+            {loadingCandidates && (
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            {loadingCandidates ? '生成中...' : 'AI 標題'}
           </button>
           {hookTitle.trim() && (
             <button
@@ -199,6 +213,47 @@ export default function YouTubeThumbnailSection({
                 <span className="text-zinc-500 ml-1 text-xs">{c.length}字</span>
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Hook title history */}
+        {hookTitleHistory.length > 0 && (
+          <div className="border-t border-zinc-800 pt-2">
+            <button
+              onClick={() => setShowHookHistory(!showHookHistory)}
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <svg className={`w-3 h-3 transition-transform ${showHookHistory ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+              歷史批次（{hookTitleHistory.length}）
+            </button>
+            {showHookHistory && (
+              <div className="mt-2 space-y-2">
+                {hookTitleHistory.map((batch, bi) => (
+                  <div key={bi} className="bg-zinc-800/50 rounded p-2">
+                    <span className="text-[10px] text-zinc-500 block mb-1.5">
+                      {new Date(batch.ts).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {batch.titles.map((t, ti) => (
+                        <button
+                          key={ti}
+                          onClick={() => selectHookTitle(t)}
+                          className={`px-2 py-1 text-xs rounded border transition-colors cursor-pointer ${
+                            t === hookTitle
+                              ? 'border-brand bg-brand/10 text-brand-cream'
+                              : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-brand hover:text-brand-cream'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

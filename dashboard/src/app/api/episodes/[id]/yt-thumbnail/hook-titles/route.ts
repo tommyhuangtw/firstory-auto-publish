@@ -14,7 +14,7 @@ export async function POST(
     }
 
     const db = getDb();
-    const episode = db.prepare('SELECT selected_title FROM episodes WHERE id = ?').get(episodeId) as { selected_title: string | null } | undefined;
+    const episode = db.prepare('SELECT selected_title, hook_title_history FROM episodes WHERE id = ?').get(episodeId) as { selected_title: string | null; hook_title_history: string | null } | undefined;
     if (!episode?.selected_title) {
       return NextResponse.json({ error: 'Episode has no selected title' }, { status: 400 });
     }
@@ -69,9 +69,16 @@ export async function POST(
       )
       .filter((line) => line.length >= 2 && line.length <= 15);
 
+    const finalCandidates = candidates.slice(0, 10);
+
+    // Save this batch to history
+    const history: { titles: string[]; ts: string }[] = episode.hook_title_history ? JSON.parse(episode.hook_title_history) : [];
+    history.unshift({ titles: finalCandidates, ts: new Date().toISOString() });
+    db.prepare('UPDATE episodes SET hook_title_history = ? WHERE id = ?').run(JSON.stringify(history), episodeId);
+
     return NextResponse.json({
       original: episode.selected_title,
-      candidates: candidates.slice(0, 10),
+      candidates: finalCandidates,
     });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

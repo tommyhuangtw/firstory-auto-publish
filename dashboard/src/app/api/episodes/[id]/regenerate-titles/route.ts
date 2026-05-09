@@ -21,8 +21,8 @@ export async function POST(
 
     const db = getDb();
     const episode = db.prepare(
-      'SELECT segment_type, script_zh, script_en FROM episodes WHERE id = ?'
-    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null } | undefined;
+      'SELECT segment_type, script_zh, script_en, candidate_titles, title_history FROM episodes WHERE id = ?'
+    ).get(episodeId) as { segment_type: string; script_zh: string | null; script_en: string | null; candidate_titles: string | null; title_history: string | null } | undefined;
 
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
@@ -31,6 +31,13 @@ export async function POST(
     const scriptContent = episode.script_zh || episode.script_en || '';
     if (!scriptContent) {
       return NextResponse.json({ error: 'No script content available' }, { status: 400 });
+    }
+
+    // Save current titles to history before regenerating
+    const history: { titles: string[]; prompt: string | null; ts: string }[] = episode.title_history ? JSON.parse(episode.title_history) : [];
+    const currentTitles: string[] = episode.candidate_titles ? JSON.parse(episode.candidate_titles) : [];
+    if (currentTitles.length > 0) {
+      history.unshift({ titles: currentTitles, prompt: userPrompt || null, ts: new Date().toISOString() });
     }
 
     log.info({ episodeId, segmentType: episode.segment_type, hasUserPrompt: !!userPrompt }, 'Regenerating titles');
@@ -43,8 +50,8 @@ export async function POST(
     );
 
     db.prepare(
-      'UPDATE episodes SET candidate_titles = ?, selected_title = ? WHERE id = ?'
-    ).run(JSON.stringify(candidateTitles), selectedTitle, episodeId);
+      'UPDATE episodes SET candidate_titles = ?, selected_title = ?, title_history = ? WHERE id = ?'
+    ).run(JSON.stringify(candidateTitles), selectedTitle, JSON.stringify(history), episodeId);
 
     log.info({ episodeId, count: candidateTitles.length, selectedTitle: selectedTitle.slice(0, 50) }, 'Titles regenerated');
 

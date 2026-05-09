@@ -2,10 +2,11 @@
  * Shorts Pipeline — Dashboard bridge to CJS shortsPipeline.
  *
  * Loads existing CJS modules from src/services/shortsPipeline/ at runtime.
- * Uses Function constructor to create a require() that bundlers cannot trace.
+ * Uses createRequire to load CJS modules without bundler interference.
  */
 
 import path from 'path';
+import { createRequire } from 'node:module';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 
@@ -16,14 +17,15 @@ const PROJECT_ROOT = path.join(process.cwd(), '..');
 const SHORTS_PIPELINE_DIR = path.join(PROJECT_ROOT, 'src', 'services', 'shortsPipeline');
 
 /**
- * Runtime-only require that is invisible to webpack/turbopack static analysis.
- * eval() is the only reliable way to prevent bundlers from tracing require() calls
- * to modules outside the Next.js project root.
+ * Runtime-only require using node:module createRequire.
+ * Uses a file:// URL based on cwd() to avoid bundler tracing issues.
  */
+const _require = createRequire(
+  'file://' + path.join(process.cwd(), '__virtual__.js')
+);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadModule(modulePath: string): any {
-  // eslint-disable-next-line no-eval
-  return eval('require')(modulePath);
+  return _require(modulePath);
 }
 
 /**
@@ -125,7 +127,7 @@ export async function runShortsGeneration(shortsId: number) {
        manifest_json = ?, ig_caption = ?, completed_at = datetime('now') WHERE id = ?`
     ).run(outputPath, coverPath, JSON.stringify(manifest), igCaption, shortsId);
 
-    // Log Kie AI costs for shorts pipeline: 1 hero (veo3) + 2 sloth (kling) + 1 edit (nano-banana-edit)
+    // Log Kie AI costs for shorts pipeline: 2 sloth (kling) + 1 edit (nano-banana-edit)
     logShortsCosts(db, episodeId, shortsId);
 
     log.info({ shortsId, outputPath }, 'Shorts generation completed');
@@ -355,8 +357,6 @@ function logShortsCosts(db: ReturnType<typeof getDb>, episodeId: number, shortsI
       'INSERT INTO service_costs (episode_id, shorts_id, service, model, units, cost_usd) VALUES (?, ?, ?, ?, ?, ?)'
     );
 
-    // 1 × Veo 3 Fast hero B-roll
-    insert.run(episodeId, shortsId, 'kieai_veo3', 'veo3_fast', 1, getSetting('kieai_veo3_fast_usd', '0.30'));
     // 2 × Kling 2.6 sloth videos (hook + outro)
     const klingCost = getSetting('kieai_kling_i2v_usd', '0.55');
     insert.run(episodeId, shortsId, 'kieai_kling', 'kling-2.6', 1, klingCost);

@@ -63,7 +63,9 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
   const [regeneratingHeadlines, setRegeneratingHeadlines] = useState(false);
   const [headlineY, setHeadlineY] = useState(37); // percentage from top (default matches Remotion paddingTop: 400/1080 ≈ 37%)
   const [headlineFontSize, setHeadlineFontSize] = useState(96); // Remotion fontSize in 1080w space
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(initialShorts?.avatar_path ? `/api/audio${initialShorts.avatar_path}` : null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    initialShorts?.avatar_path ? `/api/audio${initialShorts.avatar_path}` : null
+  );
   const [regeneratingCover, setRegeneratingCover] = useState(false);
   const [coverDirty, setCoverDirty] = useState(!initialShorts?.cover_path);
   const [error, setError] = useState('');
@@ -488,7 +490,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                 {avatars.map((a) => (
                   <button
                     key={a.filename}
-                    onClick={() => setSelectedAvatar(a.filename)}
+                    onClick={() => { setSelectedAvatar(a.filename); setAvatarUrl(`/api/audio${a.path}`); }}
                     className={`relative rounded-lg overflow-hidden border-2 transition-all cursor-pointer aspect-[9/16] ${
                       selectedAvatar === a.filename
                         ? 'border-violet-500 ring-2 ring-violet-500/30'

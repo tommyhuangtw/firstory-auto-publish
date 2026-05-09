@@ -62,6 +62,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN yt_hook_title TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN original_audio_path TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN audio_duration_sec REAL');
+  safeAlter('ALTER TABLE episodes ADD COLUMN title_history TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN hook_title_history TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {
@@ -95,10 +97,9 @@ Apple Podcast / Spotify / KKBOX
 👉 https://buymeacoffee.com/ailanrenbao`);
 
   // Service cost pricing defaults
-  seedSetting('usd_to_twd', '32.0');
-  seedSetting('voai_cost_per_char_twd', '0.06');
-  seedSetting('kieai_nano_banana_pro_usd', '0.09');
-  seedSetting('kieai_veo3_fast_usd', '0.30');
+  seedSetting('usd_to_twd', '31.0');
+  seedSetting('voai_cost_per_char_twd', '0.006');
+  seedSetting('kieai_gpt_image_2_1k_usd', '0.03');
   seedSetting('kieai_kling_i2v_usd', '0.55');
   seedSetting('kieai_nano_banana_edit_usd', '0.04');
 
