@@ -60,6 +60,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE shorts ADD COLUMN yt_video_url TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN yt_thumbnail_path TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN yt_hook_title TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN original_audio_path TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN audio_duration_sec REAL');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {

@@ -14,6 +14,7 @@ import RepublishSection from './RepublishSection';
 import ShortsSection from './ShortsSection';
 import IgCaptionSection from './IgCaptionSection';
 import RegenerateCoverButton from './RegenerateCoverButton';
+import AudioSection from './AudioSection';
 import FbCaptionSection from './FbCaptionSection';
 import ThreadsCaptionSection from './ThreadsCaptionSection';
 import YouTubeThumbnailSection from './YouTubeThumbnailSection';
@@ -260,17 +261,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             coverPath={episode.cover_path}
             candidates={coverCandidates}
           />
-          {episode.audio_path && (
-            <div className="flex-1 flex flex-col justify-end">
-              <p className="text-[11px] text-zinc-400 mb-1.5">Audio</p>
-              <audio
-                controls
-                className="w-full"
-                src={`/api/audio${episode.audio_path}`}
-                preload="metadata"
-              />
-            </div>
-          )}
+          <AudioSection
+            episodeId={episode.id}
+            audioPath={episode.audio_path}
+            hasOriginal={!!(db.prepare('SELECT original_audio_path FROM episodes WHERE id = ?').get(episodeId) as { original_audio_path: string | null } | undefined)?.original_audio_path}
+          />
         </div>
 
         {/* YouTube Thumbnail */}

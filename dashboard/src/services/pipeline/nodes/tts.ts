@@ -131,7 +131,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
             'Batch failed, downgrading to sequential (batch size 1)');
           currentBatchSize = 1;
           // Re-process this batch from the start, now one at a time
-          batchStart -= batch.length;
+          batchStart -= currentBatchSize;
           await sleep(BATCH_WAIT_MS);
           continue;
         }
@@ -144,7 +144,8 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
       }
     }
 
-    await concatMp3s(chunkPaths, outPath);
+    const uniquePaths = [...new Set(chunkPaths)];
+    await concatMp3s(uniquePaths, outPath);
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1), chunks: chunks.length }, 'TTS complete');
     logTtsCost(state.episodeId, state.episodeNumber, text.length, Date.now() - ttsStartMs);

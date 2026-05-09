@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS episodes (
 
   -- Media
   audio_path TEXT,
+  original_audio_path TEXT,            -- preserved on first manual audio replacement
+  audio_duration_sec REAL,
   cover_path TEXT,
 
   -- Source videos
