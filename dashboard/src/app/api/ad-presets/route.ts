@@ -39,8 +39,14 @@ export async function PUT(request: NextRequest) {
 
   if (action === 'activate') {
     db.prepare('UPDATE ad_presets SET is_active = 0').run();
+    db.prepare('UPDATE sponsor_audio_presets SET is_active = 0').run();
     db.prepare('UPDATE ad_presets SET is_active = 1 WHERE id = ?').run(id);
     return NextResponse.json({ message: 'activated' });
+  }
+
+  if (action === 'deactivate') {
+    db.prepare('UPDATE ad_presets SET is_active = 0 WHERE id = ?').run(id);
+    return NextResponse.json({ message: 'deactivated' });
   }
 
   if (name !== undefined || content !== undefined) {

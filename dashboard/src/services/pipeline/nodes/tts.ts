@@ -49,7 +49,7 @@ const BATCH_SIZE = 2;
 const BATCH_WAIT_MS = 3000;
 
 export const SPONSOR_AUDIO_CONFIG = {
-  speed: 1.12,
+  speed: 1.18,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,

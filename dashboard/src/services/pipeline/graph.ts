@@ -503,12 +503,36 @@ async function mergeSponsorAudioForEpisode(
 ) {
   try {
     const activeSponsor = db.prepare(`
-      SELECT id, audio_path FROM sponsor_audio_presets
-      WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))
+      SELECT id, audio_path, audio_merge_enabled, scheduled_dates, expires_at FROM sponsor_audio_presets
+      WHERE is_active = 1
       LIMIT 1
-    `).get() as { id: number; audio_path: string } | undefined;
+    `).get() as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null; expires_at: string | null } | undefined;
 
-    if (!activeSponsor?.audio_path || !fs.existsSync(activeSponsor.audio_path)) {
+    if (!activeSponsor) return;
+
+    // Check scheduling: scheduled_dates takes priority, then expires_at for backwards compat
+    const today = new Date().toISOString().slice(0, 10);
+    if (activeSponsor.scheduled_dates) {
+      const dates: string[] = JSON.parse(activeSponsor.scheduled_dates);
+      if (!dates.includes(today)) {
+        log.info({ episodeId, sponsorId: activeSponsor.id, today }, 'Today not in sponsor scheduled dates, skipping');
+        return;
+      }
+    } else if (activeSponsor.expires_at && activeSponsor.expires_at <= new Date().toISOString()) {
+      log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor expired, skipping');
+      return;
+    }
+
+    // Always record sponsor_audio_id (so description assembler picks up the ad content)
+    db.prepare('UPDATE episodes SET sponsor_audio_id = ? WHERE id = ?').run(activeSponsor.id, episodeId);
+
+    // Skip audio merge if disabled
+    if (!activeSponsor.audio_merge_enabled) {
+      log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor active but audio merge disabled, description only');
+      return;
+    }
+
+    if (!activeSponsor.audio_path || !fs.existsSync(activeSponsor.audio_path)) {
       return;
     }
 
@@ -530,10 +554,9 @@ async function mergeSponsorAudioForEpisode(
     db.prepare(`
       UPDATE episodes SET
         sponsor_original_audio_path = ?,
-        sponsor_audio_id = ?,
         audio_path = ?
       WHERE id = ?
-    `).run(episodeAudioPath, activeSponsor.id, mergedPath, episodeId);
+    `).run(episodeAudioPath, mergedPath, episodeId);
 
     log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor audio merged');
   } catch (err) {

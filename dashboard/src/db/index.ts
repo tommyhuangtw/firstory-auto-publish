@@ -66,6 +66,9 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN hook_title_history TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_audio_id INTEGER REFERENCES sponsor_audio_presets(id)');
   safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_original_audio_path TEXT');
+  safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN ad_preset_id INTEGER REFERENCES ad_presets(id)');
+  safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN audio_merge_enabled INTEGER DEFAULT 1');
+  safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN scheduled_dates TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {
@@ -165,6 +168,24 @@ portaly.cc/ailrb/product/8HzQAVA7ZeGBaPb3LuJK`, 0);
 
     seedPreset.run('無業配', '', 0);
   }
+
+  // Migrate: link existing sponsor_audio_presets to ad_presets by name
+  try {
+    const unlinked = _db!.prepare(
+      'SELECT id, name FROM sponsor_audio_presets WHERE ad_preset_id IS NULL'
+    ).all() as { id: number; name: string }[];
+    for (const sp of unlinked) {
+      const match = _db!.prepare(
+        'SELECT id FROM ad_presets WHERE name = ?'
+      ).get(sp.name) as { id: number } | undefined;
+      if (match) {
+        _db!.prepare('UPDATE sponsor_audio_presets SET ad_preset_id = ? WHERE id = ?').run(match.id, sp.id);
+      } else {
+        const result = _db!.prepare('INSERT INTO ad_presets (name, content) VALUES (?, ?)').run(sp.name, '');
+        _db!.prepare('UPDATE sponsor_audio_presets SET ad_preset_id = ? WHERE id = ?').run(result.lastInsertRowid, sp.id);
+      }
+    }
+  } catch { /* migration already done or table not ready */ }
 
   return _db;
 }
