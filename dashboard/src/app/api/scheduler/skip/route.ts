@@ -13,12 +13,12 @@ export async function POST(request: NextRequest) {
 
     const scheduler = getScheduler();
     const messages: Record<string, () => string> = {
-      skip: () => { scheduler.skipToday(name); return `"${name}" 已跳過今天`; },
-      unskip: () => { scheduler.unskip(name); return `"${name}" 已恢復排程`; },
+      skip: () => { scheduler.skipNext(name); return `"${name}" 已設定跳過下一集`; },
+      unskip: () => { scheduler.unskip(name); return `"${name}" 已取消跳過`; },
       enable: () => { scheduler.enable(name); return `"${name}" 已啟用`; },
       disable: () => { scheduler.disable(name); return `"${name}" 已停用`; },
       pause: () => { scheduler.pause(name); return `"${name}" 已暫停`; },
-      resume: () => { scheduler.unskip(name); return `"${name}" 已恢復`; },
+      resume: () => { scheduler.resume(name); return `"${name}" 已恢復`; },
     };
 
     const handler = messages[action];

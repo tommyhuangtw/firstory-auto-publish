@@ -17,7 +17,14 @@ import type { SegmentType } from '@/services/pipeline/state';
 
 const log = createChildLogger('scheduler-init');
 
-let initialized = false;
+// Tie init flag to globalThis so it stays in sync with the Scheduler singleton
+const initKey = '__podcast_scheduler_initialized_v2__';
+function isInitialized(): boolean {
+  return !!(globalThis as Record<string, unknown>)[initKey];
+}
+function markInitialized(): void {
+  (globalThis as Record<string, unknown>)[initKey] = true;
+}
 
 export interface ScheduleSlot {
   day: number;        // 0=Sun, 1=Mon, ..., 6=Sat (cron convention)
@@ -98,8 +105,8 @@ function registerJobs(config: WeeklyScheduleConfig): void {
 }
 
 export function initializeSchedulerJobs(): void {
-  if (initialized) return;
-  initialized = true;
+  if (isInitialized()) return;
+  markInitialized();
 
   const scheduler = getScheduler();
   const config = getScheduleConfig();

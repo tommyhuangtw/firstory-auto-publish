@@ -10,7 +10,7 @@ interface Job {
   running: boolean;
   lastRun: string | null;
   lastError: string | null;
-  skippedUntil: string | null;
+  skipNextRun: boolean;
   paused: boolean;
 }
 
@@ -124,7 +124,7 @@ export default function SchedulerClient() {
           </div>
           <div className="divide-y divide-zinc-800/60">
             {jobs.map((job) => {
-              const isSkipped = !!job.skippedUntil && !job.paused;
+              const isSkipped = job.skipNextRun && !job.paused;
               const segLabel = SEGMENT_LABELS[job.name] ?? job.name;
               const dotColor = SEGMENT_COLORS[job.name] ?? 'bg-brand';
 
@@ -144,14 +144,14 @@ export default function SchedulerClient() {
                           <span className="text-[10px] text-orange-400/80 shrink-0">已暫停</span>
                         )}
                         {isSkipped && (
-                          <span className="text-[10px] text-yellow-400/80 shrink-0">已跳過今天</span>
+                          <span className="text-[10px] text-yellow-400/80 shrink-0">將跳過下一集</span>
                         )}
                       </div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
                         {job.lastRun
                           ? `上次: ${new Date(job.lastRun).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                           : '尚未執行'}
-                        {isSkipped && <span className="text-yellow-500/60 ml-2">午夜自動恢復</span>}
+                        {isSkipped && <span className="text-yellow-500/60 ml-2">執行一次後自動恢復</span>}
                       </div>
                     </div>
                   </div>
@@ -179,7 +179,7 @@ export default function SchedulerClient() {
                             : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
                         }`}
                       >
-                        {skippingJob === job.name ? '...' : isSkipped ? '取消跳過' : '跳過今天'}
+                        {skippingJob === job.name ? '...' : isSkipped ? '取消跳過' : '跳過下一集'}
                       </button>
                     )}
                     <button
