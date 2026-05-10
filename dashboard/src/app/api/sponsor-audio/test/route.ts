@@ -13,7 +13,7 @@ const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const { scriptText } = body as { scriptText?: string };
+  const { scriptText, speed } = body as { scriptText?: string; speed?: number };
 
   if (!scriptText?.trim()) {
     return NextResponse.json({ error: 'scriptText is required' }, { status: 400 });
@@ -37,10 +37,14 @@ export async function POST(request: NextRequest) {
     .replace(/(\t)+/g, ' ')
     .trim();
 
+  const audioConfig = speed != null
+    ? { ...SPONSOR_AUDIO_CONFIG, speed }
+    : SPONSOR_AUDIO_CONFIG;
+
   const chunks = buildChunks(text);
 
   if (chunks.length === 1) {
-    await synthesizeChunk(chunks[0], outPath, apiKey, SPONSOR_AUDIO_CONFIG);
+    await synthesizeChunk(chunks[0], outPath, apiKey, audioConfig);
   } else {
     const chunkDir = path.join(OUTPUT_DIR, `.sponsor_chunks_${Date.now()}`);
     await fs.ensureDir(chunkDir);
@@ -48,7 +52,7 @@ export async function POST(request: NextRequest) {
       const chunkPaths: string[] = [];
       for (let i = 0; i < chunks.length; i++) {
         const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(3, '0')}.mp3`);
-        await synthesizeChunk(chunks[i], chunkPath, apiKey, SPONSOR_AUDIO_CONFIG);
+        await synthesizeChunk(chunks[i], chunkPath, apiKey, audioConfig);
         chunkPaths.push(chunkPath);
         if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 3000));
       }

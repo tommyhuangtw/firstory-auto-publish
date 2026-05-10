@@ -42,6 +42,7 @@ export default function SponsorPage() {
   const [generating, setGenerating] = useState(false);
   const [testAudioPath, setTestAudioPath] = useState<string | null>(null);
   const [testDuration, setTestDuration] = useState<number | null>(null);
+  const [ttsSpeed, setTtsSpeed] = useState(1.18);
   const [testError, setTestError] = useState('');
 
   // Save preset state
@@ -98,7 +99,7 @@ export default function SponsorPage() {
       const res = await fetch('/api/sponsor-audio/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptText }),
+        body: JSON.stringify({ scriptText, speed: ttsSpeed }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -156,12 +157,14 @@ export default function SponsorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action: 'activate' }),
       });
-      if (!res.ok) throw new Error('Failed');
-      setPresets(prev => prev.map(p => ({ ...p, is_active: p.id === id ? 1 : 0 })));
-      setUnlinkedAds(prev => prev.map(a => ({ ...a, is_active: 0 })));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '啟用失敗' }));
+        throw new Error(err.error || '啟用失敗');
+      }
+      setPresets(prev => prev.map(p => p.id === id ? { ...p, is_active: 1 } : p));
       setMessage('已啟用（口播 + Description 已同步）');
-    } catch {
-      setMessage('啟用失敗');
+    } catch (err) {
+      setMessage((err as Error).message);
     } finally {
       setActivating(false);
     }
@@ -213,15 +216,18 @@ export default function SponsorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action: 'update_schedule', scheduledDates: editScheduleDates.length ? editScheduleDates : null }),
       });
-      if (!res.ok) throw new Error('Failed');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '更新失敗' }));
+        throw new Error(err.error || '更新失敗');
+      }
       const json = editScheduleDates.length ? JSON.stringify(editScheduleDates) : null;
       setPresets(prev => prev.map(p =>
         p.id === id ? { ...p, scheduled_dates: json } : p
       ));
       setEditingScheduleId(null);
       setMessage('排程已更新');
-    } catch {
-      setMessage('更新失敗');
+    } catch (err) {
+      setMessage((err as Error).message);
     }
   }
 
@@ -369,7 +375,7 @@ export default function SponsorPage() {
         <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
           <h2 className="text-sm font-medium text-zinc-200 mb-1">TTS 測試</h2>
           <p className="text-[11px] text-zinc-500 mb-3">
-            貼上業配文案，測試 VoAI TTS 唸出來是否順暢（速度 1.18x）
+            貼上業配文案，測試 VoAI TTS 唸出來是否順暢
           </p>
 
           <textarea
@@ -381,9 +387,24 @@ export default function SponsorPage() {
           />
 
           <div className="flex items-center justify-between mt-2">
-            <span className="text-[11px] text-zinc-500 font-mono tabular-nums">
-              {scriptText.length} 字
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-zinc-500 font-mono tabular-nums">
+                {scriptText.length} 字
+              </span>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] text-zinc-500">速度</label>
+                <input
+                  type="number"
+                  min={0.8}
+                  max={1.5}
+                  step={0.01}
+                  value={ttsSpeed}
+                  onChange={(e) => setTtsSpeed(parseFloat(e.target.value) || 1.18)}
+                  className="w-16 bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1 text-xs text-zinc-200 text-center font-mono focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
+                />
+                <span className="text-[11px] text-zinc-500">x</span>
+              </div>
+            </div>
             <button
               onClick={handleGenerate}
               disabled={generating || !scriptText.trim()}

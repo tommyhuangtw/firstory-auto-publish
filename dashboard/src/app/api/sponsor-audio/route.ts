@@ -3,6 +3,41 @@ import fs from 'fs-extra';
 import path from 'path';
 import { getDb } from '@/db';
 
+/** Check if activating a preset with given dates would conflict with other active presets */
+function checkDateConflict(db: ReturnType<typeof getDb>, presetId: number, scheduledDatesJson: string | null): string | null {
+  const others = db.prepare(
+    'SELECT id, name, scheduled_dates FROM sponsor_audio_presets WHERE is_active = 1 AND id != ?'
+  ).all(presetId) as { id: number; name: string; scheduled_dates: string | null }[];
+
+  if (others.length === 0) return null;
+
+  const myDates: string[] = scheduledDatesJson ? JSON.parse(scheduledDatesJson) : [];
+
+  // No scheduled_dates = "always active" — conflicts with any other active preset
+  if (myDates.length === 0) {
+    const otherNames = others.map(o => o.name).join('、');
+    return `不限日期的業配不能與其他已啟用的業配同時啟用（衝突：${otherNames}）`;
+  }
+
+  // Check if any other active preset has no dates (always active) or overlapping dates
+  for (const other of others) {
+    if (!other.scheduled_dates) {
+      return `「${other.name}」是不限日期的業配，請先停用或設定日期`;
+    }
+    const otherDates: string[] = JSON.parse(other.scheduled_dates);
+    const overlap = myDates.filter(d => otherDates.includes(d));
+    if (overlap.length > 0) {
+      const overlapStr = overlap.map(d => {
+        const [, m, day] = d.split('-');
+        return `${parseInt(m)}/${parseInt(day)}`;
+      }).join('、');
+      return `與「${other.name}」的日期衝突：${overlapStr}`;
+    }
+  }
+
+  return null;
+}
+
 interface SponsorPreset {
   id: number;
   name: string;
@@ -118,10 +153,17 @@ export async function PUT(request: NextRequest) {
   ).get(id) as { ad_preset_id: number | null } | undefined;
 
   if (action === 'activate') {
-    // Deactivate all sponsors and all ad_presets
-    db.prepare('UPDATE sponsor_audio_presets SET is_active = 0').run();
-    db.prepare('UPDATE ad_presets SET is_active = 0').run();
-    // Activate this sponsor and its linked ad_preset
+    // Check date conflicts before activating
+    const thisPreset = db.prepare(
+      'SELECT scheduled_dates FROM sponsor_audio_presets WHERE id = ?'
+    ).get(id) as { scheduled_dates: string | null } | undefined;
+
+    const conflict = checkDateConflict(db, id, thisPreset?.scheduled_dates ?? null);
+    if (conflict) {
+      return NextResponse.json({ error: conflict }, { status: 400 });
+    }
+
+    // Activate this sponsor and its linked ad_preset (don't deactivate others)
     db.prepare('UPDATE sponsor_audio_presets SET is_active = 1 WHERE id = ?').run(id);
     if (sponsor?.ad_preset_id) {
       db.prepare('UPDATE ad_presets SET is_active = 1 WHERE id = ?').run(sponsor.ad_preset_id);
@@ -147,6 +189,18 @@ export async function PUT(request: NextRequest) {
 
   if (action === 'update_schedule') {
     const json = scheduledDates?.length ? JSON.stringify(scheduledDates) : null;
+
+    // Check date conflicts if this preset is active
+    const thisPreset = db.prepare(
+      'SELECT is_active FROM sponsor_audio_presets WHERE id = ?'
+    ).get(id) as { is_active: number } | undefined;
+    if (thisPreset?.is_active) {
+      const conflict = checkDateConflict(db, id, json);
+      if (conflict) {
+        return NextResponse.json({ error: conflict }, { status: 400 });
+      }
+    }
+
     db.prepare('UPDATE sponsor_audio_presets SET scheduled_dates = ? WHERE id = ?').run(json, id);
     return NextResponse.json({ message: 'schedule updated', scheduled_dates: json });
   }
