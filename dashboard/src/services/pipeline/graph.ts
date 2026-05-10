@@ -502,24 +502,41 @@ async function mergeSponsorAudioForEpisode(
   episodeAudioPath: string
 ) {
   try {
-    const activeSponsor = db.prepare(`
+    const activeSponsors = db.prepare(`
       SELECT id, audio_path, audio_merge_enabled, scheduled_dates, expires_at FROM sponsor_audio_presets
       WHERE is_active = 1
-      LIMIT 1
-    `).get() as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null; expires_at: string | null } | undefined;
+    `).all() as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null; expires_at: string | null }[];
 
-    if (!activeSponsor) return;
+    if (activeSponsors.length === 0) return;
 
-    // Check scheduling: scheduled_dates takes priority, then expires_at for backwards compat
+    // Find the sponsor that matches today's date
     const today = new Date().toISOString().slice(0, 10);
-    if (activeSponsor.scheduled_dates) {
-      const dates: string[] = JSON.parse(activeSponsor.scheduled_dates);
-      if (!dates.includes(today)) {
-        log.info({ episodeId, sponsorId: activeSponsor.id, today }, 'Today not in sponsor scheduled dates, skipping');
-        return;
+    let activeSponsor: typeof activeSponsors[0] | undefined;
+
+    // Priority 1: preset whose scheduled_dates includes today
+    for (const s of activeSponsors) {
+      if (s.scheduled_dates) {
+        const dates: string[] = JSON.parse(s.scheduled_dates);
+        if (dates.includes(today)) {
+          activeSponsor = s;
+          break;
+        }
       }
-    } else if (activeSponsor.expires_at && activeSponsor.expires_at <= new Date().toISOString()) {
+    }
+
+    // Priority 2: fallback to a preset with no scheduled_dates (always active)
+    if (!activeSponsor) {
+      activeSponsor = activeSponsors.find(s => !s.scheduled_dates);
+    }
+
+    // Priority 3: check expires_at for legacy presets
+    if (activeSponsor && !activeSponsor.scheduled_dates && activeSponsor.expires_at && activeSponsor.expires_at <= new Date().toISOString()) {
       log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor expired, skipping');
+      return;
+    }
+
+    if (!activeSponsor) {
+      log.info({ episodeId, today }, 'No sponsor matches today, skipping');
       return;
     }
 
