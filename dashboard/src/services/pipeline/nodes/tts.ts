@@ -57,10 +57,38 @@ export const SPONSOR_AUDIO_CONFIG = {
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
 
 function getAudioConfig(segmentType: string) {
-  if (segmentType === 'weekly') return WEEKLY_AUDIO_CONFIG;
-  if (segmentType === 'robot') return ROBOT_AUDIO_CONFIG;
-  if (segmentType === 'sysdesign') return SYSDESIGN_AUDIO_CONFIG;
-  return DAILY_AUDIO_CONFIG;
+  const base = segmentType === 'weekly' ? WEEKLY_AUDIO_CONFIG
+    : segmentType === 'robot' ? ROBOT_AUDIO_CONFIG
+    : segmentType === 'sysdesign' ? SYSDESIGN_AUDIO_CONFIG
+    : DAILY_AUDIO_CONFIG;
+
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?')
+      .get(`tts_speed_${segmentType}`) as { value: string } | undefined;
+    if (row?.value) {
+      const speed = parseFloat(row.value);
+      if (!isNaN(speed) && speed >= 0.5 && speed <= 2.0) {
+        return { ...base, speed };
+      }
+    }
+  } catch { /* DB not available — use hardcoded default */ }
+  return base;
+}
+
+export function getSponsorAudioConfig() {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?')
+      .get('tts_speed_sponsor') as { value: string } | undefined;
+    if (row?.value) {
+      const speed = parseFloat(row.value);
+      if (!isNaN(speed) && speed >= 0.5 && speed <= 2.0) {
+        return { ...SPONSOR_AUDIO_CONFIG, speed };
+      }
+    }
+  } catch { /* DB not available — use hardcoded default */ }
+  return SPONSOR_AUDIO_CONFIG;
 }
 
 export async function tts(state: PipelineState): Promise<Partial<PipelineState>> {

@@ -50,10 +50,26 @@ const WORD_COUNT_FIELDS: WordCountField[] = [
   { key: 'word_count_sysdesign', label: 'System Design', description: '系統設計懶懶學', defaultValue: '6500-7500' },
 ];
 
+interface TtsSpeedField {
+  key: string;
+  label: string;
+  description: string;
+  defaultValue: string;
+}
+
+const TTS_SPEED_FIELDS: TtsSpeedField[] = [
+  { key: 'tts_speed_daily', label: 'Daily', description: '每日 AI 懶人報', defaultValue: '1.1' },
+  { key: 'tts_speed_weekly', label: 'Weekly', description: '懶人精選週報', defaultValue: '1.1' },
+  { key: 'tts_speed_robot', label: 'Robot', description: '機器人觀察週報', defaultValue: '1.07' },
+  { key: 'tts_speed_sysdesign', label: 'System Design', description: '系統設計懶懶學', defaultValue: '1.05' },
+  { key: 'tts_speed_sponsor', label: 'Sponsor', description: '業配口播', defaultValue: '1.18' },
+];
+
 export default function SettingsPage() {
   const [footerValues, setFooterValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [editingFooter, setEditingFooter] = useState<string | null>(null);
   const [fbStatus, setFbStatus] = useState<FbStatus | null>(null);
@@ -128,7 +144,8 @@ export default function SettingsPage() {
         body: JSON.stringify({ key, value: footerValues[key] || '' }),
       });
       if (!res.ok) throw new Error('Save failed');
-      setMessage('已儲存');
+      setSaved(key);
+      setTimeout(() => setSaved(prev => prev === key ? null : prev), 1500);
     } catch {
       setMessage('儲存失敗');
     } finally {
@@ -221,6 +238,56 @@ export default function SettingsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
             </svg>
           </a>
+        </section>
+
+        {/* TTS Speed Settings */}
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">TTS 語速設定</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            各單元的語音合成速度（0.8x ~ 1.5x）
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {TTS_SPEED_FIELDS.map((field) => (
+              <div key={field.key} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-zinc-300">{field.label}</label>
+                  <span className="text-[10px] text-zinc-500">{field.description}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0.8}
+                    max={1.5}
+                    step={0.01}
+                    value={footerValues[field.key] || field.defaultValue}
+                    onChange={(e) => setFooterValues(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    className="w-20 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 font-mono"
+                  />
+                  <span className="text-[11px] text-zinc-500">x</span>
+                  <button
+                    onClick={() => handleSaveFooter(field.key)}
+                    disabled={saving === field.key || saved === field.key}
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                      saved === field.key
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-300'
+                    }`}
+                  >
+                    {saving === field.key ? (
+                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : saved === field.key ? (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    ) : '存'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* Word Count Targets */}

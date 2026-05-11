@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs-extra';
 import path from 'path';
 import { getDb } from '@/db';
+import { concatMp3s, generateSilence, probeDuration } from '@/services/pipeline/nodes/tts';
+import { createChildLogger } from '@/lib/logger';
+
+const log = createChildLogger('sponsor-auto-apply');
 
 /** Check if activating a preset with given dates would conflict with other active presets */
 function checkDateConflict(db: ReturnType<typeof getDb>, presetId: number, scheduledDatesJson: string | null): string | null {
@@ -36,6 +40,67 @@ function checkDateConflict(db: ReturnType<typeof getDb>, presetId: number, sched
   }
 
   return null;
+}
+
+/**
+ * After activating a preset or updating its schedule, auto-apply sponsor audio
+ * to any pending_review episodes whose created_at date matches the scheduled_dates.
+ */
+async function applyToPendingEpisodes(db: ReturnType<typeof getDb>, presetId: number) {
+  const preset = db.prepare(
+    'SELECT id, audio_path, audio_merge_enabled, scheduled_dates FROM sponsor_audio_presets WHERE id = ?'
+  ).get(presetId) as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null } | undefined;
+
+  if (!preset?.scheduled_dates) return;
+
+  const dates: string[] = JSON.parse(preset.scheduled_dates);
+  if (dates.length === 0) return;
+
+  // Find pending_review episodes without sponsor that match any of the scheduled dates
+  const pendingEpisodes = db.prepare(`
+    SELECT id, audio_path, sponsor_original_audio_path, created_at
+    FROM episodes
+    WHERE status = 'pending_review' AND sponsor_audio_id IS NULL
+  `).all() as { id: number; audio_path: string; sponsor_original_audio_path: string | null; created_at: string }[];
+
+  for (const ep of pendingEpisodes) {
+    const episodeDate = ep.created_at.slice(0, 10);
+    if (!dates.includes(episodeDate)) continue;
+
+    // Always record sponsor_audio_id (for description assembler)
+    db.prepare('UPDATE episodes SET sponsor_audio_id = ? WHERE id = ?').run(presetId, ep.id);
+    log.info({ episodeId: ep.id, presetId, episodeDate }, 'Auto-applied sponsor to pending episode');
+
+    // Skip audio merge if disabled or no audio file
+    if (!preset.audio_merge_enabled) continue;
+    if (!preset.audio_path || !fs.existsSync(preset.audio_path)) continue;
+
+    const originalAudioPath = ep.sponsor_original_audio_path || ep.audio_path;
+    if (!originalAudioPath || !fs.existsSync(originalAudioPath)) continue;
+
+    try {
+      const mergedPath = originalAudioPath.replace(/\.mp3$/, '_sponsor.mp3');
+      const silencePath = originalAudioPath.replace(/\.mp3$/, '_silence.mp3');
+
+      await generateSilence(silencePath, 0.3);
+      await concatMp3s([preset.audio_path, silencePath, originalAudioPath], mergedPath);
+      try { fs.unlinkSync(silencePath); } catch { /* ignore */ }
+
+      const durationSec = await probeDuration(mergedPath).catch(() => null);
+
+      db.prepare(`
+        UPDATE episodes SET
+          sponsor_original_audio_path = ?,
+          audio_path = ?,
+          audio_duration_sec = ?
+        WHERE id = ?
+      `).run(originalAudioPath, mergedPath, durationSec, ep.id);
+
+      log.info({ episodeId: ep.id, presetId }, 'Sponsor audio merged for pending episode');
+    } catch (err) {
+      log.warn({ episodeId: ep.id, error: (err as Error).message }, 'Failed to merge sponsor audio for pending episode');
+    }
+  }
 }
 
 interface SponsorPreset {
@@ -168,6 +233,10 @@ export async function PUT(request: NextRequest) {
     if (sponsor?.ad_preset_id) {
       db.prepare('UPDATE ad_presets SET is_active = 1 WHERE id = ?').run(sponsor.ad_preset_id);
     }
+
+    // Auto-apply to pending_review episodes matching scheduled dates
+    await applyToPendingEpisodes(db, id);
+
     return NextResponse.json({ message: 'activated' });
   }
 
@@ -202,6 +271,12 @@ export async function PUT(request: NextRequest) {
     }
 
     db.prepare('UPDATE sponsor_audio_presets SET scheduled_dates = ? WHERE id = ?').run(json, id);
+
+    // Auto-apply to pending_review episodes if this preset is active
+    if (thisPreset?.is_active) {
+      await applyToPendingEpisodes(db, id);
+    }
+
     return NextResponse.json({ message: 'schedule updated', scheduled_dates: json });
   }
 

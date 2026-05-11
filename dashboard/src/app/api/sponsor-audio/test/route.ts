@@ -6,7 +6,7 @@ import {
   synthesizeChunk,
   concatMp3s,
   probeDuration,
-  SPONSOR_AUDIO_CONFIG,
+  getSponsorAudioConfig,
 } from '@/services/pipeline/nodes/tts';
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'tts');
@@ -37,9 +37,10 @@ export async function POST(request: NextRequest) {
     .replace(/(\t)+/g, ' ')
     .trim();
 
+  const baseConfig = getSponsorAudioConfig();
   const audioConfig = speed != null
-    ? { ...SPONSOR_AUDIO_CONFIG, speed }
-    : SPONSOR_AUDIO_CONFIG;
+    ? { ...baseConfig, speed }
+    : baseConfig;
 
   const chunks = buildChunks(text);
 
