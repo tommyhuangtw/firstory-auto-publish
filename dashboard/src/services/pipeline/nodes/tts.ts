@@ -21,19 +21,19 @@ const execAsync = promisify(exec);
 const VOAI_URL = 'https://connect.voai.ai/TTS/generate-dialogue';
 const DEFAULT_VOICE = { name: '昱翔', style: '預設', version: 'Neo' };
 const DAILY_AUDIO_CONFIG = {
-  speed: 1.08,
+  speed: 1.1,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
 const WEEKLY_AUDIO_CONFIG = {
-  speed: 1.08,
+  speed: 1.1,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
 };
 const ROBOT_AUDIO_CONFIG = {
-  speed: 1.06,
+  speed: 1.07,
   pitch_shift: 1.5,
   style_weight: 0.8,
   breath_pause: 0.15,
