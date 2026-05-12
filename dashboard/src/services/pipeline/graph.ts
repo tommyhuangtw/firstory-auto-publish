@@ -34,6 +34,7 @@ import { qualityScore } from './nodes/qualityScore';
 import { generateMeta } from './nodes/generateMeta';
 import { generateCover } from './nodes/generateCover';
 import { tts } from './nodes/tts';
+import { generateSubtitlesNode } from './nodes/generateSubtitles';
 import { uploadAssets } from './nodes/uploadAssets';
 import { notify } from './nodes/notify';
 import { publish } from './nodes/publish';
@@ -74,6 +75,8 @@ const PipelineAnnotation = Annotation.Root({
   coverUrl: Annotation<string>,
   audioPath: Annotation<string>,
   audioDurationSec: Annotation<number>,
+  srtPath: Annotation<string>,
+  srtContent: Annotation<string>,
   driveAudioUrl: Annotation<string>,
   driveImageUrl: Annotation<string>,
   igScenario: Annotation<string>,
@@ -106,6 +109,7 @@ function buildGraph() {
     .addNode('generateMeta', wrapNode('generateMeta', generateMeta))
     .addNode('generateCover', wrapNode('generateCover', generateCover))
     .addNode('synthesizeTts', wrapNode('synthesizeTts', tts))
+    .addNode('generateSubtitles', wrapNode('generateSubtitles', generateSubtitlesNode))
     .addNode('uploadAssets', wrapNode('uploadAssets', uploadAssets))
     .addNode('notify', wrapNode('notify', notify))
     .addEdge(START, 'fetchYoutube')
@@ -118,7 +122,8 @@ function buildGraph() {
     .addEdge('scoreQuality', 'generateMeta')
     .addEdge('generateMeta', 'generateCover')
     .addEdge('generateCover', 'synthesizeTts')
-    .addEdge('synthesizeTts', 'uploadAssets')
+    .addEdge('synthesizeTts', 'generateSubtitles')
+    .addEdge('generateSubtitles', 'uploadAssets')
     .addEdge('uploadAssets', 'notify')
     .addEdge('notify', END);
 
@@ -256,6 +261,8 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     coverUrl: (episode.cover_url as string) || '',
     audioPath: (episode.audio_path as string) || '',
     audioDurationSec: 0,
+    srtPath: (episode.srt_path as string) || '',
+    srtContent: (episode.srt_content as string) || '',
     driveAudioUrl: '',
     driveImageUrl: '',
     igScenario: '',
@@ -281,7 +288,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
 const STAGE_ORDER = [
   'fetchYoutube', 'classify', 'scriptEnglish', 'extractTools', 'translate',
   'customContentInsert', 'scoreQuality', 'generateMeta',
-  'generateCover', 'synthesizeTts', 'uploadAssets', 'notify',
+  'generateCover', 'synthesizeTts', 'generateSubtitles', 'uploadAssets', 'notify',
 ] as const;
 
 /**
@@ -291,6 +298,7 @@ const NODE_FNS: Record<string, (state: PipelineState) => Promise<Partial<Pipelin
   fetchYoutube, classify, scriptEnglish, extractTools, translate,
   customContentInsert, scoreQuality: qualityScore,
   generateMeta, generateCover, synthesizeTts: tts,
+  generateSubtitles: generateSubtitlesNode,
   uploadAssets, notify,
 };
 
@@ -616,7 +624,9 @@ function updateEpisodeFromState(
       quality_score = ?,
       total_cost_usd = ?,
       script_word_count = ?,
-      ig_post_id = ?
+      ig_post_id = ?,
+      srt_path = ?,
+      srt_content = ?
     WHERE id = ?`
   ).run(
     state.scriptEn,
@@ -635,6 +645,8 @@ function updateEpisodeFromState(
     totalCostUsd,
     state.scriptWordCount,
     state.igPostId || null,
+    state.srtPath || null,
+    state.srtContent || null,
     episodeId
   );
 }

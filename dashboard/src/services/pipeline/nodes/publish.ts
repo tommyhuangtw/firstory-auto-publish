@@ -147,39 +147,44 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   const formattedTitle = formatYoutubeTitle(state.episodeNumber, state.segmentType, state.selectedTitle);
   log.info({ formattedTitle }, 'Publishing to YouTube');
 
-  // Step 1: Use user-selected YouTube thumbnail, or fallback to generated composite
-  let thumbnailPath: string;
+  // Step 1: ALWAYS generate composite image (left panel title + right panel cover) for video frame
+  const { generateYouTubeThumbnail } = await import('@/services/thumbnailGenerator');
+  const compositeImagePath = await generateYouTubeThumbnail({
+    title: state.selectedTitle,
+    episodeNumber: state.episodeNumber,
+    coverImagePath: state.coverPath,
+    segmentType: state.segmentType,
+  });
+  log.info({ compositeImagePath }, 'Generated composite image for video frame');
+
+  // Step 2: Determine YouTube thumbnail for metadata (user-selected or composite)
+  let ytThumbnailPath: string;
   const { getDb } = await import('@/db');
   const { default: fs } = await import('fs-extra');
   const epRow = getDb().prepare('SELECT yt_thumbnail_path FROM episodes WHERE id = ?').get(state.episodeId) as { yt_thumbnail_path: string | null } | undefined;
   if (epRow?.yt_thumbnail_path && fs.existsSync(epRow.yt_thumbnail_path)) {
-    thumbnailPath = epRow.yt_thumbnail_path;
-    log.info({ thumbnailPath }, 'Using user-selected YouTube thumbnail');
+    ytThumbnailPath = epRow.yt_thumbnail_path;
+    log.info({ ytThumbnailPath }, 'Using user-selected YouTube thumbnail for metadata');
   } else {
-    const { generateYouTubeThumbnail } = await import('@/services/thumbnailGenerator');
-    thumbnailPath = await generateYouTubeThumbnail({
-      title: state.selectedTitle,
-      episodeNumber: state.episodeNumber,
-      coverImagePath: state.coverPath,
-      segmentType: state.segmentType,
-    });
-    log.info({ thumbnailPath }, 'Using fallback generated thumbnail');
+    ytThumbnailPath = compositeImagePath;
+    log.info('Using composite as YouTube thumbnail (no user selection)');
   }
 
-  // Step 2: Create video from audio + composite thumbnail (title + IG cover)
+  // Step 3: Create video from audio + composite image + burned-in subtitles
   const { createVideoFromAudio } = await import('@/services/videoCreator');
   const videoPath = await createVideoFromAudio({
     audioPath: state.audioPath,
-    coverPath: thumbnailPath,
+    coverPath: compositeImagePath,
+    srtPath: state.srtPath || undefined,
   });
 
-  // Step 3: Assemble final YouTube description (ad + main + footer + hashtags)
+  // Step 4: Assemble final YouTube description (ad + main + footer + hashtags)
   // Source links are already appended by generateMeta (deterministic, not LLM)
   const ytDesc = state.youtubeDescription || state.description;
   const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
   const finalDescription = assembleYoutubeDescription(ytDesc, state.tags);
 
-  // Step 4: Upload to YouTube with composite thumbnail
+  // Step 5: Upload to YouTube with user-selected thumbnail (or composite) for metadata
   const { YouTubeService } = await import('@/services/youtube');
   const yt = new YouTubeService();
   await yt.initialize();
@@ -189,8 +194,21 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
     description: finalDescription,
     tags: state.tags,
     privacyStatus: 'public',
-    thumbnailPath,
+    thumbnailPath: ytThumbnailPath,
   });
+
+  // Upload subtitles if available
+  if (state.srtContent) {
+    try {
+      await yt.uploadCaption({
+        videoId: result.videoId,
+        srtContent: state.srtContent,
+      });
+      log.info({ videoId: result.videoId }, 'Subtitles uploaded to YouTube');
+    } catch (err) {
+      log.warn({ videoId: result.videoId, error: (err as Error).message }, 'Subtitle upload failed (non-blocking)');
+    }
+  }
 
   return result.videoUrl;
 }

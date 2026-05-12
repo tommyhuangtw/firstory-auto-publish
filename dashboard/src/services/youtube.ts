@@ -174,6 +174,36 @@ export class YouTubeService {
     }
   }
 
+  async uploadCaption(options: {
+    videoId: string;
+    srtContent: string;
+    language?: string;
+    name?: string;
+  }): Promise<void> {
+    const yt = this.ensureYt();
+    const { videoId, srtContent, language = 'zh-TW', name = '' } = options;
+
+    const { Readable } = await import('stream');
+    const srtStream = Readable.from([srtContent]);
+
+    await yt.captions.insert({
+      part: ['snippet'],
+      requestBody: {
+        snippet: {
+          videoId,
+          language,
+          name,
+        },
+      },
+      media: {
+        mimeType: 'application/x-subrip',
+        body: srtStream,
+      },
+    });
+
+    log.info({ videoId, language }, 'Caption uploaded');
+  }
+
   async getChannelInfo(): Promise<ChannelInfo | null> {
     const yt = this.ensureYt();
 

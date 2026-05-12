@@ -69,6 +69,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN ad_preset_id INTEGER REFERENCES ad_presets(id)');
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN audio_merge_enabled INTEGER DEFAULT 1');
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN scheduled_dates TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN srt_path TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN srt_content TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {

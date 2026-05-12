@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS episodes (
   total_cost_usd REAL,
   script_word_count INTEGER,
 
+  -- Subtitles
+  srt_path TEXT,                    -- file path to generated .srt file
+  srt_content TEXT,                 -- full SRT text (for preview & upload)
+
   -- Publish results
   soundon_url TEXT,
   youtube_url TEXT,

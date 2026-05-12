@@ -68,6 +68,7 @@ export type PipelineStatus =
   | 'generating_meta'
   | 'generating_cover'
   | 'tts'
+  | 'generating_subtitles'
   | 'uploading_assets'
   | 'notifying'
   | 'pending_review'
@@ -132,6 +133,10 @@ export interface PipelineState {
   // ── Stage 8: TTS ──
   audioPath: string;
   audioDurationSec: number;
+
+  // ── Stage 8.5: Subtitles ──
+  srtPath: string;
+  srtContent: string;
 
   // ── Stage 9: Upload Assets ──
   driveAudioUrl: string;
@@ -198,6 +203,8 @@ export function createInitialState(
     coverUrl: '',
     audioPath: '',
     audioDurationSec: 0,
+    srtPath: '',
+    srtContent: '',
     driveAudioUrl: '',
     driveImageUrl: '',
     igScenario: '',

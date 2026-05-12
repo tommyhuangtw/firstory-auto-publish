@@ -90,6 +90,8 @@ export async function POST(
       publishErrors: [],
       manualVideoUrls: [],
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
+      srtPath: (episode.srt_path as string) || '',
+      srtContent: (episode.srt_content as string) || '',
     };
 
     const results: { soundonUrl?: string; youtubeUrl?: string; igPostId?: string; fbPostId?: string; fbPostUrl?: string; threadsPostId?: string; errors: string[] } = { errors: [] };

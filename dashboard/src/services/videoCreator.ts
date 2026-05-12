@@ -17,6 +17,12 @@ interface CreateVideoParams {
   audioPath: string;
   coverPath?: string;
   outputDir?: string;
+  srtPath?: string;
+}
+
+/** Escape file path for FFmpeg subtitles filter (libass) */
+function escapeFFmpegSubPath(p: string): string {
+  return p.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "'\\''");
 }
 
 /**
@@ -24,7 +30,7 @@ interface CreateVideoParams {
  * If no cover image is provided, generates a black background video.
  */
 export async function createVideoFromAudio(params: CreateVideoParams): Promise<string> {
-  const { audioPath, coverPath, outputDir } = params;
+  const { audioPath, coverPath, outputDir, srtPath } = params;
 
   if (!fs.existsSync(audioPath)) {
     throw new Error(`Audio file not found: ${audioPath}`);
@@ -41,51 +47,67 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
     throw new Error('ffmpeg is not installed or not in PATH');
   }
 
+  const hasSubs = srtPath && fs.existsSync(srtPath);
+  const fps = hasSubs ? '10' : '1';
+
   const args: string[] = [];
 
   if (coverPath && fs.existsSync(coverPath)) {
-    // Audio + cover image → video (1fps for static image = fast encode)
+    // Build -vf filter chain
+    const vfParts = ['scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black'];
+    if (hasSubs) {
+      const escaped = escapeFFmpegSubPath(srtPath);
+      vfParts.push(`subtitles='${escaped}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
+    }
+
     args.push(
       '-y', '-nostdin',
       '-loop', '1',
-      '-framerate', '1',
+      '-framerate', fps,
       '-i', coverPath,
       '-i', audioPath,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-tune', 'stillimage',
+      ...(hasSubs ? [] : ['-tune', 'stillimage']),
       '-crf', '23',
-      '-g', '99999',
-      '-r', '1',
+      ...(hasSubs ? [] : ['-g', '99999']),
+      '-r', fps,
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
-      '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
+      '-vf', vfParts.join(','),
       '-shortest',
       outputPath
     );
   } else {
     // Audio + black background → video
+    const vfParts: string[] = [];
+    if (hasSubs) {
+      const escaped = escapeFFmpegSubPath(srtPath);
+      vfParts.push(`subtitles='${escaped}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
+    }
+
     args.push(
       '-y', '-nostdin',
       '-f', 'lavfi',
-      '-i', 'color=c=black:s=1920x1080:r=1',
+      '-i', `color=c=black:s=1920x1080:r=${fps}`,
       '-i', audioPath,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-tune', 'stillimage',
+      ...(hasSubs ? [] : ['-tune', 'stillimage']),
       '-crf', '23',
-      '-g', '99999',
-      '-r', '1',
+      ...(hasSubs ? [] : ['-g', '99999']),
+      '-r', fps,
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
+      ...(vfParts.length ? ['-vf', vfParts.join(',')] : []),
       '-shortest',
       outputPath
     );
   }
 
-  log.info({ audioPath, coverPath, outputPath }, 'Creating video...');
+  log.info({ audioPath, coverPath, outputPath, srtPath: hasSubs ? srtPath : undefined, fps }, 'Creating video...');
 
   try {
     await execFileAsync('ffmpeg', args, { timeout: 600000 }); // 10min max
