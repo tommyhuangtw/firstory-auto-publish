@@ -1,128 +1,194 @@
 # CLAUDE.md
 
-## Coding Guidelines (Karpathy Skills)
-開發時必須遵守以下 4 原則（來自 andrej-karpathy-skills）：
+## Project Overview
 
+**AI 懶人報 Podcast Automation** — 全自動 Podcast 產製系統。從 YouTube 影片搜尋、AI 腳本生成、TTS 語音合成、到多平台發布（SoundOn / YouTube / Instagram / Facebook / Threads），全流程自動化，僅在發布前需人工審核。
+
+- **Tech Stack**: Next.js 14 + TypeScript + LangGraph + SQLite
+- **Dashboard**: `dashboard/` (主要開發目錄)
+- **Database**: SQLite (`dashboard/data/podcast.db`, WAL mode)
+- **Legacy code**: `src/`, `web-console/` 保留至遷移完成
+
+---
+
+## Coding Guidelines
+
+### 開發原則 (Karpathy Skills)
 1. **Think Before Coding** — 不假設、不隱藏困惑、明確列出 assumptions。多種做法時先呈現選項，不要默默選一個。
 2. **Simplicity First** — 最少程式碼解決問題。不加未要求的功能、不為單次使用建 abstraction、不處理不可能的 error scenarios。
 3. **Surgical Changes** — 只改必要的部分。不「順便改善」旁邊的 code/comments/formatting。只清理自己造成的 orphans。
 4. **Goal-Driven Execution** — 把模糊需求轉成可驗證的 success criteria，loop 直到驗證通過。
 
-## Git Commit 偏好
-- **不要**在 commit message 中加入 `Co-Authored-By` 行
+### 開發完成前必須驗證
+- 每次開發完成後，**必須先跑測試確認沒問題**才能讓使用者 review
+- 最低驗證標準：`cd dashboard && npm run build` 編譯通過
+- 有改動 pipeline/service 邏輯時，用 `scripts/` 下的測試腳本跑一次 smoke test
+- 不要只說「應該沒問題」— 要實際執行、看到結果、確認正確
 
-## 專案架構
-- **重構方向**: 完全移除 n8n，用 Next.js + LangGraph + SQLite 重建
-- **完整計畫**: 見 `docs/platform-refactor-plan.md`
-- **Dashboard 專案**: `dashboard/` (Next.js 14 + TypeScript)
-- **原有程式碼**: `src/`, `web-console/` 保留至遷移完成
-- **資料庫**: SQLite (`dashboard/data/podcast.db`)
+### Git Commit 偏好
+- **不要**在 commit message 中加入 `Co-Authored-By` 行
+- Commit message 一律使用**英文**撰寫
 
 ---
 
-## 重構進度記錄
+## System Architecture
 
-### Phase 1: Foundation
+### Content Pipeline (LangGraph)
 
-#### 2026-04-24 — Steps 1-8: 基礎建設完成
-- 更新 CLAUDE.md 加入重構進度記錄區塊
-- 初始化 Next.js 14 專案 (`dashboard/`)，安裝 TypeScript, Tailwind, ESLint
-- 安裝核心 dependencies: `better-sqlite3`, `pino`, `pino-pretty`, `node-cron`
-- 建立 SQLite schema (`dashboard/src/db/schema.sql`) — 7 tables: episodes, tools, episode_tool_mentions, llm_calls, pipeline_runs, youtube_sources, platform_analytics
-- 建立 DB connection module (`dashboard/src/db/index.ts`) — WAL mode, auto-migration
-- 建立 Pino logger (`dashboard/src/lib/logger.ts`) — dev pretty print, prod JSON
-- Port OpenRouterService → `dashboard/src/services/llmService.ts` — 新增自動 LLM call logging 到 llm_calls table（model, tokens, cost, latency）
-- 建立 API routes: `/api/health`, `/api/episodes` (GET/POST), `/api/pipeline/status`
-- 建立 Dashboard 首頁 (`dashboard/src/app/page.tsx`) — 顯示 DB 狀態、episodes 數、pipeline runs
-- 更新 `.gitignore` — 加入 dashboard 相關忽略規則
-- **驗證通過**: build 成功、health API 回傳 `{status: "ok", db: "connected", tables: 7}`、episodes 回傳空陣列
+13-stage linear state machine，每個 node 存 snapshot 到 DB 供 retry：
 
-#### 2026-04-24 — Steps 9-12: Google Services + Scheduler
-- 安裝 `googleapis`, `fs-extra` 及其 type definitions
-- 建立 shared Google Auth module (`dashboard/src/lib/googleAuth.ts`) — OAuth2 token load/save/refresh，Drive/Gmail/YouTube 共用
-- Port GoogleDriveService → `dashboard/src/services/googleDrive.ts` — 上傳/下載/串流，使用 shared auth
-- Port GmailService → `dashboard/src/services/gmail.ts` — 標題選擇/縮圖選擇 email 發送
-- Port YouTubeService → `dashboard/src/services/youtube.ts` — 影片上傳、縮圖設定、頻道資訊
-- 建立 Scheduler service (`dashboard/src/services/scheduler.ts`) — node-cron 排程管理，支援 register/start/stop/manual trigger
-- 新增 API route: `/api/scheduler/status`
-- **驗證通過**: build 成功，6 個 routes 正常（含 `/api/scheduler/status`）
-- **Phase 1 完成** — Foundation layer 全部到位
+```
+fetchYoutube → classify → scriptEnglish → extractTools → translate
+→ customContentInsert → scoreQuality → generateMeta → generateCover
+→ synthesizeTts → generateSubtitles → uploadAssets → notify → END
+                                                          ↓
+                                               [暫停：人工審核]
+                                                          ↓
+                                                    publish (approve 後觸發)
+```
 
-### Phase 2: Content Pipeline (LangGraph)
+**Pipeline nodes**: `dashboard/src/services/pipeline/nodes/`
+**Pipeline state**: `dashboard/src/services/pipeline/state.ts`
+**Graph definition**: `dashboard/src/services/pipeline/graph.ts`
 
-#### 2026-04-24 — LangGraph Pipeline 建置
-- 安裝 `@langchain/langgraph`, `@langchain/core`
-- 定義 Pipeline State (`dashboard/src/services/pipeline/state.ts`) — 完整的 PipelineState 型別，含 videos, scripts, quality, meta, audio 等欄位
-- 建立 7 個 Pipeline Nodes:
-  - `fetchYoutube.ts` — YouTube Data API v3 搜尋 + Apify 字幕擷取，去重、篩選（views/likes/duration）、取 top 5
-  - `classify.ts` — Gemini Flash Lite 分類（is_tool/not_tool 或 is_robotics/non_robotics），parallel execution
-  - `scriptEnglish.ts` — Gemini Pro 生成 5000-6000 字英文講稿
-  - `translate.ts` — Gemini Pro 翻譯為台灣繁體中文口語化，保留英文工具名
-  - `qualityScore.ts` — 4 維度評分（accuracy, engagement, structure, naturalness），threshold 85 分，max 2 次 refinement
-  - `generateMeta.ts` — 10 個候選標題 → 選最佳 → 生成描述 → 生成 YouTube tags（完整 port contentGenerator.js 邏輯）
-  - `tts.ts` — VoAI TTS 合成（完整 port voai.js: 300 字 chunk → batch-5 → FFmpeg concat）
-  - `publish.ts` — SoundOn + YouTube 發布（Phase 3 完整實作，目前 placeholder）
-- 建立 LangGraph StateGraph (`dashboard/src/services/pipeline/graph.ts`) — 使用 Annotation API，linear flow: START → fetch → classify → script → translate → quality → meta → tts → END
-- Pipeline 完成後自動更新 episodes + pipeline_runs tables
-- 新增 API routes:
-  - `POST /api/pipeline/start` — 啟動 pipeline（episodeNumber + segmentType）
-  - `POST /api/episodes/:id/approve` — 人工審核通過後觸發發布
-- **驗證通過**: build 成功，8 個 routes 正常
-- **Phase 2 核心完成** — LangGraph pipeline 取代 n8n workflow
+### Segment Types
 
-### Phase 3: Review Flow + Publisher
+| Type | 說明 | YouTube Source Table |
+|------|------|---------------------|
+| `daily` | 每日 AI 工具精選 | `youtube_sources` |
+| `weekly` | 每週 AI 精選週報 | `weekly_youtube_sources` |
+| `robot` | 機器人觀察週報 | `robot_youtube_sources` |
+| `sysdesign` | 系統設計懶懶學 | 支援 `manual_video_urls` |
 
-#### 2026-04-24 — Review UI + Publisher 實作
-- ��立 Navigation component (`dashboard/src/components/Navigation.tsx`) — desktop sidebar + mobile bottom bar
-- 更新 layout.tsx — 套用 Navigation，metadata 改為 "AI Podcast Dashboard"
-- 建立 Audio Streaming API (`/api/audio/[...path]`) — HTTP Range requests 支援 mobile Safari
-- 建立 Episodes 列表頁 (`/episodes`) — status badges, quality scores, cost 顯示
-- 建立 Review 頁面 (`/episodes/[id]/review`) — audio player, title picker, description editor, approve/reject 按鈕
-- 建立 ReviewClient 互動元件 — client-side state management for title/description editing
-- 新增 API routes:
-  - `POST /api/episodes/:id/reject` — 拒絕 episode，記錄 rejection reason
-  - `GET /api/episodes/:id/status` — 查詢 episode 狀態 + publish URLs
-- Port SoundOn uploader → `dashboard/src/services/soundon.ts` — Playwright 自動化（login → new episode → upload → fill → publish）
-- 建立 Video Creator (`dashboard/src/services/videoCreator.ts`) — FFmpeg audio + image → MP4
-- 更新 publish node — 接入 SoundOn publisher + YouTube upload（lazy import, graceful fallback）
-- 安裝 `playwright` dependency
-- **驗證通過**: build 成功，13 個 routes，完整 approve/reject flow 測試通過
-- **Phase 3 完成** — Review UI + Publisher 全部到位
+### Publishing Flow
 
-### Phase 4: Memory System
+Publish 時，每個平台獨立執行，一個失敗不影響其他：
 
-#### 2026-04-25 — Tool Extraction + Memory UI 實作
-- 建立 Tool Extraction Service (`dashboard/src/services/memory/toolExtractor.ts`) — 用 Gemini Flash Lite 從英文講稿擷取 AI 工具名稱、分類、上下文
-- 建立 Memory Service (`dashboard/src/services/memory/memoryService.ts`) — tools/episode_tool_mentions DB 操作，回顧語句生成
-- 新增 Pipeline Node `extractTools` — 在 scriptEnglish 之後執行，擷取工具 → 存入 DB
-- 新增 Pipeline Node `enrichMemory` — 在 translate 之後執行，注入回顧語句到中文講稿
-- 更新 Pipeline Graph: 9 nodes（新增 extractTools + enrichMemory），flow: script → extractTools → translate → enrichMemory → quality
-- 建立 Memory 瀏覽 UI (`/memory`) — 工具列表（category filter, search），卡片式排版
-- 建立 Tool 詳情頁 (`/memory/[name]`) — 出現次數、首次/最近 episode、evolving summary、episode timeline
-- Navigation 加入 Memory 連結
-- **驗證通過**: build 成功，15 個 routes，Memory UI category filter + search + 404 全部正常
-- **Phase 4 完成** — Tool Memory System 全部到位
+1. **SoundOn** — Playwright 自動化登入 → 上傳音檔 → 填 metadata → 發布
+2. **YouTube** — 生成 composite 雙面板圖（左標題+右封面）→ FFmpeg 燒錄字幕到 MP4 → 上傳影片 + 縮圖 + SRT closed captions
+3. **Instagram** — 封面圖上傳 Cloudinary → Graph API 發布
+4. **Facebook** — 封面圖 + LLM 生成貼文 → Graph API 發布
+5. **Threads** — LLM 生成貼文 → Threads API 發布
 
-### Phase 5: Evaluation Dashboard
+### Video Creation
 
-#### 2026-04-25 — LLM Metrics Dashboard 實作
-- 安裝 `recharts` 視覺化套件
-- 建立 Metrics API (`/api/metrics`) — 彙整 costPerEpisode, costByStage, qualityTrend, pipelineRuns, summary
-- 建立 Metrics 頁面 (`/metrics`) — Recharts 圖表：Cost per Episode (BarChart), Quality Score Trend (LineChart), Cost by Stage 表格, Pipeline Runs 列表
-- Navigation 加入 Metrics 連結
-- **驗證通過**: build 成功，16 個 routes，API 回傳正確資料結構，metrics 頁面 200 OK
-- **Phase 5 完成** — Evaluation Dashboard 到位
+- **影片畫面**: 永遠使用 composite 雙面板佈局（`thumbnailGenerator.ts` 生成：左面板=EP+標題，右面板=IG 封面圖）
+- **字幕**: FFmpeg `subtitles` filter 燒錄 SRT（白字+半透明黑底，10fps）
+- **YouTube 縮圖**: User-selected 或 composite，獨立於影片畫面
+- **SRT**: 同時上傳到 YouTube 作為 closed captions（SEO 用）
 
-### UI 補強
+---
 
-#### 2026-04-25 — Pipeline 追蹤 + 錯誤顯示 + Scheduler UI + 封面預覽
-- Pipeline 啟動改為 fire-and-forget（`/api/pipeline/start` 不再 blocking）
-- 新增 `/api/pipeline/status/[id]` — 單筆 pipeline run 狀態查詢
-- NewEpisodeForm 加入即時進度追蹤 — 9 階段 progress indicator + 2 秒 polling
-- Episodes 列表顯示 generating 狀態的 current_stage（JOIN pipeline_runs）
-- Review 頁面顯示 pipeline 錯誤（紅色 error_log section）
-- Review 頁面新增封面圖預覽（cover_path）
-- 建立 Scheduler 管理頁面（`/scheduler`）— job 列表、手動觸發
-- 新增 `/api/scheduler/trigger` — 手動觸發排程任務
-- Navigation 加入 Scheduler 連結
-- **驗證通過**: build 成功，20 個 routes，pipeline start 立即回傳（0.02s）
+## Key Services
+
+| Service | File | 用途 |
+|---------|------|------|
+| `llmService` | `services/llmService.ts` | OpenRouter LLM API（Gemini/Claude/GPT），自動記錄 cost & tokens |
+| `youtube` | `services/youtube.ts` | YouTube Data API v3：搜尋、上傳、縮圖、字幕 |
+| `soundon` | `services/soundon.ts` | SoundOn Playwright 自動化上傳 |
+| `videoCreator` | `services/videoCreator.ts` | FFmpeg 影片生成（支援字幕燒錄） |
+| `subtitleGenerator` | `services/subtitleGenerator.ts` | Whisper 轉錄 + 腳本對齊 + SRT 生成 |
+| `thumbnailGenerator` | `services/thumbnailGenerator.ts` | Playwright 渲染 HTML → 1280x720 JPEG |
+| `kieai` | `services/kieai.ts` | kie.ai 圖片生成（GPT Image 2） |
+| `cloudinary` | `services/cloudinary.ts` | CDN 圖片上傳 |
+| `instagram` | `services/instagram.ts` | Instagram Graph API 發布 |
+| `facebook` | `services/facebook.ts` | Facebook Graph API 發布 |
+| `threads` | `services/threads.ts` | Threads API 發布 |
+| `gmail` | `services/gmail.ts` | Gmail 通知信（標題確認、縮圖選擇） |
+| `googleDrive` | `services/googleDrive.ts` | Drive 上傳音檔/圖片 |
+| `descriptionAssembler` | `services/descriptionAssembler.ts` | 組裝 episode 描述（業配+本文+footer） |
+| `scheduler` | `services/scheduler.ts` | node-cron 排程管理 |
+| `memory/*` | `services/memory/` | AI 工具記憶系統（擷取、分類、回顧語句注入） |
+| `shortsPipeline` | `services/shortsPipeline.ts` | Shorts 生成（beat 選擇、headline、影片組裝） |
+
+---
+
+## External APIs & Environment Variables
+
+### 必要
+| Variable | Service |
+|----------|---------|
+| `OPENROUTER_API_KEY` | LLM（Gemini/Claude/GPT via OpenRouter） |
+| `OPENAI_API_KEY` | Whisper 語音轉錄 |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | YouTube/Gmail/Drive OAuth |
+| `YOUTUBE_API_KEY` or `YOUTUBE_API_KEYS` | YouTube Data API |
+| `VOAI_API_KEY` | VoAI TTS 語音合成 |
+| `KIE_AI_API_KEY` | kie.ai 圖片生成 |
+| `APIFY_API_TOKEN` | YouTube 字幕擷取 |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_UPLOAD_PRESET` | 圖片 CDN |
+| `SOUNDON_EMAIL`, `SOUNDON_PASSWORD` | SoundOn 發布 |
+
+### 社群媒體（選用）
+| Variable | Service |
+|----------|---------|
+| `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_ACCOUNT_ID` | IG 發布 |
+| `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | FB OAuth + 發布 |
+| `THREADS_APP_ID`, `THREADS_APP_SECRET` | Threads OAuth + 發布 |
+
+### 其他
+| Variable | Service |
+|----------|---------|
+| `RECIPIENT_EMAIL` | 通知信收件人 |
+| `GDRIVE_PODCAST_FOLDER`, `GDRIVE_IMAGE_FOLDER` | Drive 上傳目標 |
+| `GOOGLE_DOCS_CUSTOM_CONTENT_ID` | 自訂內容 Google Doc ID |
+
+---
+
+## Database Schema (19 tables)
+
+**Core**: `episodes`, `pipeline_runs`, `pipeline_snapshots`, `llm_calls`, `service_costs`
+**Content Sources**: `youtube_sources`, `weekly_youtube_sources`, `robot_youtube_sources`
+**Memory**: `tools`, `tool_families`, `episode_tool_mentions`
+**Publishing**: `shorts`, `sponsor_audio_presets`, `ad_presets`
+**Analytics**: `platform_analytics`, `soundon_daily_downloads`, `soundon_episodes`
+**Config**: `settings`
+
+Schema 定義: `dashboard/src/db/schema.sql`
+Migration: `dashboard/src/db/index.ts`（`safeAlter` 自動加 column）
+
+---
+
+## UI Pages (14 pages)
+
+| Path | 用途 |
+|------|------|
+| `/` | Dashboard 首頁（DB 狀態、episode 數、pipeline runs） |
+| `/episodes` | Episode 列表（status badges、quality scores、cost） |
+| `/episodes/[id]/review` | 審核頁（audio player、標題選擇、描述編輯、approve/reject） |
+| `/scheduler` | 排程管理（job 列表、手動觸發、skip） |
+| `/metrics` | 成本 & 品質指標（Recharts 圖表） |
+| `/analytics` | 平台數據（downloads、listens、engagement） |
+| `/memory` | AI 工具記憶瀏覽（分類、搜尋） |
+| `/memory/[name]` | 單一工具詳情（出現次數、演化摘要） |
+| `/settings` | 系統設定 |
+| `/sponsor` | 業配音檔管理 |
+| `/thumbnail-compare` | 縮圖 A/B 測試 |
+| `/youtube-sources` | YouTube 搜尋來源管理 |
+
+---
+
+## Utility Scripts
+
+`dashboard/scripts/` 下的測試腳本，開發時用於 smoke test：
+
+| Script | 用途 |
+|--------|------|
+| `test-video-creation.ts` | 測試 composite 佈局 + 字幕燒錄（3 分鐘預覽） |
+| `test-subtitles.ts` | 測試 Whisper 轉錄 + SRT 生成 |
+| `test-soundon.ts` | 測試 SoundOn Playwright 上傳 |
+| `test-quality-loop.ts` | 測試品質評分迴圈 |
+| `test-topic-pipeline.ts` | 測試完整 pipeline |
+| `seed-memory.ts` | 初始化工具記憶 DB |
+
+---
+
+## Key Architectural Patterns
+
+1. **LangGraph Pipeline** — 13-stage linear state machine，每個 node 存 snapshot
+2. **Fire-and-Forget** — `/pipeline/start` 立即回傳，pipeline 背景執行
+3. **Human Review Gate** — Pipeline 暫停在 `pending_review`，需 `/episodes/:id/approve`
+4. **State Snapshots** — 每個 node 輸出存 JSON，支援 `retryFromStage()` 從任意階段重跑
+5. **Sponsor Audio Merge** — Pipeline 完成後自動 merge 業配音檔（依 `scheduled_dates` 匹配）
+6. **Cost Tracking** — `llm_calls` + `service_costs` 兩張表，episodes 彙整 total cost
+7. **Quality Refinement** — 品質評分 < 85 分自動重寫，最多 2 次
+8. **Tool Memory** — 工具追蹤 + 家族分類 + 回顧語句自動注入腳本
