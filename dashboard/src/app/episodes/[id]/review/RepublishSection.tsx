@@ -12,7 +12,7 @@ interface Props {
 
 export default function RepublishSection({ episodeId, episodeStatus, soundonUrl, youtubeUrl }: Props) {
   const router = useRouter();
-  const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
+  const [loadingPlatforms, setLoadingPlatforms] = useState<Set<string>>(new Set());
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -44,7 +44,7 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
     const label = labels[platform];
     if (!confirm(`確定要重新發布到 ${label}？`)) return;
 
-    setLoadingPlatform(platform);
+    setLoadingPlatforms(prev => new Set(prev).add(platform));
     setError('');
     setSuccess('');
     try {
@@ -60,11 +60,11 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoadingPlatform(null);
+      setLoadingPlatforms(prev => { const next = new Set(prev); next.delete(platform); return next; });
     }
   }
 
-  const isLoading = loadingPlatform !== null;
+  const anyLoading = loadingPlatforms.size > 0;
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
@@ -83,10 +83,10 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
           </div>
           <button
             onClick={() => handleRepublish('soundon')}
-            disabled={isLoading}
+            disabled={loadingPlatforms.has('soundon') || loadingPlatforms.has('all')}
             className="text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
           >
-            {loadingPlatform === 'soundon' ? '發布中...' : soundonUrl ? '重新發布' : '發布'}
+            {loadingPlatforms.has('soundon') ? '發布中...' : soundonUrl ? '重新發布' : '發布'}
           </button>
         </div>
 
@@ -103,10 +103,10 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
           </div>
           <button
             onClick={() => handleRepublish('youtube')}
-            disabled={isLoading}
+            disabled={loadingPlatforms.has('youtube') || loadingPlatforms.has('all')}
             className="text-[11px] px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors cursor-pointer"
           >
-            {loadingPlatform === 'youtube' ? '發布中...' : youtubeUrl ? '重新發布' : '發布'}
+            {loadingPlatforms.has('youtube') ? '發布中...' : youtubeUrl ? '重新發布' : '發布'}
           </button>
         </div>
 
@@ -115,7 +115,7 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
           <button
             onClick={async () => {
               if (!confirm('確定要重新發布到 SoundOn + YouTube？')) return;
-              setLoadingPlatform('all');
+              setLoadingPlatforms(prev => new Set(prev).add('all'));
               setError('');
               setSuccess('');
               try {
@@ -137,20 +137,20 @@ export default function RepublishSection({ episodeId, episodeStatus, soundonUrl,
               } catch (err) {
                 setError((err as Error).message);
               } finally {
-                setLoadingPlatform(null);
+                setLoadingPlatforms(prev => { const next = new Set(prev); next.delete('all'); return next; });
               }
             }}
-            disabled={isLoading || resetting}
+            disabled={anyLoading || resetting}
             className="w-full text-xs py-2 rounded-lg bg-blue-600/15 text-blue-400 hover:bg-blue-600/25 disabled:opacity-40 transition-colors cursor-pointer font-medium"
           >
-            {loadingPlatform === 'all' ? '發布中...' : '全部重新發布'}
+            {loadingPlatforms.has('all') ? '發布中...' : '全部重新發布'}
           </button>
 
           {/* Reset to pending_review — only for publishing/stuck episodes */}
           {episodeStatus !== 'published' && (
             <button
               onClick={handleResetToReview}
-              disabled={isLoading || resetting}
+              disabled={anyLoading || resetting}
               className="w-full text-xs py-2 rounded-lg bg-red-600/10 text-red-400 hover:bg-red-600/20 disabled:opacity-40 transition-colors cursor-pointer font-medium"
             >
               {resetting ? '退回中...' : '停止發布，退回待審核'}

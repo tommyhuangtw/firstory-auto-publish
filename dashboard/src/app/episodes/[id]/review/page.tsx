@@ -286,7 +286,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           savedHookTitle={episode.yt_hook_title}
           savedThumbnailPath={episode.yt_thumbnail_path}
           hookTitleHistory={episode.hook_title_history ? JSON.parse(episode.hook_title_history) : []}
-          canEdit={canEdit}
+          canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         />
 
         {/* Interactive Review Section (title picker, approve/reject, collapsible details) */}

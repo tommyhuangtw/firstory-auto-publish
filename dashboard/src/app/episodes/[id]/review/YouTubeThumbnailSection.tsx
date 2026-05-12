@@ -100,9 +100,13 @@ export default function YouTubeThumbnailSection({
     }
   };
 
+  const [selectError, setSelectError] = useState<string | null>(null);
+
   const selectThumbnail = async (thumb: ThumbnailOption) => {
+    const prevPath = selectedPath;
     setSelectedPath(thumb.path);
     setSaving(true);
+    setSelectError(null);
     try {
       const res = await fetch(`/api/episodes/${episodeId}/yt-thumbnail/select`, {
         method: 'POST',
@@ -112,9 +116,16 @@ export default function YouTubeThumbnailSection({
           hookTitle: hookTitle,
         }),
       });
-      if (res.ok) setSaved(true);
+      if (res.ok) {
+        setSaved(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSelectedPath(prevPath);
+        setSelectError(data.error || '儲存失敗');
+      }
     } catch {
-      // silently fail
+      setSelectedPath(prevPath);
+      setSelectError('網路錯誤，請重試');
     } finally {
       setSaving(false);
     }
@@ -257,6 +268,13 @@ export default function YouTubeThumbnailSection({
           </div>
         )}
       </div>
+
+      {/* Selection error */}
+      {selectError && (
+        <div className="text-xs text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">
+          {selectError}
+        </div>
+      )}
 
       {/* Loading */}
       {loadingThumbnails && (

@@ -17,8 +17,8 @@ export async function POST(
       hookTitle: string;
     };
 
-    if (!thumbnailPath || !hookTitle) {
-      return NextResponse.json({ error: 'thumbnailPath and hookTitle required' }, { status: 400 });
+    if (!thumbnailPath) {
+      return NextResponse.json({ error: 'thumbnailPath required' }, { status: 400 });
     }
 
     const db = getDb();
