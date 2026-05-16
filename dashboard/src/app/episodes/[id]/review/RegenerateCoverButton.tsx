@@ -129,6 +129,8 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
         const data = await res.json();
         throw new Error(data.error || 'Selection failed');
       }
+      // Update local state immediately so the preview reflects the selection
+      setActiveCoverPath(candidates[index].path);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);

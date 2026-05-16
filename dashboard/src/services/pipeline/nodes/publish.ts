@@ -8,6 +8,7 @@
  * Each platform is independent — one failure doesn't block the other.
  */
 
+import path from 'path';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import type { PipelineState } from '../state';
@@ -171,11 +172,26 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   }
 
   // Step 3: Create video from audio + composite image + burned-in subtitles
+  // Ensure SRT file exists for subtitle burning (temp file may have been deleted)
+  let srtPath: string | undefined = state.srtPath || undefined;
+  if (srtPath && !fs.existsSync(srtPath)) {
+    if (state.srtContent) {
+      // Recreate SRT file from DB-stored content
+      const srtDir = path.dirname(srtPath);
+      if (!fs.existsSync(srtDir)) fs.mkdirSync(srtDir, { recursive: true });
+      fs.writeFileSync(srtPath, state.srtContent, 'utf-8');
+      log.info({ srtPath }, 'Recreated SRT file from stored content');
+    } else {
+      log.warn({ srtPath }, 'SRT file missing and no srt_content available — video will have no subtitles');
+      srtPath = undefined;
+    }
+  }
+
   const { createVideoFromAudio } = await import('@/services/videoCreator');
   const videoPath = await createVideoFromAudio({
     audioPath: state.audioPath,
     coverPath: compositeImagePath,
-    srtPath: state.srtPath || undefined,
+    srtPath,
   });
 
   // Step 4: Assemble final YouTube description (ad + main + footer + hashtags)
@@ -206,7 +222,7 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
       });
       log.info({ videoId: result.videoId }, 'Subtitles uploaded to YouTube');
     } catch (err) {
-      log.warn({ videoId: result.videoId, error: (err as Error).message }, 'Subtitle upload failed (non-blocking)');
+      log.error({ videoId: result.videoId, error: (err as Error).message }, 'YouTube caption upload failed (video uploaded OK, but no closed captions)');
     }
   }
 
