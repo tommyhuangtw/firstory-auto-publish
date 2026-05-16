@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Candidate {
@@ -10,26 +10,69 @@ interface Candidate {
   source: string;
 }
 
+interface CoverTask {
+  taskId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  error?: string;
+}
+
 interface Props {
   episodeId: number;
   coverPath?: string | null;
   candidates?: Candidate[];
 }
 
-export default function RegenerateCoverButton({ episodeId, coverPath, candidates = [] }: Props) {
+export default function RegenerateCoverButton({ episodeId, coverPath, candidates: initialCandidates = [] }: Props) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
+  const [activeCoverPath, setActiveCoverPath] = useState(coverPath);
+  const [tasks, setTasks] = useState<CoverTask[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [showGallery, setShowGallery] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const hasCover = !!coverPath;
 
-  // Find which candidate index matches the current active cover
-  const activeIndex = candidates.findIndex(c => c.path === coverPath);
+  const hasCover = !!activeCoverPath;
+  const activeIndex = candidates.findIndex(c => c.path === activeCoverPath);
 
-  async function handleGenerate() {
-    if (hasCover && !confirm('重新生成封面圖？這會呼叫 kie.ai 產生新圖片。')) return;
-    setLoading(true);
+  // Count active (pending + running) tasks
+  const activeTasks = tasks.filter(t => t.status === 'pending' || t.status === 'running');
+  const isGenerating = activeTasks.length > 0;
+
+  // Poll for task status while any tasks are active
+  useEffect(() => {
+    if (!isGenerating) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/episodes/${episodeId}/regenerate-cover`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setTasks(data.tasks || []);
+        if (data.candidates) setCandidates(data.candidates);
+        if (data.activeCoverPath) setActiveCoverPath(data.activeCoverPath);
+      } catch { /* ignore poll errors */ }
+    };
+
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, [isGenerating, episodeId]);
+
+  // When all tasks finish, sync server components
+  const prevGeneratingRef = useRef(isGenerating);
+  useEffect(() => {
+    if (prevGeneratingRef.current && !isGenerating && tasks.length > 0) {
+      router.refresh();
+    }
+    prevGeneratingRef.current = isGenerating;
+  }, [isGenerating, tasks.length, router]);
+
+  const handleGenerate = useCallback(async () => {
+    // Only confirm on first manual regeneration when a cover already exists and no queue is active
+    if (hasCover && !isGenerating) {
+      if (!confirm('重新生成封面圖？這會呼叫 kie.ai 產生新圖片。')) return;
+    }
+
     setError('');
     try {
       const res = await fetch(`/api/episodes/${episodeId}/regenerate-cover`, {
@@ -37,20 +80,20 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to regenerate cover');
+        throw new Error(data.error || 'Failed to enqueue generation');
       }
-      router.refresh();
+      const data = await res.json();
+      // Add the new task to local state immediately (optimistic)
+      setTasks(prev => [...prev, { taskId: data.taskId, status: data.status }]);
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setLoading(false);
     }
-  }
+  }, [episodeId, hasCover, isGenerating]);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setLoading(true);
+    setActionLoading(true);
     setError('');
     try {
       const formData = new FormData();
@@ -67,14 +110,14 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      setActionLoading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
   }
 
   async function handleSelect(index: number) {
     if (index === activeIndex) return;
-    setLoading(true);
+    setActionLoading(true);
     setError('');
     try {
       const res = await fetch(`/api/episodes/${episodeId}/select-cover`, {
@@ -90,9 +133,14 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   }
+
+  // Generate button text
+  const generateText = isGenerating
+    ? `再加一張 (${activeTasks.length})`
+    : hasCover ? '重新生成' : '生成封面';
 
   // No cover state
   if (!hasCover) {
@@ -107,20 +155,29 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
         <div className="flex gap-1.5">
           <button
             onClick={handleGenerate}
-            disabled={loading}
+            disabled={actionLoading}
             className="text-xs px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/20 transition-colors disabled:opacity-50 cursor-pointer"
           >
-            {loading ? '處理中...' : '生成封面'}
+            {generateText}
           </button>
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={loading}
+            disabled={actionLoading}
             className="text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
           >
             上傳
           </button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+        {isGenerating && (
+          <div className="flex items-center gap-1.5 text-xs text-amber-400">
+            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" strokeOpacity={0.25} />
+              <path d="M12 2a10 10 0 0 1 10 10" />
+            </svg>
+            <span>生成中 ({activeTasks.length} 個排隊)</span>
+          </div>
+        )}
         {error && <p className="text-xs text-red-400 max-w-[160px] text-center">{error}</p>}
       </div>
     );
@@ -130,7 +187,7 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
     <div className="shrink-0 flex flex-col items-center gap-2">
       {/* Active cover */}
       <img
-        src={`/api/audio${coverPath}`}
+        src={`/api/audio${activeCoverPath}`}
         alt="Episode cover"
         className="rounded-xl border border-brand/30 w-40 h-40 object-cover"
       />
@@ -139,14 +196,13 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
       <div className="flex gap-1.5">
         <button
           onClick={handleGenerate}
-          disabled={loading}
-          className="text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
+          className="text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors cursor-pointer"
         >
-          {loading ? '處理中...' : '重新生成'}
+          {generateText}
         </button>
         <button
           onClick={() => fileRef.current?.click()}
-          disabled={loading}
+          disabled={actionLoading}
           className="text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
         >
           上傳
@@ -162,6 +218,18 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+
+      {/* Queue status */}
+      {isGenerating && (
+        <div className="flex items-center gap-1.5 text-xs text-amber-400">
+          <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="12" cy="12" r="10" strokeOpacity={0.25} />
+            <path d="M12 2a10 10 0 0 1 10 10" />
+          </svg>
+          <span>生成中 ({activeTasks.length} 個排隊)</span>
+        </div>
+      )}
+
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       {/* Candidate gallery */}
@@ -174,12 +242,12 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
                 <button
                   key={`${c.path}-${i}`}
                   onClick={() => handleSelect(i)}
-                  disabled={loading || isActive}
+                  disabled={actionLoading || isActive}
                   className={`shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                     isActive
                       ? 'border-brand ring-1 ring-brand/40'
                       : 'border-zinc-700 hover:border-zinc-500'
-                  } ${loading ? 'opacity-50' : ''}`}
+                  } ${actionLoading ? 'opacity-50' : ''}`}
                   title={`${c.source === 'upload' ? '手動上傳' : 'AI 生成'} — ${new Date(c.createdAt).toLocaleString('zh-TW')}`}
                 >
                   <div className="relative">

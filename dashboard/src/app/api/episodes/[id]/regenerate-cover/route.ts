@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/db';
-import { generateCover } from '@/services/pipeline/nodes/generateCover';
+import { enqueueTask, getTasksForEpisode } from '@/services/coverTaskQueue';
 import { createChildLogger } from '@/lib/logger';
-import type { PipelineState } from '@/services/pipeline/state';
 
 const log = createChildLogger('api:regenerate-cover');
 
+// POST: Enqueue a cover generation task (returns immediately)
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -18,66 +18,47 @@ export async function POST(
     }
 
     const db = getDb();
-    const episode = db.prepare(
-      'SELECT id, episode_number, segment_type, selected_title, source_videos, script_summary FROM episodes WHERE id = ?'
-    ).get(episodeId) as {
-      id: number;
-      episode_number: number | null;
-      segment_type: string;
-      selected_title: string | null;
-      source_videos: string | null;
-      script_summary: string | null;
-    } | undefined;
-
+    const episode = db.prepare('SELECT id FROM episodes WHERE id = ?').get(episodeId);
     if (!episode) {
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
     }
 
-    // Parse source videos for first video title
-    let selectedVideos: { title: string; viewCount: number }[] = [];
-    if (episode.source_videos) {
-      try {
-        const parsed = JSON.parse(episode.source_videos);
-        selectedVideos = parsed.map((v: Record<string, unknown>) => ({
-          title: (v.title as string) || '',
-          viewCount: (v.viewCount as number) || (v.view_count as number) || 0,
-        }));
-      } catch { /* skip */ }
-    }
-
-    log.info({ episodeId, segmentType: episode.segment_type }, 'Regenerating cover image');
-
-    // Build minimal PipelineState for generateCover
-    const minimalState = {
-      episodeId: episode.id,
-      episodeNumber: episode.episode_number,
-      segmentType: episode.segment_type,
-      selectedTitle: episode.selected_title || '',
-      selectedVideos,
-      scriptSummary: episode.script_summary || '',
-    } as PipelineState;
-
-    const result = await generateCover(minimalState);
-
-    // generateCover() already appends to cover_candidates in DB
-    // Here we only set the new image as the active cover
-    db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ? WHERE id = ?')
-      .run(result.coverPath || null, result.coverUrl || null, episodeId);
-
-    // Read latest candidates from DB
-    const row = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
-    const candidates = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
-
-    log.info({ episodeId, coverUrl: result.coverUrl, totalCandidates: candidates.length }, 'Cover image regenerated');
+    const task = enqueueTask(episodeId);
+    log.info({ episodeId, taskId: task.taskId }, 'Cover generation task enqueued');
 
     return NextResponse.json({
-      coverPath: result.coverPath,
-      coverUrl: result.coverUrl,
-      igScenario: result.igScenario,
-      candidates,
+      taskId: task.taskId,
+      status: task.status,
     });
   } catch (error) {
-    log.error({ error: (error as Error).message }, 'Cover regeneration failed');
+    log.error({ error: (error as Error).message }, 'Failed to enqueue cover generation');
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
+}
+
+// GET: Poll task status for this episode
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const episodeId = parseInt(id);
+  if (isNaN(episodeId)) {
+    return NextResponse.json({ error: 'Invalid episode id' }, { status: 400 });
+  }
+
+  const tasks = getTasksForEpisode(episodeId);
+
+  // Also return latest candidates from DB so UI can refresh gallery
+  const db = getDb();
+  const row = db.prepare('SELECT cover_candidates, cover_path FROM episodes WHERE id = ?').get(episodeId) as {
+    cover_candidates: string | null;
+    cover_path: string | null;
+  } | undefined;
+
+  return NextResponse.json({
+    tasks,
+    candidates: row?.cover_candidates ? JSON.parse(row.cover_candidates) : [],
+    activeCoverPath: row?.cover_path || null,
+  });
 }
