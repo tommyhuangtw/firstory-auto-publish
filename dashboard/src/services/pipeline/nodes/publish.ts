@@ -172,6 +172,33 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   }
 
   // Step 3: Create video from audio + composite image + burned-in subtitles
+  // If no SRT data at all (pipeline stage was skipped), generate on-the-fly
+  if (!state.srtContent && state.audioPath && state.scriptZh) {
+    log.warn({ episodeId: state.episodeId }, 'No SRT data — generating subtitles on-the-fly before publish');
+    const { generateSubtitles } = await import('@/services/subtitleGenerator');
+    const result = await generateSubtitles(state.audioPath, state.scriptZh);
+    state.srtContent = result.srtContent;
+    state.srtPath = state.audioPath.replace(/\.mp3$/, '.srt');
+    const srtDir = path.dirname(state.srtPath);
+    if (!fs.existsSync(srtDir)) fs.mkdirSync(srtDir, { recursive: true });
+    fs.writeFileSync(state.srtPath, state.srtContent, 'utf-8');
+    // Persist to DB
+    const db2 = getDb();
+    db2.prepare('UPDATE episodes SET srt_path = ?, srt_content = ? WHERE id = ?')
+      .run(state.srtPath, state.srtContent, state.episodeId);
+    // Log Whisper cost
+    const durationMin = result.transcription.duration / 60;
+    const costUsd = durationMin * 0.006;
+    try {
+      db2.prepare(
+        'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(state.episodeId, state.episodeNumber ?? null, 'openai_whisper', 'whisper-1', Math.ceil(durationMin), costUsd, 0);
+    } catch (err) {
+      log.warn({ error: (err as Error).message }, 'Failed to log Whisper cost');
+    }
+    log.info({ episodeId: state.episodeId, cues: result.cues.length, costUsd: costUsd.toFixed(4) }, 'On-the-fly subtitle generation complete');
+  }
+
   // Ensure SRT file exists for subtitle burning (temp file may have been deleted)
   let srtPath: string | undefined = state.srtPath || undefined;
   if (srtPath && !fs.existsSync(srtPath)) {
