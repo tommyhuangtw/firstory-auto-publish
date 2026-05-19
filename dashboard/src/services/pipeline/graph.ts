@@ -183,7 +183,44 @@ export async function startPipeline(
     updateEpisodeFromState(db, finalState, episodeId);
 
     // Merge sponsor audio if active preset exists
-    await mergeSponsorAudioForEpisode(db, episodeId, finalState.audioPath);
+    const mergeResult = await mergeSponsorAudioForEpisode(db, episodeId, finalState.audioPath);
+
+    // Regenerate subtitles after sponsor audio merge so SRT timestamps match the merged audio
+    if (mergeResult.merged && mergeResult.sponsorId) {
+      try {
+        const updatedEp = db.prepare(
+          'SELECT audio_path, script_zh FROM episodes WHERE id = ?'
+        ).get(episodeId) as { audio_path: string; script_zh: string };
+
+        const sponsor = db.prepare(
+          'SELECT script_text FROM sponsor_audio_presets WHERE id = ?'
+        ).get(mergeResult.sponsorId) as { script_text: string } | undefined;
+
+        const fullScript = (sponsor?.script_text ? sponsor.script_text + '\n' : '') + (updatedEp.script_zh || finalState.scriptZh);
+
+        const { generateSubtitles } = await import('@/services/subtitleGenerator');
+        const result = await generateSubtitles(updatedEp.audio_path, fullScript);
+
+        const srtPath = updatedEp.audio_path.replace(/\.mp3$/, '.srt');
+        await fs.promises.writeFile(srtPath, result.srtContent, 'utf-8');
+
+        db.prepare('UPDATE episodes SET srt_path = ?, srt_content = ? WHERE id = ?')
+          .run(srtPath, result.srtContent, episodeId);
+
+        // Log Whisper cost
+        const durationMin = result.transcription.duration / 60;
+        const costUsd = durationMin * 0.006;
+        try {
+          db.prepare(
+            'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).run(episodeId, finalState.episodeNumber ?? null, 'openai_whisper', 'whisper-1', Math.ceil(durationMin), costUsd, 0);
+        } catch { /* ignore duplicate cost entry */ }
+
+        log.info({ episodeId, sponsorId: mergeResult.sponsorId, cues: result.cues.length }, 'Subtitles regenerated after sponsor merge');
+      } catch (err) {
+        log.warn({ episodeId, error: (err as Error).message }, 'Post-merge subtitle regeneration failed, SRT may be misaligned');
+      }
+    }
 
     // Mark selected videos as used (only on success)
     markVideosUsed(db, finalState, episodeId);
@@ -508,14 +545,14 @@ async function mergeSponsorAudioForEpisode(
   db: ReturnType<typeof getDb>,
   episodeId: number,
   episodeAudioPath: string
-) {
+): Promise<{ merged: boolean; sponsorId: number | null }> {
   try {
     const activeSponsors = db.prepare(`
       SELECT id, audio_path, audio_merge_enabled, scheduled_dates, expires_at FROM sponsor_audio_presets
       WHERE is_active = 1
     `).all() as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null; expires_at: string | null }[];
 
-    if (activeSponsors.length === 0) return;
+    if (activeSponsors.length === 0) return { merged: false, sponsorId: null };
 
     // Find the sponsor that matches today's date
     const today = new Date().toISOString().slice(0, 10);
@@ -540,12 +577,12 @@ async function mergeSponsorAudioForEpisode(
     // Priority 3: check expires_at for legacy presets
     if (activeSponsor && !activeSponsor.scheduled_dates && activeSponsor.expires_at && activeSponsor.expires_at <= new Date().toISOString()) {
       log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor expired, skipping');
-      return;
+      return { merged: false, sponsorId: null };
     }
 
     if (!activeSponsor) {
       log.info({ episodeId, today }, 'No sponsor matches today, skipping');
-      return;
+      return { merged: false, sponsorId: null };
     }
 
     // Always record sponsor_audio_id (so description assembler picks up the ad content)
@@ -554,16 +591,16 @@ async function mergeSponsorAudioForEpisode(
     // Skip audio merge if disabled
     if (!activeSponsor.audio_merge_enabled) {
       log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor active but audio merge disabled, description only');
-      return;
+      return { merged: false, sponsorId: activeSponsor.id };
     }
 
     if (!activeSponsor.audio_path || !fs.existsSync(activeSponsor.audio_path)) {
-      return;
+      return { merged: false, sponsorId: activeSponsor.id };
     }
 
     if (!episodeAudioPath || !fs.existsSync(episodeAudioPath)) {
       log.warn({ episodeId }, 'Episode audio not found, skipping sponsor merge');
-      return;
+      return { merged: false, sponsorId: activeSponsor.id };
     }
 
     const mergedPath = episodeAudioPath.replace(/\.mp3$/, '_sponsor.mp3');
@@ -584,8 +621,10 @@ async function mergeSponsorAudioForEpisode(
     `).run(episodeAudioPath, mergedPath, episodeId);
 
     log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor audio merged');
+    return { merged: true, sponsorId: activeSponsor.id };
   } catch (err) {
     log.warn({ episodeId, error: (err as Error).message }, 'Sponsor audio merge failed, continuing without');
+    return { merged: false, sponsorId: null };
   }
 }
 

@@ -172,11 +172,29 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   }
 
   // Step 3: Create video from audio + composite image + burned-in subtitles
-  // If no SRT data at all (pipeline stage was skipped), generate on-the-fly
+  // If no SRT data (pipeline stage was skipped), generate on-the-fly with sponsor awareness
   if (!state.srtContent && state.audioPath && state.scriptZh) {
     log.warn({ episodeId: state.episodeId }, 'No SRT data — generating subtitles on-the-fly before publish');
     const { generateSubtitles } = await import('@/services/subtitleGenerator');
-    const result = await generateSubtitles(state.audioPath, state.scriptZh);
+
+    // Build full script including sponsor text if sponsor audio was merged
+    let fullScript = '';
+    const dbSponsor = getDb();
+    const epSponsor = dbSponsor.prepare(
+      'SELECT sponsor_audio_id, sponsor_original_audio_path FROM episodes WHERE id = ?'
+    ).get(state.episodeId) as { sponsor_audio_id: number | null; sponsor_original_audio_path: string | null } | undefined;
+
+    if (epSponsor?.sponsor_audio_id && epSponsor?.sponsor_original_audio_path) {
+      const sponsor = dbSponsor.prepare(
+        'SELECT script_text FROM sponsor_audio_presets WHERE id = ?'
+      ).get(epSponsor.sponsor_audio_id) as { script_text: string } | undefined;
+      if (sponsor?.script_text) {
+        fullScript += sponsor.script_text + '\n';
+      }
+    }
+    fullScript += state.scriptZh;
+
+    const result = await generateSubtitles(state.audioPath, fullScript);
     state.srtContent = result.srtContent;
     state.srtPath = state.audioPath.replace(/\.mp3$/, '.srt');
     const srtDir = path.dirname(state.srtPath);
