@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ThumbnailOption {
   path: string;
@@ -40,6 +40,8 @@ export default function YouTubeThumbnailSection({
   const [expanded, setExpanded] = useState(true);
   const [customPromptFor, setCustomPromptFor] = useState<string | null>(null); // style name
   const [customPrompt, setCustomPrompt] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load existing thumbnails from filesystem on mount
   useEffect(() => {
@@ -135,6 +137,31 @@ export default function YouTubeThumbnailSection({
     setHookTitle(title);
   };
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setExpanded(true);
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+      const res = await fetch(`/api/episodes/${episodeId}/yt-thumbnail/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const thumb: ThumbnailOption = data.thumbnail;
+      setThumbnails((prev) => [thumb, ...prev]);
+      selectThumbnail(thumb);
+    } catch {
+      setSelectError('上傳失敗，請重試');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   // Build the saved thumbnail as a ThumbnailOption if not already in the list
   const savedInList = savedThumbnailPath && thumbnails.some((t) => t.path === savedThumbnailPath);
   const allThumbnails: ThumbnailOption[] = savedThumbnailPath && !savedInList
@@ -205,6 +232,20 @@ export default function YouTubeThumbnailSection({
               {loadingThumbnails ? `生成中 (${pendingCount})...` : '生成縮圖'}
             </button>
           )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!canEdit || uploading}
+            className="px-3 py-2 text-sm bg-zinc-700 text-zinc-300 rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {uploading ? '上傳中...' : '上傳圖片'}
+          </button>
         </div>
 
         {/* Candidates */}
