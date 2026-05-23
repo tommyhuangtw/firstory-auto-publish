@@ -275,6 +275,48 @@ CREATE TABLE IF NOT EXISTS soundon_episodes (
   UNIQUE(title)
 );
 
+-- Episode digests: compiled summary of each episode for cross-episode memory
+CREATE TABLE IF NOT EXISTS episode_digests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  segment_type TEXT NOT NULL,
+  thesis TEXT NOT NULL,                 -- 1-2 sentence core argument
+  key_insights TEXT NOT NULL,           -- JSON array of insight strings
+  tools_covered TEXT NOT NULL,          -- JSON array of tool names
+  open_threads TEXT NOT NULL,           -- JSON array: unresolved questions/trends
+  digest_text TEXT NOT NULL,            -- full compiled digest (~200-400 chars)
+  aired_date TEXT NOT NULL,
+  is_milestone INTEGER DEFAULT 0,      -- 1 = major event, survives temporal decay
+  milestone_label TEXT,                 -- e.g., "Claude Code launched"
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Theme tracker: recurring themes with LSM-compacted summaries
+CREATE TABLE IF NOT EXISTS themes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  theme_name TEXT UNIQUE NOT NULL,
+  category TEXT,                        -- e.g., "AI Coding", "Robotics", "LLM Models"
+  current_summary TEXT,                 -- <=500 chars, LSM-compacted
+  summary_version INTEGER DEFAULT 1,
+  episode_count INTEGER DEFAULT 1,
+  first_episode_id INTEGER,
+  latest_episode_id INTEGER,
+  first_seen_date TEXT,
+  latest_seen_date TEXT,
+  is_evergreen INTEGER DEFAULT 0        -- 1 = major trend, survives temporal decay
+);
+
+-- Junction: which themes appear in which episodes
+CREATE TABLE IF NOT EXISTS episode_themes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  theme_id INTEGER NOT NULL REFERENCES themes(id),
+  relevance REAL DEFAULT 0.5,           -- 0.0-1.0
+  context_snippet TEXT,                 -- how this episode relates to the theme
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(episode_id, theme_id)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -292,3 +334,9 @@ CREATE INDEX IF NOT EXISTS idx_service_costs_episode ON service_costs(episode_nu
 CREATE INDEX IF NOT EXISTS idx_service_costs_shorts ON service_costs(shorts_id);
 CREATE INDEX IF NOT EXISTS idx_soundon_daily_date ON soundon_daily_downloads(date);
 CREATE INDEX IF NOT EXISTS idx_soundon_episodes_number ON soundon_episodes(episode_number);
+CREATE INDEX IF NOT EXISTS idx_digests_episode ON episode_digests(episode_id);
+CREATE INDEX IF NOT EXISTS idx_digests_segment_date ON episode_digests(segment_type, aired_date);
+CREATE INDEX IF NOT EXISTS idx_digests_milestone ON episode_digests(is_milestone);
+CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(theme_name);
+CREATE INDEX IF NOT EXISTS idx_episode_themes_episode ON episode_themes(episode_id);
+CREATE INDEX IF NOT EXISTS idx_episode_themes_theme ON episode_themes(theme_id);

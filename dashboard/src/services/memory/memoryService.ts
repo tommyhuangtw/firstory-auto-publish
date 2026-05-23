@@ -77,12 +77,15 @@ export async function upsertTools(episodeId: number, tools: ResolvedTool[], aire
   `);
 
   const insertMention = db.prepare(`
-    INSERT INTO episode_tool_mentions (episode_id, tool_id, mention_type, context_snippet, significance, version_detail, aired_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO episode_tool_mentions (episode_number, episode_id, tool_id, mention_type, context_snippet, significance, version_detail, aired_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getToolRow = db.prepare('SELECT id, mention_count, current_summary, aliases FROM tools WHERE canonical_name = ?');
   const getFamilyId = db.prepare('SELECT id FROM tool_families WHERE family_name = ?');
+  const getEpisodeNumber = db.prepare('SELECT episode_number FROM episodes WHERE id = ?');
+  const epRow = getEpisodeNumber.get(episodeId) as { episode_number: number | null } | undefined;
+  const episodeNumber = epRow?.episode_number ?? null;
 
   // Phase 1: Upsert all tools in a transaction
   const toolsNeedingCompaction: Array<{ name: string; oldSummary: string; newContext: string }> = [];
@@ -110,8 +113,8 @@ export async function upsertTools(episodeId: number, tools: ResolvedTool[], aire
         tool.canonicalName,
         JSON.stringify(mergedAliases),
         tool.category,
-        episodeId,
-        episodeId,
+        episodeNumber,
+        episodeNumber,
         tool.contextSnippet,
         tool.versionDetail || null,
         familyId,
@@ -123,6 +126,7 @@ export async function upsertTools(episodeId: number, tools: ResolvedTool[], aire
       const row = getToolRow.get(tool.canonicalName) as { id: number; mention_count: number } | undefined;
       if (row) {
         insertMention.run(
+          episodeNumber ?? 0,
           episodeId,
           row.id,
           tool.mentionType,
@@ -208,6 +212,12 @@ export interface MemoryContext {
   briefForQualityCheck: string;
   /** List of well-known tool names (for quick reference) */
   knownToolNames: string[];
+  /** Recent episode digests for narrative continuity */
+  recentDigests: string;
+  /** Active recurring theme summaries */
+  activeThemes: string;
+  /** Historical milestones (persist indefinitely) */
+  historicalMilestones: string;
 }
 
 /**
@@ -216,15 +226,43 @@ export interface MemoryContext {
  * Called BEFORE script generation to provide the LLM with audience familiarity context.
  * Uses a lightweight DB scan (no LLM cost) — matches tool canonical names against video text.
  *
- * Interview explanation: "Pre-fetch memory context so the LLM knows what the audience
- * already knows — like giving a speaker briefing notes before going on stage."
+ * Now also includes episode digest context, theme context, and milestone context
+ * for cross-episode narrative continuity.
+ *
+ * Temporal decay: tools not seen within the segment's memory window are excluded,
+ * except "very well-known" tools (10+ mentions) which keep a minimal entry.
  */
 export function buildMemoryContext(
   videoTexts: string[],
-  episodeId: number
+  episodeId: number,
+  segmentType?: string
 ): MemoryContext {
   const db = getDb();
-  const empty: MemoryContext = { briefForScriptGen: '', briefForQualityCheck: '', knownToolNames: [] };
+  const empty: MemoryContext = {
+    briefForScriptGen: '', briefForQualityCheck: '', knownToolNames: [],
+    recentDigests: '', activeThemes: '', historicalMilestones: '',
+  };
+
+  // Import digest context builders (lazy to avoid circular deps at module load)
+  let recentDigests = '';
+  let activeThemes = '';
+  let historicalMilestones = '';
+  if (segmentType) {
+    try {
+      const { buildDigestContext, buildThemeContext, buildMilestoneContext } = require('./digestService');
+      recentDigests = buildDigestContext(segmentType);
+      activeThemes = buildThemeContext(segmentType);
+      historicalMilestones = buildMilestoneContext();
+    } catch (err) {
+      log.warn({ error: (err as Error).message }, 'Failed to load digest context');
+    }
+  }
+
+  // Determine tool memory window (months) based on segment type
+  const { SEGMENT_MEMORY_CONFIG } = require('./digestService');
+  const toolWindowMonths = segmentType && SEGMENT_MEMORY_CONFIG[segmentType]
+    ? SEGMENT_MEMORY_CONFIG[segmentType].ownWindowMonths
+    : 2; // default 2 months
 
   // Get all tracked tools from DB (lightweight — typically <200 rows)
   const allTools = db.prepare(
@@ -238,22 +276,38 @@ export function buildMemoryContext(
     latest_version_detail: string | null;
   }>;
 
-  if (allTools.length === 0) return empty;
+  if (allTools.length === 0) {
+    return { ...empty, recentDigests, activeThemes, historicalMilestones };
+  }
 
   // Combine all video text for matching
   const combinedText = videoTexts.join(' ').toLowerCase();
 
-  // Find tools mentioned in today's videos
+  const today = new Date();
+  const windowCutoffMs = toolWindowMonths * 30 * 86400000; // approximate months to ms
+
+  // Find tools mentioned in today's videos, applying temporal decay
   const matchedTools = allTools.filter((tool) => {
     const name = tool.canonical_name.toLowerCase();
-    return combinedText.includes(name);
+    if (!combinedText.includes(name)) return false;
+
+    // Temporal decay: exclude tools outside the memory window
+    // Exception: "very well-known" tools (10+ mentions) always included with minimal context
+    if (tool.latest_seen_date) {
+      const daysSinceLast = Math.floor((today.getTime() - new Date(tool.latest_seen_date).getTime()) / 86400000);
+      if (daysSinceLast > toolWindowMonths * 30 && tool.mention_count < 10) {
+        return false; // decayed — outside window and not very well-known
+      }
+    }
+
+    return true;
   });
 
-  if (matchedTools.length === 0) return empty;
+  if (matchedTools.length === 0) {
+    return { ...empty, recentDigests, activeThemes, historicalMilestones };
+  }
 
   log.info({ matched: matchedTools.length }, 'Memory context: tools matched from video text');
-
-  const today = new Date();
 
   // Build brief for script generation
   const toolBriefs = matchedTools.map((t) => {
@@ -297,6 +351,9 @@ SCORING RULE: Deduct points if the script explains these well-known tools as if 
     briefForScriptGen,
     briefForQualityCheck,
     knownToolNames: matchedTools.map((t) => t.canonical_name),
+    recentDigests,
+    activeThemes,
+    historicalMilestones,
   };
 }
 

@@ -686,12 +686,17 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   const isQuickchat = state.segmentType === 'quickchat';
 
   // Build memory context from video titles + transcripts (lightweight DB scan, no LLM cost)
-  // sysdesign / quickchat: skip memory system — each episode is a standalone topic
-  const memoryContext = (isSysdesign || isQuickchat)
-    ? { knownToolNames: [] as string[], briefForScriptGen: '', briefForQualityCheck: '' }
+  // All segment types now get digest/theme/milestone context for narrative continuity.
+  // Tool familiarity is still skipped for sysdesign (no tool focus).
+  const memoryContext = isSysdesign
+    ? {
+        ...buildMemoryContext([], state.episodeId, state.segmentType),
+        knownToolNames: [] as string[], briefForScriptGen: '', briefForQualityCheck: '',
+      }
     : buildMemoryContext(
         state.selectedVideos.map((v) => `${v.title} ${v.transcript?.slice(0, 500) || ''}`),
         state.episodeId,
+        state.segmentType,
       );
 
   if (memoryContext.knownToolNames.length > 0) {
@@ -715,6 +720,16 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   }
   if (memoryContext.briefForScriptGen) {
     systemPrompt += `\n\n---\n\n${memoryContext.briefForScriptGen}`;
+  }
+
+  // Inject cross-episode narrative context (digests, themes, milestones)
+  const narrativeContextParts = [
+    memoryContext.recentDigests,
+    memoryContext.activeThemes,
+    memoryContext.historicalMilestones,
+  ].filter(Boolean);
+  if (narrativeContextParts.length > 0) {
+    systemPrompt += `\n\n---\n\n${narrativeContextParts.join('\n\n')}`;
   }
 
   // Build content string — sysdesign/quickchat summarize long transcripts first, others use full transcript
