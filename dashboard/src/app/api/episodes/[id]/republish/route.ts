@@ -89,6 +89,7 @@ export async function POST(
       coverError: '',
       publishErrors: [],
       manualVideoUrls: [],
+      episodeLength: null,
       sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
       srtPath: (episode.srt_path as string) || '',
       srtContent: (episode.srt_content as string) || '',

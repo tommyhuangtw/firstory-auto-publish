@@ -39,6 +39,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   }
 
   const llm = getLLMService();
+  const isQuickchat = state.segmentType === 'quickchat';
   const isRobot = state.segmentType === 'robot';
   const isWeekly = state.segmentType === 'weekly';
   const isSysdesign = state.segmentType === 'sysdesign';
@@ -55,11 +56,13 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   } catch { /* non-critical */ }
 
   // Steps 1-3: Generate titles, description, tags in parallel (all depend only on summary)
-  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary)
+  const titlePrompt = isQuickchat ? buildQuickchatTitlePrompt(summary)
+    : isSysdesign ? buildSysdesignTitlePrompt(summary)
     : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
     : buildTitlePrompt(summary);
-  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
+  const descPrompt = isQuickchat ? buildQuickchatDescriptionPrompt(summary)
+    : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);
@@ -132,7 +135,9 @@ async function summarizeScript(
 ): Promise<string> {
   const llm = getLLMService();
 
-  const segmentContext = segmentType === 'sysdesign'
+  const segmentContext = segmentType === 'quickchat'
+    ? '懶懶碎碎念'
+    : segmentType === 'sysdesign'
     ? '系統設計懶懶學'
     : segmentType === 'robot'
     ? '機器人觀察週報'
@@ -437,6 +442,78 @@ ${summary}${userDirection}
 bestIndex 為 1-based 索引。`;
 }
 
+function buildQuickchatTitlePrompt(summary: string): string {
+  return `你是一位經驗豐富的 Podcast 製作人，專門打造高下載量的標題。請根據以下「懶懶碎碎念」內容生成10個標題。這個單元是觀點分享和 AI 趨勢碎碎念，不是工具評測。
+
+內容摘要：
+${summary}
+
+── 高下載量的爆款模式（每個標題至少用 1 個）──
+
+模式A「觀點衝突」：挑戰主流看法
+  例：「大家都在吹 AI-native，但我覺得 90% 的公司根本做不到」
+  例：「聽完 Sam Altman 最新訪談，我對 AGI 的想法完全改變了」
+
+模式B「訪談/觀點整理 + 數字」：
+  例：「聽完 3 場 AI 大佬 Podcast，我整理出他們都在擔心的同一件事」
+  例：「Harness Engineering 的 5 個 AI 實戰心得，第 3 個讓我反思很久」
+
+模式C「趨勢觀察 + 個人看法」：
+  例：「AI-native company 到底是什麼？為什麼我覺得大部分人都理解錯了」
+  例：「最近 AI 圈最讓我興奮的不是新模型，而是這個思維轉變」
+
+模式D「反差/意外」：
+  例：「用了一年 AI 工具後，我反而覺得最重要的不是工具本身」
+  例：「這位 CTO 說的一句話，讓我重新思考 AI 在團隊裡的定位」
+
+── 必須避免 ──
+❌ 工具評測式標題（這不是工具介紹節目）
+❌ 太學術或太正式
+❌ 標題太短（< 30 字）
+
+── 基本規則 ──
+1. 標題長度 35-50 字
+2. 使用臺灣繁體中文用語
+3. 不要加 EPxx 集數編號
+4. 不要在標題中加入「碎碎念」（系統會自動加上）
+5. 優先使用「觀點 + 個人反應」的結構
+
+生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
+
+以 JSON 格式回傳：
+{ "titles": ["標題1", ..., "標題10"], "bestIndex": 1, "bestTitle": "完整標題", "reason": "選擇理由" }
+
+bestIndex 為 1-based 索引。`;
+}
+
+function buildQuickchatDescriptionPrompt(summary: string): string {
+  return `根據以下「懶懶碎碎念」內容生成 Podcast 描述，抽出本集最重要的觀點和想法。
+
+內容摘要：
+${summary}
+
+格式：
+開頭段落（用 1-2 句帶出本集討論的核心話題和觀點）💭
+
+接下來列出 3-4 個核心觀點（不是工具介紹，是想法和觀點）。
+每個觀點兩行：
+💡 短標題（5-15 字，點出關鍵觀點）
+👉 一句話說明這個觀點為什麼值得思考
+
+每個觀點之間空一行，方便閱讀。
+
+範例：
+💡 AI-native 不只是用 AI 工具
+👉 真正的 AI-native 組織是從決策流程就內建 AI 思維
+
+⚠️ 注意：💡 是短標題，不要寫成完整長句。👉 是一句精簡補充。
+
+要求：200-350字、觀點導向、口語化、不含外部連結（參考資料會由系統自動附加）
+
+以 JSON 格式回傳：
+{ "description": "完整描述" }`;
+}
+
 function buildSysdesignDescriptionPrompt(summary: string): string {
   return `根據以下「系統設計懶懶學」內容生成 Podcast 描述，抽出本集最重要的 insights。
 
@@ -580,6 +657,7 @@ export async function regenerateTitles(
   userPrompt?: string,
 ): Promise<{ candidateTitles: string[]; selectedTitle: string }> {
   const llm = getLLMService();
+  const isQuickchat = segmentType === 'quickchat';
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
   const isSysdesign = segmentType === 'sysdesign';
@@ -587,7 +665,8 @@ export async function regenerateTitles(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const titlePrompt = isSysdesign ? buildSysdesignTitlePrompt(summary, userPrompt)
+  const titlePrompt = isQuickchat ? buildQuickchatTitlePrompt(summary)
+    : isSysdesign ? buildSysdesignTitlePrompt(summary, userPrompt)
     : isRobot ? buildRobotTitlePrompt(summary, userPrompt)
     : isWeekly ? buildWeeklyTitlePrompt(summary, userPrompt)
     : buildTitlePrompt(summary, userPrompt);
@@ -621,6 +700,7 @@ export async function regenerateDescription(
   episodeId?: number,
 ): Promise<string> {
   const llm = getLLMService();
+  const isQuickchat = segmentType === 'quickchat';
   const isRobot = segmentType === 'robot';
   const isWeekly = segmentType === 'weekly';
   const isSysdesign = segmentType === 'sysdesign';
@@ -628,7 +708,8 @@ export async function regenerateDescription(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const descPrompt = isSysdesign ? buildSysdesignDescriptionPrompt(summary)
+  const descPrompt = isQuickchat ? buildQuickchatDescriptionPrompt(summary)
+    : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
     : buildDescriptionPrompt(summary);

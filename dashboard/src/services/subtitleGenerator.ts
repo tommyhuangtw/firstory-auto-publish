@@ -18,6 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 
 const log = createChildLogger('subtitleGenerator');
 
@@ -102,20 +103,25 @@ export async function transcribeAudio(
   form.append('timestamp_granularities[]', 'word');
   form.append('timestamp_granularities[]', 'segment');
 
-  const resp = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
+  const resp = await withRetry(
+    async () => {
+      const r = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`Whisper API error ${r.status}: ${errText}`);
+      }
+      return r;
+    },
+    { label: 'whisper-transcription', maxRetries: 3 },
+  );
 
   // Clean up trimmed file
   if (inputPath !== audioPath) {
     try { fs.unlinkSync(inputPath); } catch { /* ignore */ }
-  }
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Whisper API error ${resp.status}: ${errText}`);
   }
 
   const data = await resp.json();

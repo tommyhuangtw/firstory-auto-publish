@@ -101,13 +101,7 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
   }
 
   // Text cleaning for TTS (matches n8n 清理文字供TTS使用)
-  const text = rawText
-    .replace(/`/g, '')
-    .replace(/(\\\n)+/g, ' ')
-    .replace(/(\n)+/g, ' ')
-    .replace(/(\\\t)+/g, ' ')
-    .replace(/(\t)+/g, ' ')
-    .trim();
+  const text = cleanTextForTts(rawText);
   log.info({ rawLength: rawText.length, cleanLength: text.length }, 'Text cleaned for TTS');
 
   const apiKey = process.env.VOAI_API_KEY;
@@ -351,4 +345,37 @@ function logTtsCost(episodeId: number, episodeNumber: number | null | undefined,
   } catch (err) {
     log.warn({ error: (err as Error).message }, 'Failed to log TTS cost');
   }
+}
+
+/**
+ * Clean text for TTS — strips JSON wrappers, escaped chars, markdown artifacts.
+ * Safety net: translate node should already clean, but TTS is the last gate.
+ */
+function cleanTextForTts(raw: string): string {
+  let text = raw.trim();
+
+  // Strip JSON wrapper if LLM returned { "original_script": "..." }
+  try {
+    const jsonStr = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    const parsed = JSON.parse(jsonStr);
+    const val = parsed.original_script || parsed.script || parsed.translated_script || parsed.content;
+    if (val && typeof val === 'string') {
+      text = val.trim();
+    }
+  } catch { /* not JSON, continue */ }
+
+  // Strip markdown fences
+  text = text.replace(/^```(?:json)?\s*/g, '').replace(/\s*```$/g, '');
+
+  // Clean whitespace and special chars
+  text = text
+    .replace(/`/g, '')
+    .replace(/\\n/g, ' ')       // literal \n in text
+    .replace(/\\t/g, ' ')       // literal \t in text
+    .replace(/(\n)+/g, ' ')     // actual newlines
+    .replace(/(\t)+/g, ' ')     // actual tabs
+    .replace(/\s{2,}/g, ' ')    // collapse multiple spaces
+    .trim();
+
+  return text;
 }

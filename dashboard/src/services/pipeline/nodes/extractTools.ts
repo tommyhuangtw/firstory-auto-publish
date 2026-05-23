@@ -14,8 +14,8 @@ import type { ResolvedTool } from '@/services/memory/toolExtractor';
 const log = createChildLogger('pipeline:extractTools');
 
 export async function extractTools(state: PipelineState): Promise<Partial<PipelineState>> {
-  if (state.segmentType === 'sysdesign') {
-    log.info('Sysdesign: skipping tool extraction');
+  if (state.segmentType === 'sysdesign' || state.segmentType === 'quickchat') {
+    log.info({ segmentType: state.segmentType }, 'Skipping tool extraction');
     return { extractedTools: [] };
   }
 

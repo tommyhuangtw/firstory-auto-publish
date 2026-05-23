@@ -91,10 +91,10 @@ export function getSearchQueries(): Record<string, string[]> {
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
-  // sysdesign: skip search, parse manual URLs into VideoSource stubs
-  if (state.segmentType === 'sysdesign') {
+  // sysdesign / quickchat: skip search, parse manual URLs into VideoSource stubs
+  if (state.segmentType === 'sysdesign' || state.segmentType === 'quickchat') {
     const urls = state.manualVideoUrls || [];
-    log.info({ count: urls.length }, 'Sysdesign: using manual video URLs');
+    log.info({ count: urls.length, segmentType: state.segmentType }, 'Using manual video URLs');
     const videos: VideoSource[] = [];
     for (const url of urls) {
       const videoId = extractVideoId(url);

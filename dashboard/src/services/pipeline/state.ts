@@ -56,7 +56,7 @@ export interface SourceLink {
   publishedAt?: string;
 }
 
-export type SegmentType = 'daily' | 'weekly' | 'robot' | 'sysdesign';
+export type SegmentType = 'daily' | 'weekly' | 'robot' | 'sysdesign' | 'quickchat';
 
 export type PipelineStatus =
   | 'fetching'
@@ -83,8 +83,9 @@ export interface PipelineState {
   segmentType: SegmentType;
   pipelineRunId: number;
 
-  // ── Manual input (sysdesign) ──
+  // ── Manual input (sysdesign / quickchat) ──
   manualVideoUrls: string[];
+  episodeLength: 12 | 15 | 18 | 21 | 25 | null;
   sourceLinks: SourceLink[];
 
   // ── Stage 1: Fetch YouTube ──
@@ -179,6 +180,7 @@ export function createInitialState(
     segmentType,
     pipelineRunId,
     manualVideoUrls: [],
+    episodeLength: null,
     sourceLinks: [],
     videos: [],
     classifiedVideos: [],

@@ -21,6 +21,7 @@ export function formatSoundonTitle(episodeNumber: number, segmentType: string, t
   if (segmentType === 'weekly') return `EP${episodeNumber} ｜ AI懶人精選週報 – ${title}`;
   if (segmentType === 'robot') return `EP${episodeNumber} ｜ 機器人觀察週報 – ${title}`;
   if (segmentType === 'sysdesign') return `EP${episodeNumber} ｜ 系統設計懶懶學 – ${title}`;
+  if (segmentType === 'quickchat') return `EP${episodeNumber} ｜ 懶懶碎碎念 – ${title}`;
   return `EP${episodeNumber} – ${title}`;
 }
 
@@ -28,6 +29,7 @@ export function formatYoutubeTitle(episodeNumber: number, segmentType: string, t
   if (segmentType === 'weekly') return `AI懶人報Podcast ｜ EP${episodeNumber} AI懶人精選週報 - ${title}`;
   if (segmentType === 'robot') return `AI懶人報Podcast ｜ EP${episodeNumber} 機器人觀察週報 - ${title}`;
   if (segmentType === 'sysdesign') return `AI懶人報Podcast ｜ EP${episodeNumber} 系統設計懶懶學 - ${title}`;
+  if (segmentType === 'quickchat') return `AI懶人報Podcast ｜ EP${episodeNumber} 懶懶碎碎念 - ${title}`;
   return `AI懶人報Podcast ｜ EP${episodeNumber} - ${title}`;
 }
 

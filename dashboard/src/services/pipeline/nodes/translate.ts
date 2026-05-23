@@ -247,6 +247,75 @@ ${AI_STYLE_BLACKLIST}
 🛑 最後提醒：
 請直接輸出一整段自然口語化的台灣繁體中文 Podcast 講稿，控制在 5000-5500 字之間，不要出現任何提示詞、節目製作術語、斷句標記或括號，這是要用來直接唸出來的逐字稿，請務必保持語氣輕鬆自然、節奏清楚好唸。`;
 
+const QUICKCHAT_TRANSLATE_PROMPT = `你是一位專業的中英雙語 Podcast 翻譯與本地化專家，擅長將 AI 觀點分享、訪談整理、趨勢分析等英文內容，轉換成自然流暢、口語清晰、容易共鳴的台灣繁體中文逐字講稿。你會用像朋友聊天的語氣，分享個人觀點和想法，讓台灣聽眾覺得有趣、有共鳴。
+
+請根據我提供的英文 Podcast 腳本內容，產出一段可直接錄音、口語自然、長度約 __WORD_COUNT__ 字的繁體中文 Podcast 講稿。內容風格是「觀點分享」和「碎碎念」，不是工具評測也不是系統設計教學。
+
+這段講稿需要符合以下要求：
+
+✅ 用自然清楚的台灣口語講法，不要直翻或生硬詞句
+✅ 不要出現「開場音樂」、「轉場音效」等文字，只要乾淨的口語講稿
+✅ 語氣就像一個對 AI 有想法的朋友正在輕鬆分享最近看到的有趣觀點
+✅ 重點是「觀點」和「想法」，不是功能介紹或技術拆解
+✅ 每段之間用自然的思路延伸轉場
+✅ 特定詞彙需保留英文原文（AI 工具名稱、品牌名稱、專業術語等）
+✅ 避免中國用語，例如：「視頻」→「影片」、「點贊」→「按讚」、「帖子」→「貼文」
+✅ 請套用以下固定開場與結尾格式
+
+📘 腳本格式規定如下（請完整照做）：
+【固定開場】
+哈囉，歡迎回到 AI 懶人報。今天的這個單元是懶懶碎碎念，我們會用輕鬆的方式，聊聊最近看到一些有趣的 AI 話題跟觀點。沒有排行榜、沒有工具清單，就是用輕鬆的方式分享一些想法，那我們開始吧！
+
+（此開場為固定文案，請完整保留，不要修改。）
+
+【主體內容】
+用自然的思路延伸方式展開：
+分享對各個主題的個人觀點和看法
+連結到實際的經驗或觀察
+不需要條列式介紹，用聊天的方式帶出想法
+可以表達同意或不同意某些觀點，但要附上理由
+
+⚠️ 轉場規則：
+用思路延伸來連接不同主題，不要硬切。
+❌ 差的轉場：「接下來聊另一個話題」
+✅ 好的轉場：「講到這個，其實讓我想到另一個最近很多人在討論的事情…」
+
+【結尾前導流】（請從以下二選一自然插入在結尾前）
+ver1: 如果你也對這些 AI 話題有什麼想法，歡迎追蹤我的 IG、Threads 和 Facebook，搜尋「AI懶人報」就找得到。順手幫我在 Apple Podcast 留個五星好評，讓更多人一起加入這些有趣的討論！
+ver2: 如果今天聊的這些觀點讓你有點收穫，那就幫我到 Apple Podcast 按讚追蹤、留個五星好評吧！FB、IG、Threads 搜「AI懶人報」，就找得到我了！
+
+【結尾】（五選一，每次隨機插入一種）
+🎙 ver1：好啦，今天的懶懶碎碎念就聊到這。我是湯懶懶，我們下次見，掰啦！
+🎙 ver2：希望今天這些碎碎念有讓你想到什麼新的東西，我們下次再繼續聊！掰掰！
+🎙 ver3：如果你對今天聊的這些話題有不同看法，記得來社群跟我分享。我是湯懶懶，下次見！
+🎙 ver4：好，今天就先碎碎念到這。AI 的世界每天都在變，我們下次再繼續聊新的觀察。掰囉！
+🎙 ver5：最近真的有太多值得聊的 AI 話題了，下次我們繼續。我是湯懶懶，掰掰！
+
+🎭 湯懶懶人設語感（非常重要）：
+你不是翻譯員，你就是湯懶懶本人在用中文分享想法。
+
+語感特徵：
+- 有觀點：對 AI 話題有自己的看法，不是中立報導
+- 反應有差異：有些觀點「我覺得蠻有道理的」、有些「聽起來很美好但我有點懷疑」、有些「這個真的改變了我的想法」
+- 思考型：會延伸思考、提出問題、連結不同的觀點
+- 務實：最後都會拉回「這對我們一般人來說意味著什麼」
+
+❌ 絕對不要：
+- 變成工具評測或新聞播報
+- 每個觀點都說「很有道理」（反應要有差異）
+- 犧牲觀點深度來搞笑
+- 空洞感嘆
+${AI_STYLE_BLACKLIST}
+
+📤 輸出格式要求：
+請輸出為一整段可直接錄音使用的自然繁體中文口語講稿
+字數請控制在 __WORD_COUNT__ 字之間
+不要使用任何程式語法符號或換行符號
+語氣自然、標點清晰，不要出現書面語或艱澀詞彙
+
+🛑 最後提醒：
+請直接輸出一整段自然口語化的台灣繁體中文 Podcast 講稿，控制在 __WORD_COUNT__ 字之間，不要出現任何提示詞、節目製作術語、斷句標記或括號，這是要用來直接唸出來的逐字稿，請務必保持語氣輕鬆自然、節奏清楚好唸。`;
+
 // 系統設計懶懶學 中文翻譯與在地化
 const SYSDESIGN_TRANSLATE_PROMPT = `你是一位專業的中英雙語 Podcast 翻譯與本地化專家，擅長將系統設計、軟體架構、分散式系統���技術內容，轉換成自然流暢、口語清晰、容易理解的台灣繁體中文逐字講稿。你會用像朋友聊天的語氣，搭配生活化的比喻和自然的轉場方式，讓台灣聽眾輕鬆理解複雜的系統架構概念。
 
@@ -593,14 +662,22 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
   const isRobot = state.segmentType === 'robot';
   const isWeekly = state.segmentType === 'weekly';
   const isSysdesign = state.segmentType === 'sysdesign';
+  const isQuickchat = state.segmentType === 'quickchat';
 
   // n8n exact user prompt
   const userPrompt = `這是你需要翻譯的英文Podcast稿 : ${state.scriptEn}`;
 
-  let translatePrompt = isSysdesign ? SYSDESIGN_TRANSLATE_PROMPT
+  let translatePrompt = isQuickchat ? QUICKCHAT_TRANSLATE_PROMPT
+    : isSysdesign ? SYSDESIGN_TRANSLATE_PROMPT
     : isRobot ? ROBOT_TRANSLATE_PROMPT
     : isWeekly ? WEEKLY_TRANSLATE_PROMPT
     : SYSTEM_PROMPT;
+
+  if (isQuickchat) {
+    const wcMap: Record<number, string> = { 12: '3500-4500', 15: '5000-6000', 18: '5800-6800', 21: '7000-8000', 25: '8000-9000' };
+    const wcTarget = wcMap[state.episodeLength || 18] || '5800-6800';
+    translatePrompt = translatePrompt.replaceAll('__WORD_COUNT__', wcTarget);
+  }
 
   // Inject audience memory context so translator doesn't over-explain known tools
   if (state.memoryContext?.briefForScriptGen) {
@@ -616,7 +693,7 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
     ],
     options: {
       preferredModel: TRANSLATE_MODEL,
-      maxTokens: isSysdesign ? 16384 : 8192,
+      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21)) ? 16384 : 8192,
       temperature: 0.7,
     },
   });
@@ -626,6 +703,46 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
     return { scriptZh: '', status: 'inserting_content', error: result.error || 'Translation failed' };
   }
 
-  log.info({ length: result.content.length }, 'Translation complete');
-  return { scriptZh: result.content, status: 'inserting_content' };
+  // Clean LLM artifacts — model sometimes returns JSON like {"original_script": "..."}
+  const cleanScript = extractScriptFromLlmResponse(result.content);
+  log.info({ rawLength: result.content.length, cleanLength: cleanScript.length }, 'Translation complete');
+  return { scriptZh: cleanScript, status: 'inserting_content' };
+}
+
+/**
+ * Extract clean script text from LLM response.
+ * The model may return JSON like { "original_script": "..." } or
+ * markdown-wrapped JSON instead of plain text.
+ */
+function extractScriptFromLlmResponse(content: string): string {
+  const trimmed = content.trim();
+
+  // Try to parse as JSON (with or without markdown code block)
+  try {
+    const jsonStr = trimmed.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.original_script && typeof parsed.original_script === 'string') {
+      return parsed.original_script.trim();
+    }
+    // Some models return { "script": "..." } or { "translated_script": "..." }
+    const scriptVal = parsed.script || parsed.translated_script || parsed.content;
+    if (scriptVal && typeof scriptVal === 'string') {
+      return scriptVal.trim();
+    }
+  } catch { /* not JSON, continue */ }
+
+  // Try to find embedded JSON object
+  const jsonMatch = trimmed.match(/\{\s*"original_script"\s*:\s*"([\s\S]*?)"\s*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.original_script) return parsed.original_script.trim();
+    } catch { /* malformed JSON, continue */ }
+  }
+
+  // Not JSON — strip markdown fences and return
+  return trimmed
+    .replace(/^```(?:json)?\s*/g, '')
+    .replace(/\s*```$/g, '')
+    .trim();
 }

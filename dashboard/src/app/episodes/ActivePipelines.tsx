@@ -23,6 +23,8 @@ const segmentLabels: Record<string, string> = {
   daily: 'AI懶人報',
   weekly: 'AI精選週報',
   robot: '機器人週報',
+  sysdesign: '系統設計懶懶學',
+  quickchat: '懶懶碎碎念',
 };
 
 interface PipelineInfo {

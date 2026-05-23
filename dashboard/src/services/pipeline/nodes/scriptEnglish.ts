@@ -15,27 +15,7 @@ const log = createChildLogger('pipeline:script-en');
 
 const SUMMARIZE_MODEL = 'google/gemini-3.1-pro-preview';
 
-/**
- * Summarize a single video transcript for sysdesign episodes.
- * Extracts system design concepts, trade-offs, and interview-relevant patterns.
- */
-async function summarizeTranscript(
-  video: { title: string; channelName: string; transcript?: string; videoId: string },
-  episodeId: number,
-): Promise<string> {
-  if (!video.transcript || video.transcript.length < 5000) {
-    // Short transcript — use as-is, no need to summarize
-    return video.transcript || '';
-  }
-
-  const llm = getLLMService();
-  const result = await llm.call({
-    stage: 'summarize_transcript',
-    episodeId,
-    messages: [
-      {
-        role: 'system',
-        content: `You are a senior software engineer summarizing a YouTube video about system design for a podcast script writer.
+const SYSDESIGN_SUMMARIZE_PROMPT = `You are a senior software engineer summarizing a YouTube video about system design for a podcast script writer.
 
 Your job is to extract ALL important technical content with MAXIMUM DETAIL — do not leave out key details. The podcast writer will use your summary as the sole source material. Since there are only 2-3 reference videos per episode, each summary must be comprehensive and deep.
 
@@ -58,7 +38,57 @@ OUTPUT STRUCTURE:
 If the transcript contains raw code (SQL, function calls, pseudo-code, schema), summarize its PURPOSE and BEHAVIOR in plain English — do NOT copy code verbatim. This summary will be used for an audio podcast.
 Keep all technical terms in English (e.g., load balancer, consistent hashing, sharding).
 Include ALL specific numbers, metrics, and real-world examples mentioned in the video.
-Output a structured summary of 3000-4000 words.`,
+Output a structured summary of 3000-4000 words.`;
+
+const QUICKCHAT_SUMMARIZE_PROMPT = `You are a thoughtful AI industry observer summarizing a YouTube video for a podcast script writer.
+
+Your job is to extract the KEY OPINIONS, PERSPECTIVES, and ACTIONABLE INSIGHTS from this content. The podcast writer will use your summary to craft a casual, opinion-driven episode about AI trends and mindsets.
+
+CRITICAL CONTENT TO PRESERVE:
+- Core thesis / main argument of the speaker
+- Controversial or thought-provoking opinions — preserve the speaker's exact framing when possible
+- Practical frameworks or mental models (e.g., "AI-native org means X, Y, Z")
+- Real examples and case studies that illustrate the points
+- Specific advice or recommendations the speaker gives
+- Interesting quotes or memorable phrases
+- Areas of disagreement with mainstream thinking
+- Concrete practices, workflows, or organizational changes described
+
+OUTPUT STRUCTURE:
+1. Core Message (200-300 words): What is the speaker's main thesis? Why does it matter?
+2. Key Arguments & Evidence (800-1200 words): The main points with supporting examples, data, or stories
+3. Practical Implications (400-600 words): What should people actually DO differently based on this?
+4. Provocative Takes (200-300 words): The most interesting, debatable, or surprising perspectives
+
+Keep technical terms in English. Focus on IDEAS and OPINIONS, not just facts.
+Output a structured summary of 1500-2500 words.`;
+
+/**
+ * Summarize a single video transcript for sysdesign/quickchat episodes.
+ * Extracts key concepts, opinions, and insights depending on segment type.
+ */
+async function summarizeTranscript(
+  video: { title: string; channelName: string; transcript?: string; videoId: string },
+  episodeId: number,
+  segmentType: string = 'sysdesign',
+): Promise<string> {
+  if (!video.transcript || video.transcript.length < 5000) {
+    // Short transcript — use as-is, no need to summarize
+    return video.transcript || '';
+  }
+
+  const systemPrompt = segmentType === 'quickchat'
+    ? QUICKCHAT_SUMMARIZE_PROMPT
+    : SYSDESIGN_SUMMARIZE_PROMPT;
+
+  const llm = getLLMService();
+  const result = await llm.call({
+    stage: 'summarize_transcript',
+    episodeId,
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
       },
       {
         role: 'user',
@@ -67,7 +97,7 @@ Output a structured summary of 3000-4000 words.`,
     ],
     options: {
       preferredModel: SUMMARIZE_MODEL,
-      maxTokens: 8192,
+      maxTokens: segmentType === 'quickchat' ? 4096 : 8192,
       temperature: 0.3,
     },
   });
@@ -81,6 +111,82 @@ Output a structured summary of 3000-4000 words.`,
     { videoId: video.videoId, originalLen: video.transcript.length, summaryLen: result.content.length },
     'Transcript summarized',
   );
+  return result.content;
+}
+
+/**
+ * Synthesize per-video summaries into a theme-organized brief for quickchat episodes.
+ * Instead of "Video 1 says X, Video 2 says Y", produces "Theme A (drawing from multiple sources)".
+ */
+async function synthesizeThemes(
+  summaries: string[],
+  videos: { title: string; channelName: string }[],
+  episodeId: number,
+): Promise<string> {
+  const llm = getLLMService();
+
+  const videoSummaryBlocks = videos.map((v, i) => {
+    return `Source ${i + 1}: "${v.title}" by ${v.channelName}\n${summaries[i] || '(no summary available)'}`;
+  }).join('\n\n---\n\n');
+
+  const result = await llm.call({
+    stage: 'synthesize_themes',
+    episodeId,
+    messages: [
+      {
+        role: 'system',
+        content: `You are preparing material for a podcast script writer. You have summaries from ${videos.length} videos about AI topics.
+
+Your job is to find the CONNECTING THREADS across these videos and reorganize the material by THEME, not by source. The script writer should be able to build a coherent narrative without ever referencing individual videos.
+
+Instructions:
+- Identify 3-5 major themes that emerge ACROSS the videos
+- For each theme, synthesize the relevant arguments, examples, and perspectives from ALL videos that touch on it
+- Note where different sources agree, disagree, or build on each other — these tensions are valuable
+- Highlight the most provocative, surprising, or counterintuitive perspectives
+- Preserve specific examples, frameworks, quotes, and data points — but organize them by theme, not by source
+- If a theme only comes from one source, that's fine — but try to connect it to the broader narrative
+
+Output format:
+
+## Theme 1: [Theme Name]
+[Synthesized discussion pulling from multiple sources. Include specific arguments, examples, and frameworks. Note tensions or agreements between different perspectives.]
+
+## Theme 2: [Theme Name]
+[...]
+
+## Theme 3: [Theme Name]
+[...]
+
+(Continue for 3-5 themes)
+
+## Overarching Narrative
+[How do these themes connect? What's the bigger story? What's the one insight that ties everything together? What should the listener walk away thinking about?]
+
+CRITICAL: Do NOT organize by source. A theme that draws from all 3 videos is better than 3 themes that each map to one video. Look for the CONNECTIONS.`,
+      },
+      {
+        role: 'user',
+        content: `Here are the video summaries to synthesize:\n\n${videoSummaryBlocks}`,
+      },
+    ],
+    options: {
+      preferredModel: 'google/gemini-3.1-pro-preview',
+      maxTokens: 4096,
+      temperature: 0.4,
+    },
+  });
+
+  if (!result.success || !result.content) {
+    log.warn('Theme synthesis failed, falling back to per-video summaries');
+    // Fall back to per-video format
+    return videos.map((v, i) => {
+      const summary = summaries[i] ? `\nSummary:\n${summaries[i]}` : '';
+      return `Video ${i + 1}: "${v.title}" by ${v.channelName}${summary}`;
+    }).join('\n\n---\n\n');
+  }
+
+  log.info({ themes: result.content.length }, 'Theme synthesis complete');
   return result.content;
 }
 
@@ -422,6 +528,72 @@ Like a senior engineer at a top tech company explaining system design to a curio
 📍Wrap-up:
 End with a natural close that answers the opening question and gives the listener 2-3 clear insights to remember.`;
 
+// 懶懶碎碎念 — casual AI perspective sharing and interview summaries
+const QUICKCHAT_SYSTEM_PROMPT = `You are an AI scriptwriter generating a casual, opinion-driven podcast narration from a curated set of AI-related video content — interviews, talks, opinion pieces, and trend analysis.
+
+🧠 Your listener:
+Tech-curious professionals and AI enthusiasts who want PERSPECTIVE, not just news. They follow AI developments but want to hear someone else's honest take — what's overhyped, what's genuinely important, and what it all means for how we work and live. They appreciate nuance over hype.
+
+🎙️ Your task:
+Write a natural, spoken-style podcast script for a single narrator. This is NOT a news roundup or tool review — it's one person sharing their genuine thoughts and reactions after diving deep into interesting AI content. Think of it as "here's what I've been thinking about lately" in podcast form.
+
+🕒 Target length:
+__TARGET_WORDS__ words
+
+📋 Structure Guidelines:
+
+1. Opening Hook (1-2 min):
+Start casual — acknowledge the topic and why it caught your attention. Don't start with a formal intro. Drop the most provocative or surprising insight right away to hook the listener. Something like "So I've been thinking about this idea of AI-native organizations, and honestly, it's making me question whether most companies are doing AI completely wrong..."
+
+2. Core Discussion (bulk of the episode):
+The material you receive is organized by THEMES that cut across multiple sources — NOT by individual video. Follow this theme-driven structure:
+- Build your narrative around 3-5 thematic threads, NOT around individual sources
+- Open each theme with a provocative observation, question, or personal reaction
+- Weave in arguments and examples from the material naturally — NEVER say "in one video", "another source says", or treat sources as separate sections
+- When different perspectives agree → build momentum by layering insights on top of each other
+- When they disagree or tension exists → that's gold — explore the tension honestly, take a side
+- Each theme should flow naturally into the next, creating a coherent narrative arc — use your reactions as bridges
+- React honestly throughout: agree, disagree, have mixed feelings, call out hype, connect to real experience
+
+CRITICAL: Do NOT structure your script as "Topic A (from video 1) → Topic B (from video 2) → Topic C (from video 3)". Instead, find the CONNECTING THREADS and let them guide the conversation. A listener should feel like you're building ONE coherent argument, not reviewing separate pieces of content.
+
+3. Synthesis & Takeaway (2-3 min):
+Pull the threads together into a bigger picture. What's the overarching trend or shift? If someone only remembers one thing from this episode, what should it be? End with something that makes the listener think, not just nod.
+
+🎭 Narrator Voice:
+You're a thoughtful tech professional who actually THINKS about this stuff, not just reports on it. Your personality:
+- Honest: You'll call out hype and admit when you're not sure about something
+- Curious: You genuinely find these topics fascinating and it shows
+- Opinionated but humble: You have strong views but hold them loosely — you're open to being wrong
+- Practical: You always bring it back to "but what does this actually mean for real people?"
+- Conversational: You talk like you're sharing thoughts with a smart friend, not presenting to an audience
+
+Narrator reactions (vary these — don't react the same way to everything):
+- When an idea is genuinely novel → authentic excitement, explain why it changed how you think
+- When something is overhyped → honest skepticism with specific reasoning
+- When you see a disconnect between theory and practice → call it out
+- When an interview guest says something brilliant → give them credit, then build on it
+- When you disagree with a popular take → state your disagreement clearly and respectfully
+
+🔀 Transitions:
+Flow naturally between ideas. Use your reactions and opinions as bridges:
+Good: "And that's exactly where I think the whole 'AI-native' argument falls apart — because if you look at what actually works..."
+Bad: "Moving on to our next topic..."
+
+🚫 Avoid:
+- All references to YouTube, videos, or creators (frame insights as ideas you've been exploring)
+- Tool review format (this is about IDEAS, not product features)
+- News anchor tone
+- Promotional language
+- Being wishy-washy — have opinions, share them
+- Listing topics upfront ("today we'll cover X, Y, Z")
+
+🎧 Tone & Style:
+Like a smart friend catching you up on what they've been reading and thinking about — opinionated, thoughtful, and genuinely engaging. You're sharing a perspective, not delivering information.
+
+📍Wrap-up:
+End naturally. Something reflective, maybe a question for the listener to think about. Not a formal sign-off — just a natural close like you're wrapping up a good conversation.`;
+
 // n8n exact system prompt for 英文Podcast腳本產生器
 const SYSTEM_PROMPT = `You are an AI scriptwriter generating a polished, engaging podcast-style narration from a curated batch of AI-related video summaries.
 
@@ -511,10 +683,11 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
   const isSysdesign = state.segmentType === 'sysdesign';
+  const isQuickchat = state.segmentType === 'quickchat';
 
   // Build memory context from video titles + transcripts (lightweight DB scan, no LLM cost)
-  // sysdesign: skip memory system — each episode is a standalone topic
-  const memoryContext = isSysdesign
+  // sysdesign / quickchat: skip memory system — each episode is a standalone topic
+  const memoryContext = (isSysdesign || isQuickchat)
     ? { knownToolNames: [] as string[], briefForScriptGen: '', briefForQualityCheck: '' }
     : buildMemoryContext(
         state.selectedVideos.map((v) => `${v.title} ${v.transcript?.slice(0, 500) || ''}`),
@@ -529,32 +702,46 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   }
 
   // Build system prompt with optional memory context
-  let systemPrompt = isSysdesign ? SYSDESIGN_SYSTEM_PROMPT
+  let systemPrompt = isQuickchat ? QUICKCHAT_SYSTEM_PROMPT
+    : isSysdesign ? SYSDESIGN_SYSTEM_PROMPT
     : isRobot ? ROBOT_SYSTEM_PROMPT
     : SYSTEM_PROMPT;
+
+  // Quickchat: inject dynamic word count target into prompt
+  if (isQuickchat) {
+    const targetMap: Record<number, string> = { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' };
+    const target = targetMap[state.episodeLength || 18] || '6200';
+    systemPrompt = systemPrompt.replace('__TARGET_WORDS__', target);
+  }
   if (memoryContext.briefForScriptGen) {
     systemPrompt += `\n\n---\n\n${memoryContext.briefForScriptGen}`;
   }
 
-  // Build content string — sysdesign summarizes long transcripts first, others use full transcript
+  // Build content string — sysdesign/quickchat summarize long transcripts first, others use full transcript
   let content: string;
-  if (isSysdesign) {
+  if (isSysdesign || isQuickchat) {
     // Summarize transcripts in parallel (batch 3) to avoid overwhelming the LLM
     const batchSize = 3;
     const summaries: string[] = new Array(state.selectedVideos.length);
     for (let b = 0; b < state.selectedVideos.length; b += batchSize) {
       const batch = state.selectedVideos.slice(b, b + batchSize);
       const results = await Promise.all(
-        batch.map((v) => summarizeTranscript(v, state.episodeId)),
+        batch.map((v) => summarizeTranscript(v, state.episodeId, state.segmentType)),
       );
       results.forEach((s, i) => { summaries[b + i] = s; });
     }
-    content = state.selectedVideos
-      .map((v, i) => {
-        const summary = summaries[i] ? `\nSummary:\n${summaries[i]}` : '';
-        return `Video ${i + 1}: "${v.title}" by ${v.channelName} (${v.viewCount.toLocaleString()} views)${summary}`;
-      })
-      .join('\n\n---\n\n');
+    if (isQuickchat) {
+      // Quickchat: synthesize themes across videos instead of per-video blocks
+      content = await synthesizeThemes(summaries, state.selectedVideos, state.episodeId);
+    } else {
+      // Sysdesign: keep per-video structure (deep-dive on single system)
+      content = state.selectedVideos
+        .map((v, i) => {
+          const summary = summaries[i] ? `\nSummary:\n${summaries[i]}` : '';
+          return `Video ${i + 1}: "${v.title}" by ${v.channelName} (${v.viewCount.toLocaleString()} views)${summary}`;
+        })
+        .join('\n\n---\n\n');
+    }
   } else {
     content = state.selectedVideos
       .map((v, i) => {
@@ -564,10 +751,17 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
       .join('\n\n---\n\n');
   }
 
-  const targetWords = isSysdesign ? '10000' : isRobot ? '6000' : '5000';
+  const quickchatTargetMap: Record<number, string> = { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' };
+  const targetWords = isQuickchat ? (quickchatTargetMap[state.episodeLength || 18] || '6200')
+    : isSysdesign ? '10000' : isRobot ? '6000' : '5000';
 
   // n8n exact user prompt
-  const userPrompt = `Here is the compiled content (title, description, transcript) for all videos:
+  const userPrompt = isQuickchat
+    ? `Here is the theme-organized material synthesized from multiple sources:
+${content}
+
+Generate a podcast ENGLISH script of around ${targetWords} words. Build your narrative around these THEMES — do NOT restructure back into per-source coverage. The themes are your narrative backbone. NOTE THAT THE PODCAST SCRIPT NEEDS TO BE IN ENGLISH!!!`
+    : `Here is the compiled content (title, description, transcript) for all videos:
 ${content}
 
 You need to help generate a summarized Podcast ENGLISH Script around ${targetWords} words. NOTE THAT THE PODCAST SCRIPT NEEDS TO BE IN ENGLISH!!!`;
@@ -581,7 +775,7 @@ You need to help generate a summarized Podcast ENGLISH Script around ${targetWor
     ],
     options: {
       preferredModel: SCRIPT_MODEL,
-      maxTokens: isSysdesign ? 16384 : 8192,
+      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21)) ? 16384 : 8192,
       temperature: 0.7,
     },
   });

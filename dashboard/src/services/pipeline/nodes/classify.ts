@@ -41,9 +41,10 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
   const isSysdesign = state.segmentType === 'sysdesign';
+  const isQuickchat = state.segmentType === 'quickchat';
 
-  // ── sysdesign: skip classification, fetch stats+transcripts for all ──
-  if (isSysdesign) {
+  // ── sysdesign / quickchat: skip classification, fetch stats+transcripts for all ──
+  if (isSysdesign || isQuickchat) {
     return classifySysdesign(state, db);
   }
 

@@ -84,6 +84,7 @@ const segmentLabels: Record<string, string> = {
   weekly: 'AI精選週報',
   robot: '機器人週報',
   sysdesign: '系統設計懶懶學',
+  quickchat: '懶懶碎碎念',
 };
 
 const segmentColors: Record<string, string> = {
@@ -91,6 +92,7 @@ const segmentColors: Record<string, string> = {
   weekly: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
   robot: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
   sysdesign: 'bg-teal-500/15 text-teal-400 border-teal-500/20',
+  quickchat: 'bg-pink-500/15 text-pink-400 border-pink-500/20',
 };
 
 const statusConfig: Record<string, { color: string; label: string }> = {

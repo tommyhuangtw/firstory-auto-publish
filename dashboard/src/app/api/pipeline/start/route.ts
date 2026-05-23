@@ -6,9 +6,10 @@ import type { SegmentType } from '@/services/pipeline/state';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { segmentType, manualVideoUrls } = body as {
+    const { segmentType, manualVideoUrls, episodeLength } = body as {
       segmentType: SegmentType;
       manualVideoUrls?: string[];
+      episodeLength?: 12 | 15 | 18 | 21 | 25;
     };
 
     if (!segmentType) {
@@ -18,20 +19,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['daily', 'weekly', 'robot', 'sysdesign'].includes(segmentType)) {
+    if (!['daily', 'weekly', 'robot', 'sysdesign', 'quickchat'].includes(segmentType)) {
       return NextResponse.json(
-        { error: 'segmentType must be daily, weekly, robot, or sysdesign' },
+        { error: 'segmentType must be daily, weekly, robot, sysdesign, or quickchat' },
         { status: 400 }
       );
     }
 
-    if (segmentType === 'sysdesign') {
+    if (segmentType === 'sysdesign' || segmentType === 'quickchat') {
       if (!manualVideoUrls?.length) {
         return NextResponse.json(
-          { error: 'sysdesign requires at least one YouTube URL' },
+          { error: `${segmentType} requires at least one YouTube URL` },
           { status: 400 }
         );
       }
+    }
+
+    if (segmentType === 'quickchat' && !episodeLength) {
+      return NextResponse.json(
+        { error: 'quickchat requires episodeLength (12, 15, 18, 21, or 25)' },
+        { status: 400 }
+      );
     }
 
     const db = getDb();
@@ -65,6 +73,7 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget: don't await — send email on failure
     startPipeline(episodeId, segmentType, pipelineRunId, {
       manualVideoUrls: manualVideoUrls || [],
+      episodeLength: episodeLength,
     }).catch(async (error) => {
       // DB is already updated by startPipeline; send email notification
       try {

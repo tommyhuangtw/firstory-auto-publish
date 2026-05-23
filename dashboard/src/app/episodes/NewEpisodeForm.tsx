@@ -9,6 +9,7 @@ const SEGMENTS = [
   { value: 'weekly', label: 'AI精選週報', desc: '一週重點', color: 'border-violet-500/40 bg-violet-500/10 text-violet-400' },
   { value: 'robot', label: '機器人週報', desc: '自動化新聞', color: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
   { value: 'sysdesign', label: '系統設計懶懶學', desc: '系統設計深潛', color: 'border-teal-500/40 bg-teal-500/10 text-teal-400' },
+  { value: 'quickchat', label: '懶懶碎碎念', desc: '觀點碎碎念', color: 'border-pink-500/40 bg-pink-500/10 text-pink-400' },
 ] as const;
 
 const STAGES = [
@@ -32,6 +33,7 @@ const segmentLabels: Record<string, string> = {
   weekly: 'AI精選週報',
   robot: '機器人週報',
   sysdesign: '系統設計懶懶學',
+  quickchat: '懶懶碎碎念',
 };
 
 interface PipelineRun {
@@ -57,6 +59,7 @@ export default function NewEpisodeForm() {
   const [open, setOpen] = useState(false);
   const [segmentType, setSegmentType] = useState<string>('daily');
   const [manualUrls, setManualUrls] = useState('');
+  const [episodeLength, setEpisodeLength] = useState<12 | 15 | 18 | 21 | 25>(18);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -102,7 +105,7 @@ export default function NewEpisodeForm() {
     setTracking(null);
     try {
       const body: Record<string, unknown> = { segmentType };
-      if (segmentType === 'sysdesign') {
+      if (segmentType === 'sysdesign' || segmentType === 'quickchat') {
         const urls = manualUrls.split('\n').map(u => u.trim()).filter(Boolean);
         if (urls.length === 0) {
           setMessage('請至少貼入一個 YouTube URL');
@@ -110,6 +113,9 @@ export default function NewEpisodeForm() {
           return;
         }
         body.manualVideoUrls = urls;
+        if (segmentType === 'quickchat') {
+          body.episodeLength = episodeLength;
+        }
       }
       const res = await fetch('/api/pipeline/start', {
         method: 'POST',
@@ -311,7 +317,7 @@ export default function NewEpisodeForm() {
         <h3 className="text-sm font-semibold text-zinc-300 mb-4">建立新集數</h3>
 
         {/* Segment selector */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
           {SEGMENTS.map((seg) => {
             const isSelected = segmentType === seg.value;
             return (
@@ -333,7 +339,7 @@ export default function NewEpisodeForm() {
         </div>
 
         {/* Manual URL input for sysdesign */}
-        {segmentType === 'sysdesign' && (
+        {(segmentType === 'sysdesign' || segmentType === 'quickchat') && (
           <div className="mb-4">
             <label className="block text-xs text-zinc-400 mb-1.5">
               YouTube URL（一行一個）
@@ -350,6 +356,29 @@ export default function NewEpisodeForm() {
               rows={4}
               className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-teal-500/50 resize-none"
             />
+          </div>
+        )}
+
+        {/* Episode length selector for quickchat */}
+        {segmentType === 'quickchat' && (
+          <div className="mb-4">
+            <label className="block text-xs text-zinc-400 mb-1.5">節目長度</label>
+            <div className="flex gap-2">
+              {([12, 15, 18, 21, 25] as const).map((len) => (
+                <button
+                  key={len}
+                  type="button"
+                  onClick={() => setEpisodeLength(len)}
+                  className={`px-3 py-1.5 rounded-lg border text-sm transition-all cursor-pointer ${
+                    episodeLength === len
+                      ? 'border-pink-500/40 bg-pink-500/10 text-pink-400'
+                      : 'border-zinc-800 bg-zinc-800/50 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  }`}
+                >
+                  {len} 分鐘
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
