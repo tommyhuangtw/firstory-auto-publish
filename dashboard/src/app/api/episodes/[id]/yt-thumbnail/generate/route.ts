@@ -15,33 +15,7 @@ const REFERENCE_IMAGES = [
   'https://res.cloudinary.com/dxurvdax4/image/upload/v1750843184/nwap9q7xy9oc7a7qjkw4.png',
 ];
 
-interface ThumbnailStyle {
-  name: string;
-  bg: string;
-  text: string;
-  layout: string;
-}
-
-// Imported from gpt-image route — keep in sync
-const STYLES: ThumbnailStyle[] = [
-  { name: 'clean-white', bg: 'Plain white or very light gray background, completely clean', text: 'Black bold sans-serif title, very large', layout: 'Title text on right 60%, 1-2 small product logos/icons on left side' },
-  { name: 'dark-simple', bg: 'Solid black or very dark charcoal background', text: 'White bold sans-serif title, very large, maybe one word highlighted in a color', layout: 'Title text centered or on right, 1 simple icon or screenshot on left' },
-  { name: 'gradient-text', bg: 'Solid dark background (black, dark blue, or dark purple)', text: 'Title with gradient fill (blue→purple or orange→pink), extremely large and bold', layout: 'Giant gradient text centered, 1 small logo or icon above or below' },
-  { name: 'split-color', bg: 'Left half one solid color, right half another solid color (e.g. dark navy | light gray)', text: 'Bold white text spanning across both halves', layout: 'Title text centered across the color split, 1 icon on each side' },
-  { name: 'accent-bar', bg: 'White or light background with a bold colored accent bar (red, blue, or orange) at top or bottom', text: 'Dark bold text, very large, with one keyword in the accent color', layout: 'Big text taking 70% of space, colored accent bar for emphasis' },
-  { name: 'dark-glow', bg: 'Black background with a subtle colored glow or light source behind the text', text: 'Bright white or colored text with soft glow effect, extremely bold', layout: 'Centered glowing text, 1-2 tiny icons nearby, mostly negative space' },
-  { name: 'bold-emoji', bg: 'Solid bright background (yellow, red, or blue)', text: 'Giant white or black text with 1-2 relevant emojis placed next to it', layout: 'Text + emoji only, nothing else, maximum simplicity' },
-  { name: 'terminal', bg: 'Black terminal/code editor background with minimal green or blue code snippets', text: 'Large monospace or sans-serif white/green text as the title', layout: 'Terminal window frame, title text in center, minimal code decoration around edges' },
-  { name: 'newspaper', bg: 'Off-white newspaper texture with subtle column lines', text: 'Large black serif headline text like a breaking news front page', layout: 'Giant headline text centered, small "號外" or "BREAKING" red stamp in corner' },
-  { name: 'icon-grid', bg: 'Clean white or light background', text: 'Large bold text at bottom half', layout: 'Row of 3-5 small app icons or logos across the top, huge title text below' },
-  { name: 'screenshot-focus', bg: 'Light/white background with a clean UI screenshot or laptop mockup showing a product', text: 'Bold black or dark text above or beside the screenshot', layout: 'Screenshot/laptop on one side (40%), big title text on the other side (60%)' },
-  { name: 'diagram-clean', bg: 'White or light gray background with a simple flowchart or diagram (3-5 nodes with arrows)', text: 'Bold dark text at top or bottom, clean and professional', layout: 'Simple diagram in center, title text above or below it' },
-];
-
-function pickTwoStyles(): [ThumbnailStyle, ThumbnailStyle] {
-  const shuffled = [...STYLES].sort(() => Math.random() - 0.5);
-  return [shuffled[0], shuffled[1]];
-}
+import { type ThumbnailStyle, pickRandomStyles, getStyleByName } from '@/services/thumbnailStyles';
 
 function buildPrompt(title: string, style: ThumbnailStyle | null, summary: string, options?: { extraPrompt?: string; hasReferenceImage?: boolean }): string {
   const styleSection = style
@@ -110,12 +84,12 @@ export async function POST(
       refImageUrl = await uploadToCloudinary(referenceImagePath, `ref_thumb_${Date.now()}`);
     }
 
-    // If styleName specified, generate 1 with that style; otherwise 2 random styles
+    // If styleName specified, generate 1 with that style; otherwise 2 random styles from enabled pool
     // If styleName doesn't match any known style but we have a reference image, use null (rely on reference)
-    const matchedStyle = styleName ? STYLES.find((s) => s.name === styleName) : null;
+    const matchedStyle = styleName ? getStyleByName(styleName) : null;
     const stylesToUse: (ThumbnailStyle | null)[] = styleName
       ? [matchedStyle || null] // null = unknown style, rely on reference image
-      : pickTwoStyles();
+      : pickRandomStyles(2);
 
     // Put reference thumbnail first so it has highest weight as style reference
     const refs = refImageUrl

@@ -85,6 +85,12 @@ export function getDb(): Database.Database {
     seedFamilies();
   } catch { /* toolFamilies not available during build */ }
 
+  // Seed thumbnail styles
+  try {
+    const { seedThumbnailStyles } = require('@/services/thumbnailStyles');
+    seedThumbnailStyles();
+  } catch { /* thumbnailStyles not available during build */ }
+
   // Seed default settings
   const seedSetting = (key: string, value: string) => {
     _db!.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);

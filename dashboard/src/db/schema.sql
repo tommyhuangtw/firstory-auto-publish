@@ -317,6 +317,21 @@ CREATE TABLE IF NOT EXISTS episode_themes (
   UNIQUE(episode_id, theme_id)
 );
 
+-- Thumbnail style management: DB-backed style pool for YouTube thumbnails
+CREATE TABLE IF NOT EXISTS thumbnail_styles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,              -- kebab-case slug: 'clean-white', 'dark-glow'
+  bg TEXT NOT NULL,                       -- background prompt fragment
+  text_style TEXT NOT NULL,               -- text styling prompt fragment
+  layout TEXT NOT NULL,                   -- layout prompt fragment
+  is_enabled INTEGER DEFAULT 1,           -- 1 = in the active random pool
+  source TEXT DEFAULT 'seed',             -- 'seed' | 'generated'
+  sample_image_url TEXT,                  -- audition sample serve URL
+  sample_hook_title TEXT,                 -- hook title used for the sample
+  generated_at TEXT,                      -- when AI generated this style
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
