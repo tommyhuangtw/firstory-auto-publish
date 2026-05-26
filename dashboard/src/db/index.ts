@@ -115,6 +115,7 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('kieai_gpt_image_2_1k_usd', '0.03');
   seedSetting('kieai_kling_i2v_usd', '0.55');
   seedSetting('kieai_nano_banana_edit_usd', '0.04');
+  seedSetting('falai_gpt_image_2_high_usd', '0.08');
 
   // Remove old youtube_ad_content setting (replaced by ad_presets table)
   _db!.prepare("DELETE FROM settings WHERE key = 'youtube_ad_content'").run();
