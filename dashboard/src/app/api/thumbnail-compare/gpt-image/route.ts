@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs-extra';
-import { generateCoverImage, downloadImage } from '@/services/kieai';
+import { generateCoverImage, downloadImage } from '@/services/imageService';
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'thumbnails');
 
@@ -195,8 +195,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'hookText is required' }, { status: 400 });
     }
 
-    if (!process.env.KIE_AI_API_KEY) {
-      return NextResponse.json({ error: 'KIE_AI_API_KEY not configured' }, { status: 500 });
+    if (!process.env.KIE_AI_API_KEY && !process.env.FAL_KEY) {
+      return NextResponse.json({ error: 'No image generation key configured (KIE_AI_API_KEY or FAL_KEY)' }, { status: 500 });
     }
 
     await fs.ensureDir(OUTPUT_DIR);
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
       ? buildI2IPrompt(title, style, summaryText)
       : buildT2IPrompt(title, style, summaryText);
 
-    const imageUrl = await generateCoverImage(bgPrompt, {
+    const { url: imageUrl } = await generateCoverImage(bgPrompt, {
       model: useI2I ? 'gpt-image-2-image-to-image' : 'gpt-image-2-text-to-image',
       aspectRatio: '16:9',
       resolution: '1K',

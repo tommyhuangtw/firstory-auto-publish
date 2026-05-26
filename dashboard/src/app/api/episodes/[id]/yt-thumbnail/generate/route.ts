@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs-extra';
 import { getDb } from '@/db';
-import { generateCoverImage, downloadImage } from '@/services/kieai';
+import { generateCoverImage, downloadImage } from '@/services/imageService';
 import { uploadToCloudinary } from '@/services/cloudinary';
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'thumbnails');
@@ -94,8 +94,8 @@ export async function POST(
       return NextResponse.json({ error: 'hookTitle is required' }, { status: 400 });
     }
 
-    if (!process.env.KIE_AI_API_KEY) {
-      return NextResponse.json({ error: 'KIE_AI_API_KEY not configured' }, { status: 500 });
+    if (!process.env.KIE_AI_API_KEY && !process.env.FAL_KEY) {
+      return NextResponse.json({ error: 'No image generation key configured (KIE_AI_API_KEY or FAL_KEY)' }, { status: 500 });
     }
 
     const db = getDb();
@@ -128,7 +128,7 @@ export async function POST(
       stylesToUse.map(async (style, idx) => {
         const label = String.fromCharCode(97 + idx); // a, b
         const prompt = buildPrompt(hookTitle.trim(), style, summary, { extraPrompt, hasReferenceImage: hasRef });
-        const imageUrl = await generateCoverImage(prompt, {
+        const { url: imageUrl } = await generateCoverImage(prompt, {
           model: 'gpt-image-2-image-to-image',
           aspectRatio: '16:9',
           resolution: '1K',

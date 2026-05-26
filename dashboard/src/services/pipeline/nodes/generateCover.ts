@@ -8,7 +8,7 @@
  */
 
 import { getLLMService } from '@/services/llmService';
-import { generateCoverImage, downloadImage } from '@/services/kieai';
+import { generateCoverImage, downloadImage } from '@/services/imageService';
 import { uploadToCloudinary } from '@/services/cloudinary';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
@@ -33,8 +33,8 @@ const REFERENCE_IMAGES = [
 export async function generateCover(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId }, 'Generating cover image');
 
-  if (!process.env.KIE_AI_API_KEY) {
-    log.warn('KIE_AI_API_KEY not set, skipping cover generation');
+  if (!process.env.KIE_AI_API_KEY && !process.env.FAL_KEY) {
+    log.warn('No image generation key set (KIE_AI_API_KEY or FAL_KEY), skipping cover generation');
     return { coverPath: '', coverUrl: '', igScenario: '', status: 'tts' };
   }
 
@@ -61,7 +61,7 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const coverStartMs = Date.now();
-      const imageUrl = await generateCoverImage(imagePrompt, {
+      const { url: imageUrl, provider } = await generateCoverImage(imagePrompt, {
         model: 'gpt-image-2-image-to-image',
         aspectRatio: '1:1',
         resolution: '1K',
@@ -71,13 +71,16 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
       // Log cost
       try {
         const db = getDb();
+        const costKey = provider === 'falai' ? 'falai_gpt_image_2_high_usd' : 'kieai_gpt_image_2_1k_usd';
+        const costDefault = provider === 'falai' ? '0.08' : '0.03';
         const costUsd = parseFloat(
-          (db.prepare("SELECT value FROM settings WHERE key = 'kieai_gpt_image_2_1k_usd'").get() as { value: string })?.value || '0.03'
+          (db.prepare('SELECT value FROM settings WHERE key = ?').get(costKey) as { value: string })?.value || costDefault
         );
+        const serviceName = provider === 'falai' ? 'falai_cover' : 'kieai_cover';
         db.prepare(
           'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(state.episodeId, state.episodeNumber ?? null, 'kieai_cover', 'gpt-image-2', 1, costUsd, Date.now() - coverStartMs);
-        log.info({ costUsd }, 'Cover image cost logged');
+        ).run(state.episodeId, state.episodeNumber ?? null, serviceName, 'gpt-image-2', 1, costUsd, Date.now() - coverStartMs);
+        log.info({ costUsd, provider }, 'Cover image cost logged');
       } catch (err) {
         log.warn({ error: (err as Error).message }, 'Failed to log cover cost');
       }
