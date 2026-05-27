@@ -23,7 +23,7 @@ export async function PATCH(
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(id));
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
-  const allowedFields = ['title', 'description', 'status', 'priority', 'category', 'scheduled_at', 'auto_execute', 'episode_id', 'result_notes'];
+  const allowedFields = ['title', 'description', 'status', 'priority', 'category', 'scheduled_at', 'auto_execute', 'episode_id', 'result_notes', 'completed_by'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
@@ -38,8 +38,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
   }
 
-  // Auto-set completed_at when done
-  if (body.status === 'done') {
+  // Auto-set completed_at when done or moved to review
+  if (body.status === 'done' || body.status === 'review') {
     updates.push('completed_at = ?');
     values.push(new Date().toISOString());
   }
