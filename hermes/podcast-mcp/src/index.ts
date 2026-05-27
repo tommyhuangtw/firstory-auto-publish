@@ -13,6 +13,7 @@ import { settingsTools } from './tools/settings.js';
 import { n8nTools } from './tools/n8n.js';
 import { gitTools } from './tools/git.js';
 import { taskTools } from './tools/tasks.js';
+import { claudeCodeTools } from './tools/claude-code.js';
 
 const allTools: ToolDef[] = [
   ...pipelineTools,
@@ -25,6 +26,7 @@ const allTools: ToolDef[] = [
   ...n8nTools,
   ...gitTools,
   ...taskTools,
+  ...claudeCodeTools,
 ];
 
 const server = new McpServer({

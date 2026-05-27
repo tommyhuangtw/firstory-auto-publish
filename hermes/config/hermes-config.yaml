@@ -9,7 +9,7 @@
 #   FAL_KEY                   — fal.ai image generation (optional)
 
 model:
-  default: anthropic/claude-sonnet-4-6
+  default: deepseek/deepseek-v4-flash
   provider: openrouter
 
 mcp_servers:
