@@ -24,7 +24,7 @@ export const taskTools: ToolDef[] = [
     name: 'task_list',
     description: 'List tasks on the Kanban board. Filter by status or category.',
     inputSchema: z.object({
-      status: z.enum(['todo', 'in_progress', 'done', 'cancelled']).optional(),
+      status: z.enum(['todo', 'in_progress', 'review', 'done', 'cancelled']).optional(),
       category: z.enum(['content', 'infra', 'social_media', 'youtube', 'ig', 'threads', 'research', 'ops', 'growth']).optional(),
       auto_execute: z.number().min(0).max(1).optional().describe('Filter by auto_execute flag'),
       limit: z.number().default(50),
@@ -65,9 +65,47 @@ export const taskTools: ToolDef[] = [
     }),
     handler: async (input) => {
       return client.patch(`/api/tasks/${input.id}`, {
-        status: 'done',
+        status: 'review',
+        completed_by: 'hermes',
         result_notes: input.result_notes,
       });
+    },
+  },
+  {
+    name: 'task_comment_add',
+    description: `Add a comment/log entry to a task. Use this to record important actions, research results, links, or questions during task execution.
+    
+Types:
+- action    🔧  What you just did (e.g. "Called YouTube Analytics API, got 30-day data")
+- research  📄  Research summary, analysis, key findings (supports long markdown)
+- discussion 💬 Question or decision that needs Tommy's input
+- pr        🔀  GitHub PR link — status auto-synced from GitHub API
+- branch    🌿  Git branch reference
+- doc       📎  External doc/link (Notion, Google Doc, etc.)
+- analysis  📊  Data analysis or report summary
+- note      📌  General note
+
+For PR type, include metadata: { url, title?, branch? }
+For branch type, include metadata: { branch_name, repo? }  
+For doc type, include metadata: { title, url }`,
+    inputSchema: z.object({
+      task_id: z.number().describe('Task ID'),
+      type: z.enum(['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'note']).default('action'),
+      content: z.string().describe('Comment body. Markdown supported. For research/analysis, include the full findings here.'),
+      author: z.enum(['hermes', 'tommy']).default('hermes'),
+      metadata: z.object({
+        url: z.string().optional(),
+        title: z.string().optional(),
+        branch: z.string().optional(),
+        branch_name: z.string().optional(),
+        repo: z.string().optional(),
+        status: z.string().optional(),
+        summary: z.string().optional(),
+      }).optional().describe('Structured data for pr/branch/doc types'),
+    }),
+    handler: async (input) => {
+      const { task_id, ...body } = input;
+      return client.post(`/api/tasks/${task_id}/comments`, body);
     },
   },
 ];
