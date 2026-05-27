@@ -30,6 +30,11 @@ google-token.json
 !dashboard/tsconfig.json
 !dashboard/next.config.ts
 !dashboard/postcss.config.mjs
+!hermes/podcast-mcp/tsconfig.json
+!hermes/podcast-mcp/package.json
+!hermes/podcast-mcp/package-lock.json
+!hermes/webhook-receiver/package.json
+!hermes/webhook-receiver/package-lock.json
 
 # Temporary files
 temp/

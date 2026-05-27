@@ -355,3 +355,33 @@ CREATE INDEX IF NOT EXISTS idx_digests_milestone ON episode_digests(is_milestone
 CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(theme_name);
 CREATE INDEX IF NOT EXISTS idx_episode_themes_episode ON episode_themes(episode_id);
 CREATE INDEX IF NOT EXISTS idx_episode_themes_theme ON episode_themes(theme_id);
+
+-- ── Tasks (Kanban / Project Management) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',      -- todo | in_progress | done | cancelled
+  priority TEXT NOT NULL DEFAULT 'medium',  -- low | medium | high | urgent
+  category TEXT NOT NULL DEFAULT 'ops',
+  -- category: content | infra | social_media | youtube | ig | threads | research | ops | growth
+
+  -- Scheduling & automation
+  scheduled_at TEXT,          -- ISO datetime; if set, auto-check at this time
+  auto_execute INTEGER DEFAULT 0,  -- 1 = I run it automatically (research/data tasks only)
+
+  -- Linkage
+  episode_id INTEGER REFERENCES episodes(id) ON DELETE SET NULL,
+
+  -- Execution
+  result_notes TEXT,          -- what I did / found after completing
+  created_by TEXT DEFAULT 'telegram',  -- telegram | system | manual
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at) WHERE scheduled_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);

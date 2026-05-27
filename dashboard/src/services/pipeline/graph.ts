@@ -39,6 +39,7 @@ import { uploadAssets } from './nodes/uploadAssets';
 import { notify } from './nodes/notify';
 import { publish } from './nodes/publish';
 import { concatMp3s, generateSilence } from './nodes/tts';
+import { emitEvent } from '@/services/notificationHub';
 import fs from 'fs';
 
 const log = createChildLogger('pipeline');
@@ -230,6 +231,17 @@ export async function startPipeline(
     markVideosUsed(db, finalState, episodeId);
 
     log.info({ episodeId, pipelineRunId }, 'Pipeline completed, awaiting review');
+
+    // Notify: pipeline completed (episode ready for review)
+    emitEvent({
+      type: 'pipeline.completed',
+      episodeId,
+      segmentType,
+      candidateTitles: finalState.candidateTitles,
+      urls: { dashboard: `http://localhost:3000/episodes/${episodeId}/review` },
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+
     return { pipelineRunId, state: finalState };
   } catch (error) {
     const errMsg = (error as Error).message;
@@ -239,6 +251,16 @@ export async function startPipeline(
     ).run(errMsg, pipelineRunId);
 
     log.error({ episodeId, pipelineRunId, error: errMsg }, 'Pipeline failed');
+
+    // Notify: pipeline failed
+    emitEvent({
+      type: 'pipeline.failed',
+      episodeId,
+      segmentType,
+      error: errMsg,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+
     throw error;
   }
 }

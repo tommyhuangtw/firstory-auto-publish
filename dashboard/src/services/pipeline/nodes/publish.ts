@@ -12,6 +12,7 @@ import path from 'path';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import type { PipelineState } from '../state';
+import { emitEvent } from '@/services/notificationHub';
 
 const log = createChildLogger('pipeline:publish');
 
@@ -118,6 +119,37 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
   );
 
   results.publishErrors = publishErrors;
+
+  // Notify: episode published or partial failure
+  if (publishErrors.length > 0) {
+    emitEvent({
+      type: 'episode.publish.partial_failure',
+      episodeId: state.episodeId,
+      episodeNumber: state.episodeNumber,
+      segmentType: state.segmentType,
+      title: state.selectedTitle,
+      publishErrors,
+      urls: {
+        soundon: results.soundonUrl,
+        youtube: results.youtubeUrl,
+      },
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+  } else {
+    emitEvent({
+      type: 'episode.published',
+      episodeId: state.episodeId,
+      episodeNumber: state.episodeNumber,
+      segmentType: state.segmentType,
+      title: state.selectedTitle,
+      urls: {
+        soundon: results.soundonUrl,
+        youtube: results.youtubeUrl,
+      },
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+  }
+
   return results;
 }
 

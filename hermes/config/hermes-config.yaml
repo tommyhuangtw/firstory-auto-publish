@@ -1,0 +1,70 @@
+# Hermes Agent Configuration Reference
+# Copy relevant sections to ~/.hermes/config.yaml
+#
+# Required ~/.hermes/.env variables:
+#   OPENROUTER_API_KEY        — LLM provider
+#   TELEGRAM_BOT_TOKEN        — Telegram bot (from @BotFather)
+#   TELEGRAM_ALLOWED_USERS    — Your Telegram user ID
+#   TELEGRAM_HOME_CHANNEL     — Same as user ID (for cron delivery)
+#   FAL_KEY                   — fal.ai image generation (optional)
+
+model:
+  default: anthropic/claude-sonnet-4-6
+  provider: openrouter
+
+mcp_servers:
+  podcast:
+    type: stdio
+    command: npx
+    args: [tsx, /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/hermes/podcast-mcp/src/index.ts]
+    env:
+      PODCAST_API_URL: "https://localhost:3000"
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      N8N_WEBHOOK_URL: "http://localhost:5678"
+      REPO_PATH: "/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation"
+
+context_files:
+  - /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/hermes/context/podcast-system.md
+  - /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/hermes/context/operations-playbook.md
+  - /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/hermes/context/brand-voice.md
+  - /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/hermes/context/n8n-pipeline.md
+
+# Webhook platform for receiving pipeline event notifications
+webhook:
+  enabled: true
+  port: 8644
+  routes:
+    podcast-events:
+      deliver: telegram
+      deliver_only: true
+      prompt: "{message}"
+      description: "Podcast pipeline event notifications"
+
+cron:
+  jobs:
+    - name: morning_content_curation
+      schedule: "0 8 * * *"
+      prompt: |
+        Execute morning AI content curation:
+        1. Trigger the n8n Threads curation workflow (use n8n_trigger_threads_curation tool)
+        2. Search for the past 24 hours' top AI news and breakthroughs
+        3. Check our podcast memory system for topics we haven't covered yet
+        4. Compile a report:
+           - n8n curation results summary
+           - Additional AI trend insights
+           - 2-3 suggested episode topics
+        Send the report via Telegram.
+      deliver_to: telegram
+
+    - name: evening_operations_review
+      schedule: "0 20 * * *"
+      prompt: |
+        Execute evening operations review:
+        1. Check all pipeline statuses today (use pipeline_status tool)
+        2. Review cost metrics (use metrics_overview tool)
+        3. Check for any pending_review episodes that haven't been processed
+        4. Check if any scheduled jobs failed
+        5. Review today's performance and suggest 1-2 improvements
+        6. If an improvement can be implemented in code, create a hermes/* branch with a PoC
+        Send the summary via Telegram.
+      deliver_to: telegram

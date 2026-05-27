@@ -13,6 +13,7 @@ import { getDb } from '@/db';
 import { startPipeline, retryFromStage } from '@/services/pipeline/graph';
 import { getGmailService } from '@/services/gmail';
 import { createChildLogger } from './logger';
+import { emitEvent } from '@/services/notificationHub';
 import type { SegmentType } from '@/services/pipeline/state';
 
 const log = createChildLogger('scheduler-init');
@@ -193,7 +194,7 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
       try {
         await retryFromStage(pipelineRunId, failedStage);
 
-        // 3a. Retry succeeded — send success email
+        // 3a. Retry succeeded — send success email + webhook
         try {
           await gmail.sendPipelineNotification({
             episodeNumber: episodeId, segmentType, failedStage,
@@ -202,11 +203,17 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
         } catch (emailErr) {
           log.error({ error: (emailErr as Error).message }, 'Failed to send retry success email');
         }
+        emitEvent({
+          type: 'pipeline.retry.success',
+          episodeId, segmentType, stage: failedStage,
+          error: errMsg,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       } catch (retryError) {
         const retryErrMsg = (retryError as Error).message;
         log.error({ segmentType, episodeId, error: retryErrMsg }, 'Auto-retry also failed');
 
-        // 3b. Retry failed — send retry-failure email
+        // 3b. Retry failed — send retry-failure email + webhook
         try {
           await gmail.sendPipelineNotification({
             episodeNumber: episodeId, segmentType, failedStage,
@@ -215,6 +222,12 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
         } catch (emailErr) {
           log.error({ error: (emailErr as Error).message }, 'Failed to send retry failure email');
         }
+        emitEvent({
+          type: 'pipeline.retry.failed',
+          episodeId, segmentType, stage: failedStage,
+          error: errMsg, retryError: retryErrMsg,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       }
     }
   });

@@ -7,6 +7,7 @@
 - **Tech Stack**: Next.js 14 + TypeScript + LangGraph + SQLite
 - **Dashboard**: `dashboard/` (主要開發目錄)
 - **Database**: SQLite (`dashboard/data/podcast.db`, WAL mode)
+- **Hermes Agent**: `hermes/` (AI 營運助手，透過 Telegram 操控系統)
 - **Legacy code**: `src/`, `web-console/` 保留至遷移完成
 
 ---
@@ -79,6 +80,69 @@ Publish 時，每個平台獨立執行，一個失敗不影響其他：
 
 ---
 
+## Hermes Agent Integration
+
+Hermes Agent（Nous Research）作為 AI 營運助手，透過 Telegram 接收通知、遠端操控 pipeline、自主研究 AI 趨勢。
+
+### Architecture
+
+```
+┌─────────────────┐         ┌──────────────┐         ┌──────────────────┐
+│  Hermes Agent   │  stdio  │  MCP Server  │  HTTP   │  Next.js App     │
+│  + Telegram GW  │◄───────►│  podcast-mcp │────────►│  localhost:3000   │
+│  + Cron jobs    │         └──────────────┘         └────────┬─────────┘
+│  + Webhook :8644│◄─────────────────────────────────────────┘
+└─────────────────┘         notificationHub POST
+
+```
+
+### Components
+
+| Component | Path | 用途 |
+|-----------|------|------|
+| MCP Server | `hermes/podcast-mcp/` | ~40 tools 操控 pipeline/episodes/scheduler/analytics/n8n/git |
+| Webhook Receiver | Built-in Hermes (port 8644) | 接收 pipeline 事件推送到 Telegram |
+| NotificationHub | `dashboard/src/services/notificationHub.ts` | 中央事件派發（pipeline 完成/失敗/待審核/已發布） |
+| Context Files | `hermes/context/` | 系統架構、操作手冊、品牌語調、n8n pipeline 說明 |
+| Config Reference | `hermes/config/hermes-config.yaml` | MCP + context + cron 設定參考 |
+
+### MCP Tools (~40 tools)
+
+| Group | Tools | 用途 |
+|-------|-------|------|
+| Pipeline | 5 | 啟動/監控/重試 pipeline |
+| Episodes | 12 | 列表/審核/approve/reject/regenerate |
+| Scheduler | 5 | 排程管理 |
+| Analytics | 4 | 成本/品質/平台數據 |
+| YouTube | 3 | 搜尋來源管理 |
+| Media | 3 | 縮圖操作 |
+| Settings | 2 | 系統設定 |
+| n8n | 3 | 觸發 Threads 策展 workflow |
+| Git | 5 | 建 hermes/* branch、查 diff（不能 merge） |
+
+### Cron Jobs
+
+| Job | Schedule | 用途 |
+|-----|----------|------|
+| `morning_content_curation` | 每天 8:00 | 觸發 n8n + AI 趨勢研究 + episode 主題建議 |
+| `evening_operations_review` | 每天 20:00 | Pipeline 狀態 + 成本 + 改善建議 |
+
+### Notification Events
+
+Pipeline 事件透過 `notificationHub` → Hermes webhook → Telegram 推送：
+- `pipeline.completed` / `pipeline.failed`
+- `pipeline.retry.success` / `pipeline.retry.failed`
+- `episode.ready_for_review` / `episode.published` / `episode.publish.partial_failure`
+
+### Hermes Safety Rules
+
+- 只能在 `hermes/*` prefix 的 branch 上工作
+- 不能直接 push 到 main 或 merge
+- 每次改動必須通過 `npm run build`
+- 改動超過 5 個檔案時需先確認方向
+
+---
+
 ## Key Services
 
 | Service | File | 用途 |
@@ -100,6 +164,7 @@ Publish 時，每個平台獨立執行，一個失敗不影響其他：
 | `scheduler` | `services/scheduler.ts` | node-cron 排程管理 |
 | `memory/*` | `services/memory/` | AI 工具記憶系統（擷取、分類、回顧語句注入） |
 | `shortsPipeline` | `services/shortsPipeline.ts` | Shorts 生成（beat 選擇、headline、影片組裝） |
+| `notificationHub` | `services/notificationHub.ts` | 中央事件派發（Gmail + Hermes webhook） |
 
 ---
 
@@ -131,6 +196,7 @@ Publish 時，每個平台獨立執行，一個失敗不影響其他：
 | `RECIPIENT_EMAIL` | 通知信收件人 |
 | `GDRIVE_PODCAST_FOLDER`, `GDRIVE_IMAGE_FOLDER` | Drive 上傳目標 |
 | `GOOGLE_DOCS_CUSTOM_CONTENT_ID` | 自訂內容 Google Doc ID |
+| `HERMES_WEBHOOK_URL` | Hermes Agent webhook endpoint（pipeline 事件推送） |
 
 ---
 
@@ -192,3 +258,5 @@ Migration: `dashboard/src/db/index.ts`（`safeAlter` 自動加 column）
 6. **Cost Tracking** — `llm_calls` + `service_costs` 兩張表，episodes 彙整 total cost
 7. **Quality Refinement** — 品質評分 < 85 分自動重寫，最多 2 次
 8. **Tool Memory** — 工具追蹤 + 家族分類 + 回顧語句自動注入腳本
+9. **NotificationHub** — 中央事件派發，fan-out 到 Gmail + Hermes webhook，各 channel 獨立不互相阻擋
+10. **Hermes MCP** — stdio MCP server 包裝 REST API 為 ~40 個 tools，讓 Hermes Agent 操控系統

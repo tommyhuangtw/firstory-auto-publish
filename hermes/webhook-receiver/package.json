@@ -1,0 +1,20 @@
+{
+  "name": "hermes-webhook-receiver",
+  "version": "1.0.0",
+  "description": "Receives webhook events from podcast automation and formats for Telegram via Hermes",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
+    "@types/express": "^5.0.0"
+  }
+}
