@@ -96,6 +96,35 @@ export function getDb(): Database.Database {
   `);
   safeIndex('CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)');
 
+  // YouTube analytics tables
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS youtube_channel_stats (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_date   TEXT    NOT NULL,
+      subscriber_count INTEGER DEFAULT 0,
+      view_count      INTEGER DEFAULT 0,
+      video_count     INTEGER DEFAULT 0,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_yt_channel_date ON youtube_channel_stats(snapshot_date)');
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS youtube_video_stats (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_id      TEXT    NOT NULL,
+      title         TEXT,
+      published_at  TEXT,
+      snapshot_date TEXT    NOT NULL,
+      views         INTEGER DEFAULT 0,
+      likes         INTEGER DEFAULT 0,
+      comments      INTEGER DEFAULT 0,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_yt_video_composite ON youtube_video_stats(video_id, snapshot_date)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_yt_video_date ON youtube_video_stats(snapshot_date)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');

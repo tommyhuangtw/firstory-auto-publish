@@ -26,6 +26,16 @@
 - 有改動 pipeline/service 邏輯時，用 `scripts/` 下的測試腳本跑一次 smoke test
 - 不要只說「應該沒問題」— 要實際執行、看到結果、確認正確
 
+### Task Board Ticket 流程
+- 開發完成要讓使用者 review 時，**必須把 ticket 狀態改為 `review`**（不是 `done`）
+- **移到 `review` 之前，agent 必須先完成測試**，不能跳過
+- 在 ticket 的 comments 中**必須附上測試證明**（使用 `test` type tag）：
+  - Build log（`npm run build` 輸出）
+  - API request/response log
+  - 相關的測試執行結果
+- 有截圖或 API request/response 的話優先附上
+- 所有 comments 都會顯示完整日期+時間戳（YYYY/MM/DD HH:mm:ss）
+
 ### Git Commit 偏好
 - **不要**在 commit message 中加入 `Co-Authored-By` 行
 - Commit message 一律使用**英文**撰寫

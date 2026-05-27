@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-export type CommentType = 'action' | 'research' | 'discussion' | 'pr' | 'branch' | 'doc' | 'analysis' | 'note';
+export type CommentType = 'action' | 'research' | 'discussion' | 'pr' | 'branch' | 'doc' | 'analysis' | 'note' | 'test';
 
 export interface CommentMeta {
   url?: string;
@@ -55,6 +55,7 @@ const TYPE_META: Record<CommentType, { icon: string; label: string; color: strin
   doc:        { icon: '📎', label: 'Doc',        color: 'text-blue-400' },
   analysis:   { icon: '📊', label: 'Analysis',   color: 'text-purple-400' },
   note:       { icon: '📌', label: 'Note',       color: 'text-zinc-400' },
+  test:       { icon: '🧪', label: 'Test',       color: 'text-emerald-400' },
 };
 
 const PR_STATUS_BADGE: Record<string, string> = {
@@ -69,15 +70,12 @@ function parseMeta(raw: string | null): CommentMeta {
 }
 
 function formatTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return '剛剛';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const d = new Date(dateStr + (dateStr.includes('T') || dateStr.includes('Z') ? '' : 'Z'));
+  return d.toLocaleDateString('zh-TW', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
 }
 
 // ─── Comment Item ──────────────────────────────────────────────────────────────
@@ -141,7 +139,7 @@ function CommentItem({ comment }: { comment: TaskComment }) {
         {comment.content && (
           <div className={`text-sm leading-relaxed whitespace-pre-wrap
             ${comment.type === 'discussion' ? 'text-amber-200/80' : 'text-zinc-300'}
-            ${comment.type === 'research' || comment.type === 'analysis' ? 'bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30 text-xs' : ''}
+            ${comment.type === 'research' || comment.type === 'analysis' || comment.type === 'test' ? 'bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30 text-xs' : ''}
           `}>
             {comment.content}
           </div>
@@ -153,7 +151,7 @@ function CommentItem({ comment }: { comment: TaskComment }) {
 
 // ─── New Comment Form ──────────────────────────────────────────────────────────
 
-const COMMENT_TYPES: CommentType[] = ['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'note'];
+const COMMENT_TYPES: CommentType[] = ['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'test', 'note'];
 
 function NewCommentForm({ taskId, onAdded }: { taskId: number; onAdded: () => void }) {
   const [type, setType] = useState<CommentType>('note');

@@ -131,6 +131,18 @@ export function initializeSchedulerJobs(): void {
     }
   });
 
+  // YouTube analytics auto-sync — runs every day at 10:00
+  scheduler.register('youtube-analytics-sync', '0 10 * * *', async () => {
+    log.info('Running scheduled YouTube analytics sync...');
+    try {
+      const { syncYoutubeAnalytics } = await import('@/services/youtubeAnalytics');
+      const result = await syncYoutubeAnalytics();
+      log.info(result, 'YouTube analytics sync complete');
+    } catch (err) {
+      log.error({ err: (err as Error).message }, 'YouTube analytics sync failed');
+    }
+  });
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 }

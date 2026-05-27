@@ -43,7 +43,7 @@ export async function POST(
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
   }
 
-  const VALID_TYPES = ['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'note'];
+  const VALID_TYPES = ['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'note', 'test'];
   const VALID_AUTHORS = ['hermes', 'tommy'];
   if (!VALID_TYPES.includes(type)) return NextResponse.json({ error: `invalid type: ${type}` }, { status: 400 });
   if (!VALID_AUTHORS.includes(author)) return NextResponse.json({ error: `invalid author` }, { status: 400 });

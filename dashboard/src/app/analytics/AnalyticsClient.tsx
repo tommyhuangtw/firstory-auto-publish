@@ -49,7 +49,41 @@ interface AnalyticsData {
   summary: Summary;
 }
 
-type Tab = 'trend' | 'ranking' | 'analysis';
+interface YtChannelSnapshot {
+  snapshot_date: string;
+  subscriber_count: number;
+  view_count: number;
+  video_count: number;
+}
+
+interface YtVideo {
+  video_id: string;
+  title: string;
+  published_at: string;
+  snapshot_date: string;
+  views: number;
+  likes: number;
+  comments: number;
+}
+
+interface YtSummary {
+  currentSubscribers: number;
+  currentViews: number;
+  currentVideos: number;
+  subscriberGrowth: number;
+  viewGrowth: number;
+  totalSnapshots: number;
+  firstSnapshotDate: string | null;
+  latestSnapshotDate: string | null;
+}
+
+interface YtData {
+  channelSnapshots: YtChannelSnapshot[];
+  latestVideos: YtVideo[];
+  summary: YtSummary;
+}
+
+type Tab = 'trend' | 'ranking' | 'analysis' | 'youtube';
 type Range = '7d' | '30d' | '90d' | '360d' | 'all';
 type SortKey = 'episode_number' | 'total_downloads' | 'downloads_7d' | 'downloads_30d' | 'duration_sec' | 'published_at';
 type SortDir = 'asc' | 'desc';
@@ -68,6 +102,10 @@ export default function AnalyticsClient() {
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc');
   const [chartMounted, setChartMounted] = useState(false);
   const [chartWidth, setChartWidth] = useState(800);
+  const [ytData, setYtData] = useState<YtData | null>(null);
+  const [ytLoading, setYtLoading] = useState(false);
+  const [ytSyncing, setYtSyncing] = useState(false);
+  const [ytSyncResult, setYtSyncResult] = useState<string | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +138,42 @@ export default function AnalyticsClient() {
   }, [range, sort]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fetchYtData = useCallback(async () => {
+    setYtLoading(true);
+    try {
+      const res = await fetch('/api/analytics/youtube?sort=views&order=desc');
+      const json = await res.json();
+      setYtData(json);
+    } catch {
+      // ignore
+    } finally {
+      setYtLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'youtube' && !ytData) fetchYtData();
+  }, [tab, ytData, fetchYtData]);
+
+  const handleYtSync = async () => {
+    setYtSyncing(true);
+    setYtSyncResult(null);
+    try {
+      const res = await fetch('/api/analytics/youtube-sync', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setYtSyncResult(`同步成功：${json.videosCount} 支影片，快照日期 ${json.snapshotDate}`);
+        setYtData(null); // trigger refetch
+      } else {
+        setYtSyncResult(`同步失敗：${json.error}`);
+      }
+    } catch {
+      setYtSyncResult('同步失敗：網路錯誤');
+    } finally {
+      setYtSyncing(false);
+    }
+  };
 
   const sortedEpisodes = useMemo(() => {
     if (!data?.episodes) return [];
@@ -153,12 +227,14 @@ export default function AnalyticsClient() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const hasData = data && (data.dailyDownloads.length > 0 || data.episodes.length > 0);
+  const hasSoundonData = data && (data.dailyDownloads.length > 0 || data.episodes.length > 0);
+  const hasData = hasSoundonData || tab === 'youtube';
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'trend', label: '下載趨勢' },
     { key: 'ranking', label: '集數排行' },
     { key: 'analysis', label: '趨勢分析' },
+    { key: 'youtube', label: 'YouTube' },
   ];
 
   const ranges: { key: Range; label: string }[] = [
@@ -530,6 +606,197 @@ export default function AnalyticsClient() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {tab === 'youtube' && (
+            <div className="space-y-4">
+              {/* Sync button + status */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleYtSync}
+                  disabled={ytSyncing}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    ytSyncing
+                      ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                      : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
+                  }`}
+                >
+                  {ytSyncing ? '同步中...' : 'Sync YouTube'}
+                </button>
+                {ytData?.summary.latestSnapshotDate && (
+                  <span className="text-xs text-zinc-500">最後同步：{ytData.summary.latestSnapshotDate}</span>
+                )}
+              </div>
+              {ytSyncResult && (
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-300">
+                  {ytSyncResult}
+                </div>
+              )}
+
+              {ytLoading && <div className="text-center py-12 text-zinc-500">載入中...</div>}
+
+              {!ytLoading && ytData && (
+                <>
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <SummaryCard label="訂閱數" value={ytData.summary.currentSubscribers.toLocaleString()} />
+                    <SummaryCard label="總觀看數" value={ytData.summary.currentViews.toLocaleString()} />
+                    <SummaryCard label="影片數" value={ytData.summary.currentVideos.toLocaleString()} />
+                    <SummaryCard
+                      label="訂閱成長"
+                      value={ytData.summary.subscriberGrowth !== 0
+                        ? `${ytData.summary.subscriberGrowth > 0 ? '+' : ''}${ytData.summary.subscriberGrowth.toLocaleString()}`
+                        : '—'}
+                      highlight={ytData.summary.subscriberGrowth > 0 ? 'green' : ytData.summary.subscriberGrowth < 0 ? 'red' : undefined}
+                    />
+                    <SummaryCard
+                      label="觀看成長"
+                      value={ytData.summary.viewGrowth !== 0
+                        ? `${ytData.summary.viewGrowth > 0 ? '+' : ''}${ytData.summary.viewGrowth.toLocaleString()}`
+                        : '—'}
+                      highlight={ytData.summary.viewGrowth > 0 ? 'green' : ytData.summary.viewGrowth < 0 ? 'red' : undefined}
+                    />
+                  </div>
+
+                  {/* Channel trend chart */}
+                  {ytData.channelSnapshots.length > 1 && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                      <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">頻道趨勢</h3>
+                      {chartMounted && (
+                        <LineChart width={chartWidth - 32} height={320} data={ytData.channelSnapshots}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                          <XAxis
+                            dataKey="snapshot_date"
+                            tickFormatter={formatDate}
+                            tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis yAxisId="left" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8 }}
+                            labelStyle={{ color: '#e4e4e7' }}
+                          />
+                          <Legend />
+                          <Line
+                            yAxisId="left"
+                            type="monotone"
+                            dataKey="subscriber_count"
+                            name="訂閱數"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="view_count"
+                            name="總觀看數"
+                            stroke="#22c55e"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Top videos bar chart */}
+                  {ytData.latestVideos.length > 0 && (() => {
+                    const top20 = ytData.latestVideos.slice(0, 20).map(v => ({
+                      ...v,
+                      shortTitle: v.title.length > 30 ? v.title.slice(0, 30) + '…' : v.title,
+                    }));
+                    return (
+                      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">TOP 20 — 影片觀看數</h3>
+                        {chartMounted && (
+                          <BarChart
+                            width={chartWidth - 32}
+                            height={520}
+                            data={top20}
+                            layout="vertical"
+                            margin={{ left: 10, right: 20 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                            <XAxis type="number" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
+                            <YAxis
+                              type="category"
+                              dataKey="shortTitle"
+                              width={260}
+                              tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                            />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8 }}
+                              labelStyle={{ color: '#e4e4e7', fontSize: 12 }}
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              formatter={(value: any) => [Number(value).toLocaleString(), '觀看數']}
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.title || ''}
+                            />
+                            <Bar dataKey="views" name="觀看數" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Video stats table */}
+                  {ytData.latestVideos.length > 0 && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-zinc-800 text-zinc-400 text-left">
+                              <th className="px-4 py-3 font-medium">標題</th>
+                              <th className="px-4 py-3 font-medium text-right">觀看數</th>
+                              <th className="px-4 py-3 font-medium text-right">按讚</th>
+                              <th className="px-4 py-3 font-medium text-right">留言</th>
+                              <th className="px-4 py-3 font-medium">發佈日期</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ytData.latestVideos.map((v) => (
+                              <tr key={v.video_id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                                <td className="px-4 py-2.5 text-zinc-200 max-w-xs truncate" title={v.title}>
+                                  <a
+                                    href={`https://www.youtube.com/watch?v=${v.video_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:text-red-400 transition-colors"
+                                  >
+                                    {v.title}
+                                  </a>
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-zinc-200 font-medium">
+                                  {v.views.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-zinc-400">
+                                  {v.likes.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-zinc-400">
+                                  {v.comments.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-2.5 text-zinc-500 whitespace-nowrap">
+                                  {v.published_at ? v.published_at.slice(0, 10) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {ytData.channelSnapshots.length === 0 && ytData.latestVideos.length === 0 && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+                      <p className="text-zinc-400 text-lg mb-2">尚無 YouTube 數據</p>
+                      <p className="text-zinc-500 text-sm">點擊「Sync YouTube」開始同步頻道數據</p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </>
