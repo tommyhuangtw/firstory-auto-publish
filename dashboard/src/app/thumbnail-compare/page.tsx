@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface StyleItem {
   id: number;
@@ -17,14 +17,18 @@ interface StyleItem {
 }
 
 export default function ThumbnailComparePage() {
-  // Style Manager state
   const [styles, setStyles] = useState<StyleItem[]>([]);
   const [stylesLoading, setStylesLoading] = useState(false);
   const [generatingStyles, setGeneratingStyles] = useState(false);
   const [styleGenCount, setStyleGenCount] = useState(20);
-  const [auditioningIds, setAuditioningIds] = useState<Set<number>>(new Set());
-  const [auditionProgress, setAuditionProgress] = useState<{ done: number; total: number } | null>(null);
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
+
+  // Audition queue system
+  const [activeAuditionId, setActiveAuditionId] = useState<number | null>(null);
+  const [queuedIds, setQueuedIds] = useState<number[]>([]);
+  const [auditionDone, setAuditionDone] = useState(0);
+  const [auditionTotal, setAuditionTotal] = useState(0);
+  const processingRef = useRef(false);
 
   // Fetch styles on mount
   const fetchStyles = useCallback(async () => {
@@ -39,6 +43,74 @@ export default function ThumbnailComparePage() {
   }, []);
 
   useEffect(() => { fetchStyles(); }, [fetchStyles]);
+
+  // Process audition queue
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    while (true) {
+      // Get next ID from queue
+      let nextId: number | undefined;
+      setQueuedIds(prev => {
+        if (prev.length === 0) return prev;
+        nextId = prev[0];
+        return prev.slice(1);
+      });
+
+      // Need to wait a tick for state to settle
+      await new Promise(r => setTimeout(r, 0));
+
+      // Re-read from ref-stable source — use a promise to extract current queue
+      if (nextId === undefined) {
+        // Double-check by reading state directly
+        const currentQueue = await new Promise<number[]>(resolve => {
+          setQueuedIds(prev => { resolve(prev); return prev; });
+        });
+        if (currentQueue.length === 0) break;
+        nextId = currentQueue[0];
+        setQueuedIds(prev => prev.slice(1));
+      }
+
+      setActiveAuditionId(nextId);
+      try {
+        const res = await fetch(`/api/thumbnail-styles/${nextId}/audition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setStyles(prev => prev.map(s =>
+            s.id === nextId ? { ...s, sampleImageUrl: data.sampleImageUrl, sampleHookTitle: data.hookTitle } : s
+          ));
+        } else {
+          console.warn(`[thumbnail] Audition failed for ${nextId}:`, data.error);
+        }
+      } catch (err) {
+        console.error(`[thumbnail] Audition error for ${nextId}:`, err);
+      }
+      setActiveAuditionId(null);
+      setAuditionDone(prev => prev + 1);
+    }
+
+    processingRef.current = false;
+    // Reset counters when queue is fully drained
+    setAuditionDone(0);
+    setAuditionTotal(0);
+  }, []);
+
+  const enqueueAudition = useCallback((...ids: number[]) => {
+    if (ids.length === 0) return;
+    setQueuedIds(prev => {
+      const existing = new Set([...prev]);
+      const newIds = ids.filter(id => !existing.has(id));
+      return [...prev, ...newIds];
+    });
+    setAuditionTotal(prev => prev + ids.length);
+    // Kick off processing if not already running
+    setTimeout(() => processQueue(), 0);
+  }, [processQueue]);
 
   const toggleStyle = async (id: number, enable: boolean) => {
     setTogglingIds(prev => new Set(prev).add(id));
@@ -63,6 +135,8 @@ export default function ThumbnailComparePage() {
       const data = await res.json();
       if (!res.ok) { alert(data.error); return; }
       setStyles(prev => prev.filter(s => s.id !== id));
+      // Remove from queue if queued
+      setQueuedIds(prev => prev.filter(qid => qid !== id));
     } catch { /* ignore */ }
   };
 
@@ -76,32 +150,12 @@ export default function ThumbnailComparePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      // Refresh full list to get proper DB IDs
       await fetchStyles();
 
-      // Auto-audition all newly generated styles
       if (autoAudition && data.styles?.length > 0) {
         const newIds = data.styles.map((s: { id: number }) => s.id);
-        setAuditionProgress({ done: 0, total: newIds.length });
-        for (let i = 0; i < newIds.length; i++) {
-          setAuditioningIds(prev => new Set(prev).add(newIds[i]));
-          try {
-            const audRes = await fetch(`/api/thumbnail-styles/${newIds[i]}/audition`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({}),
-            });
-            const audData = await audRes.json();
-            if (audRes.ok) {
-              setStyles(prev => prev.map(s =>
-                s.id === newIds[i] ? { ...s, sampleImageUrl: audData.sampleImageUrl, sampleHookTitle: audData.hookTitle } : s
-              ));
-            }
-          } catch { /* continue to next */ }
-          setAuditioningIds(prev => { const next = new Set(prev); next.delete(newIds[i]); return next; });
-          setAuditionProgress({ done: i + 1, total: newIds.length });
-        }
-        setAuditionProgress(null);
+        console.log('[thumbnail] Enqueuing auto-audition for', newIds.length, 'styles');
+        enqueueAudition(...newIds);
       }
     } catch (err) {
       alert('生成失敗: ' + (err as Error).message);
@@ -110,32 +164,14 @@ export default function ThumbnailComparePage() {
     }
   };
 
-  const auditionStyle = async (id: number) => {
-    setAuditioningIds(prev => new Set(prev).add(id));
-    try {
-      const res = await fetch(`/api/thumbnail-styles/${id}/audition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setStyles(prev => prev.map(s =>
-        s.id === id ? { ...s, sampleImageUrl: data.sampleImageUrl, sampleHookTitle: data.hookTitle } : s
-      ));
-    } catch (err) {
-      alert('生成樣本失敗: ' + (err as Error).message);
-    } finally {
-      setAuditioningIds(prev => { const next = new Set(prev); next.delete(id); return next; });
-    }
+  const auditionAllWithoutSamples = () => {
+    const noSample = styles.filter(s => !s.sampleImageUrl && !s.isEnabled);
+    const ids = noSample.map(s => s.id);
+    if (ids.length > 0) enqueueAudition(...ids);
   };
 
-  const auditionAllWithoutSamples = async () => {
-    const noSample = styles.filter(s => !s.sampleImageUrl);
-    for (const s of noSample) {
-      await auditionStyle(s.id);
-    }
-  };
+  const isAuditionBusy = activeAuditionId !== null || queuedIds.length > 0;
+  const showProgress = auditionTotal > 0;
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
@@ -169,10 +205,13 @@ export default function ThumbnailComparePage() {
                     key={style.id}
                     style={style}
                     isToggling={togglingIds.has(style.id)}
-                    isAuditioning={auditioningIds.has(style.id)}
+                    auditionState={
+                      activeAuditionId === style.id ? 'active' :
+                      queuedIds.includes(style.id) ? 'queued' : 'idle'
+                    }
                     mode="pool"
                     onDrop={() => toggleStyle(style.id, false)}
-                    onAudition={() => auditionStyle(style.id)}
+                    onAudition={() => enqueueAudition(style.id)}
                   />
                 ))}
             </div>
@@ -190,7 +229,7 @@ export default function ThumbnailComparePage() {
               <p className="text-xs text-zinc-500 mt-0.5">
                 AI 生成風格 + 樣本預覽，喜歡就加入 Pool
                 {styles.filter(s => !s.isEnabled).length > 0 && (
-                  <span className="text-zinc-400"> · {styles.filter(s => !s.isEnabled).length} 個待審核</span>
+                  <span className="text-zinc-400"> · {styles.filter(s => !s.isEnabled).length} 個待審核 · 最新在前</span>
                 )}
               </p>
             </div>
@@ -198,10 +237,10 @@ export default function ThumbnailComparePage() {
               {styles.some(s => !s.sampleImageUrl && !s.isEnabled) && !generatingStyles && (
                 <button
                   onClick={auditionAllWithoutSamples}
-                  disabled={auditioningIds.size > 0}
+                  disabled={isAuditionBusy}
                   className="px-3 py-1.5 text-sm bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 disabled:opacity-50 transition-colors"
                 >
-                  {auditioningIds.size > 0 ? `生成樣本中 (${auditioningIds.size})...` : '補生成樣本'}
+                  {isAuditionBusy ? `樣本生成中...` : '補生成樣本'}
                 </button>
               )}
               <select
@@ -216,25 +255,28 @@ export default function ThumbnailComparePage() {
               </select>
               <button
                 onClick={() => generateNewStyles(styleGenCount, true)}
-                disabled={generatingStyles || auditionProgress !== null}
+                disabled={generatingStyles || isAuditionBusy}
                 className="px-4 py-1.5 text-sm bg-brand text-zinc-900 font-semibold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-colors whitespace-nowrap"
               >
-                {generatingStyles && !auditionProgress ? 'AI 生成風格中...' : '生成 + 預覽'}
+                {generatingStyles ? 'AI 生成風格中...' : '生成 + 預覽'}
               </button>
             </div>
           </div>
 
           {/* Progress bar */}
-          {auditionProgress && (
+          {showProgress && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-zinc-400">
-                <span>生成樣本圖中...</span>
-                <span>{auditionProgress.done}/{auditionProgress.total}</span>
+                <span>
+                  生成樣本圖中...
+                  {queuedIds.length > 0 && ` (${queuedIds.length} 個排隊中)`}
+                </span>
+                <span>{auditionDone}/{auditionTotal}</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-brand rounded-full transition-all duration-300"
-                  style={{ width: `${(auditionProgress.done / auditionProgress.total) * 100}%` }}
+                  style={{ width: `${auditionTotal > 0 ? (auditionDone / auditionTotal) * 100 : 0}%` }}
                 />
               </div>
             </div>
@@ -254,11 +296,14 @@ export default function ThumbnailComparePage() {
                     key={style.id}
                     style={style}
                     isToggling={togglingIds.has(style.id)}
-                    isAuditioning={auditioningIds.has(style.id)}
+                    auditionState={
+                      activeAuditionId === style.id ? 'active' :
+                      queuedIds.includes(style.id) ? 'queued' : 'idle'
+                    }
                     mode="review"
                     onAdd={() => toggleStyle(style.id, true)}
                     onDrop={() => deleteStyle(style.id)}
-                    onAudition={() => auditionStyle(style.id)}
+                    onAudition={() => enqueueAudition(style.id)}
                   />
                 ))}
             </div>
@@ -273,7 +318,7 @@ export default function ThumbnailComparePage() {
 function StyleCard({
   style,
   isToggling,
-  isAuditioning,
+  auditionState,
   mode,
   onAdd,
   onDrop,
@@ -281,13 +326,14 @@ function StyleCard({
 }: {
   style: StyleItem;
   isToggling: boolean;
-  isAuditioning: boolean;
+  auditionState: 'idle' | 'active' | 'queued';
   mode: 'pool' | 'review';
   onAdd?: () => void;
   onDrop: () => void;
   onAudition: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isBusy = auditionState !== 'idle';
 
   return (
     <div className={`bg-zinc-900 rounded-xl border overflow-hidden transition-colors ${
@@ -295,10 +341,17 @@ function StyleCard({
     }`}>
       {/* Sample image or placeholder */}
       <div className="aspect-video bg-zinc-950 flex items-center justify-center relative group">
-        {isAuditioning ? (
+        {auditionState === 'active' ? (
           <div className="flex flex-col items-center gap-2">
             <div className="w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
             <span className="text-xs text-zinc-500">生成樣本中...</span>
+          </div>
+        ) : auditionState === 'queued' ? (
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-6 h-6 border-2 border-zinc-600 rounded-full flex items-center justify-center">
+              <span className="text-[8px] text-zinc-500">...</span>
+            </div>
+            <span className="text-xs text-zinc-600">排隊中</span>
           </div>
         ) : style.sampleImageUrl ? (
           <>
@@ -318,7 +371,7 @@ function StyleCard({
         ) : (
           <button
             onClick={onAudition}
-            disabled={isAuditioning}
+            disabled={isBusy}
             className="text-center px-4 hover:bg-zinc-900 transition-colors w-full h-full flex items-center justify-center"
           >
             <span className="text-zinc-600 text-xs">點擊生成樣本</span>
@@ -373,7 +426,7 @@ function StyleCard({
                 : 'bg-zinc-800 text-zinc-500 hover:bg-red-950 hover:text-red-400'
             }`}
           >
-            {isToggling ? '...' : mode === 'pool' ? 'Drop' : 'Drop'}
+            {isToggling ? '...' : 'Drop'}
           </button>
         </div>
       </div>

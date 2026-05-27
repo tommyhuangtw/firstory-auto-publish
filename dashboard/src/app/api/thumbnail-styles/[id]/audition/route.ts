@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs-extra';
 import { getDb } from '@/db';
-import { generateCoverImage, downloadImage } from '@/services/kieai';
+import { generateCoverImage, downloadImage } from '@/services/imageService';
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'thumbnails');
 
@@ -31,8 +31,8 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid style id' }, { status: 400 });
     }
 
-    if (!process.env.KIE_AI_API_KEY) {
-      return NextResponse.json({ error: 'KIE_AI_API_KEY not configured' }, { status: 500 });
+    if (!process.env.KIE_AI_API_KEY && !process.env.FAL_KEY) {
+      return NextResponse.json({ error: 'No image generation key configured (KIE_AI_API_KEY or FAL_KEY)' }, { status: 500 });
     }
 
     const db = getDb();
@@ -80,7 +80,7 @@ export async function POST(
 3. 背景乾淨 — 純色、漸層、或極簡圖案
 4. 最多只能有一行小副標題，不可有 bullet points、列表、或數據`;
 
-    const imageUrl = await generateCoverImage(prompt, {
+    const { url: imageUrl } = await generateCoverImage(prompt, {
       model: 'gpt-image-2-image-to-image',
       aspectRatio: '16:9',
       resolution: '1K',
