@@ -78,6 +78,8 @@ export function getDb(): Database.Database {
   };
   safeIndex('CREATE INDEX IF NOT EXISTS idx_tools_family ON tools(family_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_mentions_significance ON episode_tool_mentions(significance)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category)');
 
   // Seed tool families
   try {
