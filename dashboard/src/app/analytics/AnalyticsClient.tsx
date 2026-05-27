@@ -66,7 +66,25 @@ export default function AnalyticsClient() {
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [tableSort, setTableSort] = useState<SortKey | null>(null);
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc');
+  const [chartMounted, setChartMounted] = useState(false);
+  const [chartWidth, setChartWidth] = useState(800);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Recharts needs explicit width — measure the container after mount
+  useEffect(() => {
+    setChartMounted(true);
+    const measure = () => {
+      if (chartContainerRef.current) {
+        const w = chartContainerRef.current.getBoundingClientRect().width;
+        if (w > 0) setChartWidth(w);
+      }
+    };
+    // Measure after paint
+    const t = setTimeout(measure, 100);
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -268,10 +286,10 @@ export default function AnalyticsClient() {
                 ))}
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4" ref={chartContainerRef}>
                 <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">每日下載量</h3>
-                <ResponsiveContainer width="100%" height={320}>
-                  <AreaChart data={data.dailyDownloads}>
+                {chartMounted && (
+                  <AreaChart width={chartWidth - 32} height={320} data={data.dailyDownloads}>
                     <defs>
                       <linearGradient id="gradDown" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -312,7 +330,7 @@ export default function AnalyticsClient() {
                       strokeWidth={2}
                     />
                   </AreaChart>
-                </ResponsiveContainer>
+                )}
               </div>
             </div>
           )}
@@ -357,8 +375,9 @@ export default function AnalyticsClient() {
                 return (
                   <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
                     <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">{cm.title}</h3>
-                    <ResponsiveContainer width="100%" height={520}>
-                      <BarChart
+                    {chartMounted && (<BarChart
+                        width={chartWidth - 32}
+                        height={520}
                         data={chartData}
                         layout="vertical"
                         margin={{ left: 10, right: 20 }}
@@ -382,8 +401,7 @@ export default function AnalyticsClient() {
                           }
                         />
                         <Bar dataKey={cm.dataKey} name={cm.label} fill={cm.color} radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                      </BarChart>)}
                   </div>
                 );
               })()}
@@ -441,8 +459,7 @@ export default function AnalyticsClient() {
               {/* Weekly trend */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
                 <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">每週平均下載量</h3>
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={data.weeklyAverages}>
+                {chartMounted && (<LineChart width={chartWidth - 32} height={280} data={data.weeklyAverages}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                     <XAxis
                       dataKey="week"
@@ -472,8 +489,7 @@ export default function AnalyticsClient() {
                       strokeWidth={2}
                       dot={false}
                     />
-                  </LineChart>
-                </ResponsiveContainer>
+                  </LineChart>)}
               </div>
 
               {/* Episode stats */}
