@@ -6,12 +6,27 @@ import { createChildLogger } from '@/lib/logger';
 const log = createChildLogger('soundon-sync');
 
 // ── CSV parsers (copied from upload/route.ts) ─────────────────────────
-
+// Parse SoundOn date formats:
+//   "2026/4/23 上午12:00:00"  → "2026-04-23"
+//   "6/2/2025, 12:00:00 AM"  → "2025-06-02"  (en-US locale from blob CSV)
 function parseSoundonDate(raw: string): string {
-  const match = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (!match) throw new Error(`Invalid date: ${raw}`);
-  const [, y, m, d] = match;
-  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  const cleaned = raw.replace(/"/g, '').trim();
+
+  // Format: YYYY/M/D ...
+  const ymdMatch = cleaned.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (ymdMatch) {
+    const [, y, m, d] = ymdMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // Format: M/D/YYYY, ... (en-US locale)
+  const mdyMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (mdyMatch) {
+    const [, m, d, y] = mdyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  throw new Error(`Invalid date format: ${raw}`);
 }
 
 function parseIsoDate(raw: string): string {

@@ -131,12 +131,54 @@ async function scrapeEpisodesCsv(page: import('playwright').Page): Promise<strin
   await page.goto(EPISODES_ANALYTICS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
-  // Wait for the table to load
-  await page.waitForSelector('.ant-table-tbody', { timeout: 30000 });
+  // Wait for table to populate with real data (not "無此資料")
+  await page.waitForFunction(() => {
+    const rows = document.querySelectorAll('.ant-table-tbody tr');
+    if (rows.length === 0) return false;
+    return !rows[0].textContent?.includes('無此資料');
+  }, { timeout: 30000 });
   await page.waitForTimeout(1000);
 
-  // Click 輸出成CSV button and intercept the download
-  const csvText = await interceptCsvDownload(page, 'button.ant-btn.ant-btn-primary:has-text("輸出成CSV")');
+  // SoundOn builds CSV as a blob URL in the browser — intercept it
+  const csvText = await page.evaluate(() => {
+    return new Promise<string>((resolve, reject) => {
+      const origCreateElement = document.createElement.bind(document);
+      document.createElement = function(tag: string, ...rest: unknown[]) {
+        const el = origCreateElement(tag, ...rest as [ElementCreationOptions]);
+        if (tag.toLowerCase() === 'a') {
+          const origClick = el.click.bind(el);
+          (el as HTMLElement & { click: () => void }).click = async function() {
+            const href = (el as HTMLAnchorElement).href;
+            if (href.startsWith('blob:')) {
+              try {
+                const res = await fetch(href);
+                const text = await res.text();
+                resolve(text);
+              } catch (e) {
+                reject(e);
+              }
+              return;
+            }
+            origClick();
+          };
+        }
+        return el;
+      };
+
+      // Click the CSV export button
+      const btn = document.querySelector('button.ant-btn.ant-btn-primary') as HTMLButtonElement | null;
+      if (!btn) {
+        reject(new Error('CSV export button not found'));
+        return;
+      }
+      btn.click();
+
+      // Timeout fallback
+      setTimeout(() => reject(new Error('Blob URL intercept timeout after 10s')), 10000);
+    });
+  });
+
+  if (!csvText.trim()) throw new Error('Episode CSV is empty');
   return csvText;
 }
 
@@ -155,11 +197,48 @@ async function scrapeHostingCsv(page: import('playwright').Page): Promise<string
     log.info('Selected 年 (360d) range');
   }
 
-  // Wait for the chart/data to load
+  // Wait for chart data to load
   await page.waitForSelector('.ant-btn-primary:has-text("輸出成CSV")', { timeout: 30000 });
   await page.waitForTimeout(1000);
 
-  const csvText = await interceptCsvDownload(page, 'button.ant-btn.ant-btn-primary:has-text("輸出成CSV")');
+  // Same blob URL intercept pattern
+  const csvText = await page.evaluate(() => {
+    return new Promise<string>((resolve, reject) => {
+      const origCreateElement = document.createElement.bind(document);
+      document.createElement = function(tag: string, ...rest: unknown[]) {
+        const el = origCreateElement(tag, ...rest as [ElementCreationOptions]);
+        if (tag.toLowerCase() === 'a') {
+          const origClick = el.click.bind(el);
+          (el as HTMLElement & { click: () => void }).click = async function() {
+            const href = (el as HTMLAnchorElement).href;
+            if (href.startsWith('blob:')) {
+              try {
+                const res = await fetch(href);
+                const text = await res.text();
+                resolve(text);
+              } catch (e) {
+                reject(e);
+              }
+              return;
+            }
+            origClick();
+          };
+        }
+        return el;
+      };
+
+      const btn = document.querySelector('button.ant-btn.ant-btn-primary') as HTMLButtonElement | null;
+      if (!btn) {
+        reject(new Error('CSV export button not found'));
+        return;
+      }
+      btn.click();
+
+      setTimeout(() => reject(new Error('Blob URL intercept timeout after 10s')), 10000);
+    });
+  });
+
+  if (!csvText.trim()) throw new Error('Hosting CSV is empty');
   return csvText;
 }
 
