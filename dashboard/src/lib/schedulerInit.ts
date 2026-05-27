@@ -113,6 +113,24 @@ export function initializeSchedulerJobs(): void {
   const config = getScheduleConfig();
 
   registerJobs(config);
+
+  // SoundOn analytics auto-sync — runs every day at 09:00
+  scheduler.register('soundon-analytics-sync', '0 9 * * *', async () => {
+    log.info('Running scheduled SoundOn analytics sync...');
+    try {
+      const res = await fetch('https://localhost:3000/api/analytics/soundon-sync', {
+        method: 'POST',
+        // Self-signed cert — skip verification in internal calls
+        // @ts-expect-error Node 18+ fetch options
+        dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } }),
+      });
+      const data = await res.json() as { daily_imported?: number; episode_imported?: number; errors?: string[] };
+      log.info(data, 'SoundOn analytics sync complete');
+    } catch (err) {
+      log.error({ err: (err as Error).message }, 'SoundOn analytics sync failed');
+    }
+  });
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 }
