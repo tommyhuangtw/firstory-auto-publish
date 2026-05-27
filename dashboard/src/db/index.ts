@@ -80,6 +80,21 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_mentions_significance ON episode_tool_mentions(significance)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category)');
+  safeAlter('ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT NULL');
+
+  // task_comments table
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      author      TEXT    NOT NULL DEFAULT 'hermes',
+      type        TEXT    NOT NULL DEFAULT 'action',
+      content     TEXT    NOT NULL,
+      metadata    TEXT,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)');
 
   // Seed tool families
   try {

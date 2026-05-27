@@ -18,6 +18,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { TaskDrawer } from '@/components/TaskDrawer';
+import type { Task as DrawerTask } from '@/components/TaskDrawer';
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
 type Status = 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
@@ -309,8 +311,8 @@ function EditTaskModal({ task, onClose, onUpdated }: { task: Task; onClose: () =
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, onUpdate, onEdit, isDragging = false }: {
-  task: Task; onUpdate: () => void; onEdit: (task: Task) => void; isDragging?: boolean;
+function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: {
+  task: Task; onUpdate: () => void; onEdit: (task: Task) => void; onOpenDrawer: (task: Task) => void; isDragging?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: `task-${task.id}` });
@@ -354,13 +356,18 @@ function TaskCard({ task, onUpdate, onEdit, isDragging = false }: {
       {/* Priority dot + Title */}
       <div className="flex items-start gap-2 mt-1">
         <span className={`mt-[5px] shrink-0 w-2 h-2 rounded-full ${PRIORITY_DOT[task.priority]}`} />
-        <p className="text-sm font-medium text-zinc-100 leading-snug cursor-pointer flex-1"
-          onClick={() => setExpanded(e => !e)}>
+        <p className="text-sm font-medium text-zinc-100 leading-snug cursor-pointer flex-1 hover:text-white transition-colors"
+          onClick={() => onOpenDrawer(task)}>
           {task.title}
         </p>
         {task.auto_execute === 1 && (
           <span className="text-[10px] text-teal-400 shrink-0 mt-0.5" title="懶懶自動執行">🤖</span>
         )}
+        <button onClick={() => onOpenDrawer(task)}
+          className="shrink-0 mt-0.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors opacity-0 group-hover:opacity-100"
+          title="查看紀錄">
+          💬
+        </button>
       </div>
 
       {/* Badges */}
@@ -413,13 +420,13 @@ function TaskCard({ task, onUpdate, onEdit, isDragging = false }: {
 }
 
 function DragOverlayCard({ task }: { task: Task }) {
-  return <TaskCard task={task} onUpdate={() => {}} onEdit={() => {}} isDragging />;
+  return <TaskCard task={task} onUpdate={() => {}} onEdit={() => {}} onOpenDrawer={() => {}} isDragging />;
 }
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-function KanbanColumn({ col, tasks, onUpdate, onEdit, isOver }: {
-  col: typeof COLUMNS[0]; tasks: Task[]; onUpdate: () => void; onEdit: (task: Task) => void; isOver: boolean;
+function KanbanColumn({ col, tasks, onUpdate, onEdit, onOpenDrawer, isOver }: {
+  col: typeof COLUMNS[0]; tasks: Task[]; onUpdate: () => void; onEdit: (task: Task) => void; onOpenDrawer: (task: Task) => void; isOver: boolean;
 }) {
   const taskIds = tasks.map(t => `task-${t.id}`);
   const reviewCount = col.key === 'review' ? tasks.filter(t => t.completed_by === 'hermes').length : 0;
@@ -452,7 +459,7 @@ function KanbanColumn({ col, tasks, onUpdate, onEdit, isOver }: {
               {isOver ? '放開以移入' : '— 空的 —'}
             </div>
           ) : (
-            tasks.map(task => <TaskCard key={task.id} task={task} onUpdate={onUpdate} onEdit={onEdit} />)
+            tasks.map(task => <TaskCard key={task.id} task={task} onUpdate={onUpdate} onEdit={onEdit} onOpenDrawer={onOpenDrawer} />)
           )}
         </div>
       </SortableContext>
@@ -474,6 +481,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [drawerTask, setDrawerTask] = useState<DrawerTask | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [overColumnKey, setOverColumnKey] = useState<Status | null>(null);
@@ -544,6 +552,7 @@ export default function TasksPage() {
     <div className="min-h-screen bg-[#0f1011] text-zinc-100">
       {showModal && <NewTaskModal onClose={() => setShowModal(false)} onCreated={fetchTasks} />}
       {editingTask && <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onUpdated={fetchTasks} />}
+      <TaskDrawer task={drawerTask} onClose={() => setDrawerTask(null)} onTaskUpdated={fetchTasks} />
 
       {/* Header */}
       <div className="border-b border-zinc-800/60 px-6 py-4">
@@ -592,7 +601,7 @@ export default function TasksPage() {
             {COLUMNS.map(col => (
               <ColumnDropZone key={col.key} colKey={col.key}>
                 <KanbanColumn col={col} tasks={byStatus(col.key)} onUpdate={fetchTasks}
-                  onEdit={setEditingTask} isOver={overColumnKey === col.key} />
+                  onEdit={setEditingTask} onOpenDrawer={t => setDrawerTask(t as DrawerTask)} isOver={overColumnKey === col.key} />
               </ColumnDropZone>
             ))}
           </div>
