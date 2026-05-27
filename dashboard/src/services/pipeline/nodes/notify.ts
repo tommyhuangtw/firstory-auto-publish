@@ -9,6 +9,7 @@ import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { getDb } from '@/db';
 import type { PipelineState } from '../state';
+import { emitEvent } from '@/services/notificationHub';
 
 const log = createChildLogger('pipeline:notify');
 
@@ -86,6 +87,16 @@ export async function notify(state: PipelineState): Promise<Partial<PipelineStat
   } catch (error) {
     log.error({ error: (error as Error).message }, 'Gmail report failed');
   }
+
+  // Notify: episode ready for review
+  emitEvent({
+    type: 'episode.ready_for_review',
+    episodeId: state.episodeId,
+    segmentType: state.segmentType,
+    candidateTitles: state.candidateTitles,
+    urls: { dashboard: `http://localhost:3000/episodes/${state.episodeId}/review` },
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 
   return results;
 }
