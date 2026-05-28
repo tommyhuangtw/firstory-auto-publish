@@ -14,10 +14,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 
 // ── Constants ────────────────────────────────────────────────────────
-const BASE_URL = 'https://localhost:3000';
-
-// Allow self-signed certs for local HTTPS dev server
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const BASE_URL = 'http://localhost:3000';
 const MAX_TASKS_PER_RUN = 3;
 const MAX_TURNS_PER_TASK = 30;
 const CLAUDE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes per task
@@ -152,8 +149,12 @@ async function notifyTelegram(task: Task, status: string, detail: string): Promi
 function execGit(...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 30_000 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr || err.message));
-      else resolve(stdout.trim());
+      if (err) {
+        const detail = [stderr, stdout, err.message].filter(Boolean).join(' | ');
+        reject(new Error(`git ${args[0]} failed: ${detail}`));
+      } else {
+        resolve(stdout.trim());
+      }
     });
   });
 }
@@ -207,9 +208,18 @@ async function createFeatureBranch(taskId: number, title: string): Promise<strin
 
 async function commitChanges(branchName: string, taskId: number, message: string): Promise<boolean> {
   try {
+    // Ensure we're on the expected branch (Claude Code may have switched)
+    const currentBranch = await execGit('branch', '--show-current');
+    if (currentBranch !== branchName) {
+      log('warn', `Expected branch ${branchName}, but on ${currentBranch}. Switching back.`);
+      await execGit('checkout', branchName).catch(() => {
+        log('warn', `Could not switch to ${branchName}, committing on ${currentBranch}`);
+      });
+    }
+
     const status = await execGit('status', '--porcelain');
     if (!status.trim()) {
-      log('info', 'No changes to commit');
+      log('info', 'No changes to commit (Claude Code may have already committed)');
       return false;
     }
     await execGit('add', '-A');
@@ -548,6 +558,15 @@ async function processNewTask(task: Task): Promise<void> {
     // Switch back to main
     await execGit('checkout', 'main').catch(() => {});
     return;
+  }
+
+  // 5a. Ensure we're back on the feature branch (Claude Code may have switched)
+  const currentBranch = await execGit('branch', '--show-current').catch(() => 'unknown');
+  if (currentBranch !== branchName) {
+    log('warn', `After Claude Code: on branch ${currentBranch}, expected ${branchName}. Switching back.`);
+    await execGit('checkout', branchName).catch(() => {
+      log('warn', `Could not switch back to ${branchName}`);
+    });
   }
 
   // 5. Record work log
