@@ -44,7 +44,7 @@ export async function POST(
   }
 
   const VALID_TYPES = ['action', 'research', 'discussion', 'pr', 'branch', 'doc', 'analysis', 'note', 'test'];
-  const VALID_AUTHORS = ['hermes', 'tommy', 'claude-code'];
+  const VALID_AUTHORS = ['hermes', 'tommy', 'claude-code', '小企', '懶懶', '小工'];
   if (!VALID_TYPES.includes(type)) return NextResponse.json({ error: `invalid type: ${type}` }, { status: 400 });
   if (!VALID_AUTHORS.includes(author)) return NextResponse.json({ error: `invalid author` }, { status: 400 });
 

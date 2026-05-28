@@ -13,6 +13,7 @@ import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'fs';
 import { mkdirSync } from 'fs';
 import path from 'path';
 
+import { execFileSync } from 'child_process';
 import {
   type Task,
   type TaskComment,
@@ -343,6 +344,18 @@ async function main() {
     process.exit(0);
   }
 
+  // Remember original branch so we can restore it when done
+  const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+  let originalBranch: string | null = null;
+  try {
+    originalBranch = execFileSync('git', ['branch', '--show-current'], {
+      cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 10_000,
+    }).trim() || null;
+    log('info', `Original branch: ${originalBranch}`);
+  } catch {
+    log('warn', 'Could not determine original branch');
+  }
+
   try {
     // Health check
     if (!await healthCheck()) {
@@ -369,6 +382,22 @@ async function main() {
 
     log('info', `=== Orchestrator finished (mode: ${mode}) ===`);
   } finally {
+    // Restore original branch
+    if (originalBranch) {
+      try {
+        const currentBranch = execFileSync('git', ['branch', '--show-current'], {
+          cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 10_000,
+        }).trim();
+        if (currentBranch !== originalBranch) {
+          log('info', `Restoring branch from ${currentBranch} to ${originalBranch}`);
+          execFileSync('git', ['checkout', originalBranch], {
+            cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 30_000,
+          });
+        }
+      } catch (e) {
+        log('warn', `Failed to restore branch to ${originalBranch}: ${String(e)}`);
+      }
+    }
     releaseLock();
   }
 }

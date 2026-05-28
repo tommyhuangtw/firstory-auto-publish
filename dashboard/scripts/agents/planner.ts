@@ -73,7 +73,13 @@ const PLANNER_CONFIG: AgentConfig = {
 - 競品觀察（同類型 AI podcast / YouTube 頻道）
 - 國外社群風向（X/Twitter、YouTube、Reddit 熱門話題）
 - 受眾成長策略（SEO、社群經營、跨平台分發）
-- 內容日曆規劃（什麼時候適合做什麼主題）`,
+- 內容日曆規劃（什麼時候適合做什麼主題）
+
+## 趨勢判斷準則（重要！）
+- **不要提過時的話題** — 如果一個技術/概念已經存在超過 3-6 個月且不再是社群熱點，就不要當作「新趨勢」來提案
+- **聚焦最近 1-2 個月的發展** — 優先關注最近才發生的突破、發布、或產業動態
+- **判斷話題的生命週期** — 一個話題從「爆紅」到「大家都知道了」通常 2-4 週，要抓住 timing
+- **深度大於廣度** — 與其介紹「什麼是 X」，不如分析「X 已經改變了什麼」「X 的實際應用案例」`,
 };
 
 // ── Data Gathering ──────────────────────────────────────────────────
@@ -136,9 +142,32 @@ function getResearchFiles(): string {
   return files.map(f => `- ${f}`).join('\n');
 }
 
+/** Load trend briefing file if available */
+function getTrendBriefing(): string {
+  const briefingPath = path.join(__dirname, 'trend-briefing.md');
+  if (!existsSync(briefingPath)) return '';
+  try {
+    return readFileSync(briefingPath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
 /** Build full context for the planner */
 async function buildPlannerContext(): Promise<string> {
   const sections: string[] = [];
+
+  // Current date awareness
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  sections.push(`## 現在時間\n${year} 年 ${month} 月 — 所有提案必須基於此時間點，不要提出已過時的話題`);
+
+  // Trend briefing
+  const briefing = getTrendBriefing();
+  if (briefing) {
+    sections.push(briefing);
+  }
 
   // Task board state
   try {
@@ -207,12 +236,15 @@ ${context}
 4. 有可衡量的 success criteria
 
 重點考慮：
-- 哪些 AI 趨勢值得做成 episode？
+- 哪些 AI 趨勢值得做成 episode？（聚焦最近 1-2 個月的發展，不要提半年前的舊話題）
 - 現有流程有什麼可以優化的？
 - 受眾最近可能關心什麼？
 - 有沒有什麼 research 值得先做？
 
-避免提出已經在 task board 上的事情或跟近期提案重複的內容。
+⚠️ 重要限制：
+- 現在是 ${new Date().getFullYear()} 年 ${new Date().getMonth() + 1} 月，不要提出已過時的話題
+- 避免提出已經在 task board 上的事情或跟近期提案重複的內容
+- 如果上方有提供「趨勢簡報」，務必參考其中的方向和避免清單
 
 ## Response Format (STRICT JSON)
 回傳 JSON array:
