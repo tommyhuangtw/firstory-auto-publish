@@ -16,7 +16,28 @@ import { execSync } from 'child_process';
 
 // ── Constants ────────────────────────────────────────────────────────
 const BASE_URL = process.env.DASHBOARD_URL || 'https://localhost:3000';
-const HERMES_WEBHOOK_URL = process.env.HERMES_WEBHOOK_URL || 'http://localhost:8644/webhooks/podcast-events';
+// Telegram Bot API credentials (read from ~/.hermes/.env if not in process.env)
+function loadHermesEnv(): { botToken: string; chatId: string } {
+  let botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  let chatId = process.env.TELEGRAM_CHAT_ID || process.env.TELEGRAM_HOME_CHANNEL || '';
+  if (!botToken || !chatId) {
+    const envPath = path.join(process.env.HOME || '~', '.hermes', '.env');
+    if (existsSync(envPath)) {
+      const lines = readFileSync(envPath, 'utf-8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (key === 'TELEGRAM_BOT_TOKEN' && !botToken) botToken = val;
+        if ((key === 'TELEGRAM_HOME_CHANNEL' || key === 'TELEGRAM_CHAT_ID') && !chatId) chatId = val;
+      }
+    }
+  }
+  return { botToken, chatId };
+}
+const _telegramCreds = loadHermesEnv();
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 
@@ -204,19 +225,28 @@ export async function createAlert(
 }
 
 // ── Telegram ─────────────────────────────────────────────────────────
-export async function sendTelegram(message: string, event?: string): Promise<void> {
+export async function sendTelegram(message: string, _event?: string): Promise<void> {
+  const { botToken, chatId } = _telegramCreds;
+  if (!botToken || !chatId) {
+    log('warn', 'Telegram credentials not found (TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL)');
+    return;
+  }
   try {
-    await fetch(HERMES_WEBHOOK_URL, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message,
-        event: event || 'agent.notification',
-        data: { timestamp: new Date().toISOString() },
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
       }),
     });
-  } catch {
-    log('warn', 'Failed to send Telegram notification');
+    if (!res.ok) {
+      const body = await res.text();
+      log('warn', `Telegram API error ${res.status}: ${body.slice(0, 200)}`);
+    }
+  } catch (e) {
+    log('warn', `Failed to send Telegram: ${String(e)}`);
   }
 }
 
