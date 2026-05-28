@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
   }
 
-  const validStatuses = ['todo', 'in_progress', 'done', 'cancelled'];
+  const validStatuses = ['todo', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
   const validPriorities = ['low', 'medium', 'high', 'urgent'];
   const validCategories = ['content', 'infra', 'social_media', 'youtube', 'ig', 'threads', 'research', 'ops', 'growth'];
 

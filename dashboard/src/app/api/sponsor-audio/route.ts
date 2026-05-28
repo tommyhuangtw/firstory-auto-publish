@@ -111,6 +111,7 @@ interface SponsorPreset {
   audio_duration_sec: number | null;
   is_active: number;
   expires_at: string | null;
+  scheduled_dates: string | null;
   ad_preset_id: number | null;
   created_at: string;
 }

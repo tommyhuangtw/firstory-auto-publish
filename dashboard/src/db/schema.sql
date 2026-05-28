@@ -385,3 +385,18 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at) WHERE scheduled_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+
+-- ── Knowledge Base (Research Document Index) ─────────────────────────
+CREATE TABLE IF NOT EXISTS knowledge_docs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename    TEXT    UNIQUE NOT NULL,
+  title       TEXT    NOT NULL,
+  category    TEXT    NOT NULL DEFAULT 'research',
+  task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+  word_count  INTEGER,
+  created_at  TEXT    DEFAULT (datetime('now')),
+  indexed_at  TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_docs_category ON knowledge_docs(category);
+CREATE INDEX IF NOT EXISTS idx_knowledge_docs_task ON knowledge_docs(task_id);

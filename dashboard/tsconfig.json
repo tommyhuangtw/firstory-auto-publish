@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "data", "scripts/test-presentation-pipeline.ts", "scripts/test-topic-pipeline.ts", "scripts/test-topic-short.ts"]
 }

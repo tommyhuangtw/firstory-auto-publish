@@ -22,7 +22,7 @@ import { TaskDrawer } from '@/components/TaskDrawer';
 import type { Task as DrawerTask } from '@/components/TaskDrawer';
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
-type Status = 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
+type Status = 'todo' | 'in_progress' | 'blocked' | 'review' | 'done' | 'cancelled';
 type Category = 'content' | 'infra' | 'social_media' | 'youtube' | 'ig' | 'threads' | 'research' | 'ops' | 'growth';
 
 interface Task {
@@ -46,6 +46,7 @@ interface Task {
 const COLUMNS: { key: Status; label: string; dot: string; border: string; bg: string }[] = [
   { key: 'todo',        label: 'Todo',        dot: 'bg-zinc-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
   { key: 'in_progress', label: 'In Progress', dot: 'bg-blue-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
+  { key: 'blocked',     label: 'Blocked',     dot: 'bg-red-500',    border: 'border-red-500/30',    bg: 'bg-red-500/5' },
   { key: 'review',      label: 'Review',      dot: 'bg-amber-400',  border: 'border-amber-500/30',  bg: 'bg-amber-500/5' },
   { key: 'done',        label: 'Done',        dot: 'bg-green-500',  border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
   { key: 'cancelled',   label: 'Cancelled',   dot: 'bg-zinc-700',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/30' },
@@ -319,7 +320,7 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
 
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isSortableDragging ? 0.35 : 1 };
 
-  const isHermesReview = task.status === 'review' && task.completed_by === 'hermes';
+  const isAgentReview = task.status === 'review' && (task.completed_by === 'hermes' || task.completed_by === 'claude-code');
   const night = isNighttime(task.updated_at);
 
   const handleApprove = async () => {
@@ -333,7 +334,7 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
   return (
     <div ref={setNodeRef} style={style}
       className={`group relative rounded-lg p-3 border transition-all duration-150
-        ${isHermesReview
+        ${isAgentReview
           ? 'bg-amber-500/8 border-amber-500/30 hover:border-amber-400/50'
           : 'bg-zinc-800/60 border-zinc-700/40 hover:border-zinc-600/60 hover:bg-zinc-800/80'}
         ${isDragging ? 'shadow-2xl shadow-black/60 rotate-1 scale-[1.02]' : ''}
@@ -343,8 +344,8 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
       <div {...attributes} {...listeners}
         className="absolute top-0 left-0 right-0 h-6 cursor-grab active:cursor-grabbing rounded-t-lg" />
 
-      {/* Hermes review banner */}
-      {isHermesReview && (
+      {/* Agent review banner */}
+      {isAgentReview && (
         <div className="flex items-center gap-1.5 mb-2 text-[10px] text-amber-400/80">
           <span>{night ? '🌙' : '🤖'}</span>
           <span className="font-medium">懶懶完成</span>
@@ -353,11 +354,12 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
         </div>
       )}
 
-      {/* Priority dot + Title */}
+      {/* Priority dot + ID + Title */}
       <div className="flex items-start gap-2 mt-1">
         <span className={`mt-[5px] shrink-0 w-2 h-2 rounded-full ${PRIORITY_DOT[task.priority]}`} />
         <p className="text-sm font-medium text-zinc-100 leading-snug cursor-pointer flex-1 hover:text-white transition-colors"
           onClick={() => onOpenDrawer(task)}>
+          <span className="text-[10px] text-zinc-500 font-mono mr-1">#{task.id}</span>
           {task.title}
         </p>
         {task.auto_execute === 1 && (
@@ -401,7 +403,7 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
             {new Date(task.created_at).toLocaleDateString('zh-TW')} · {task.created_by}
           </p>
           <div className="flex gap-3 items-center flex-wrap">
-            {isHermesReview && (
+            {isAgentReview && (
               <button onClick={handleApprove}
                 className="text-[10px] px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 transition-colors font-medium">
                 ✅ Approve
@@ -429,7 +431,7 @@ function KanbanColumn({ col, tasks, onUpdate, onEdit, onOpenDrawer, isOver }: {
   col: typeof COLUMNS[0]; tasks: Task[]; onUpdate: () => void; onEdit: (task: Task) => void; onOpenDrawer: (task: Task) => void; isOver: boolean;
 }) {
   const taskIds = tasks.map(t => `task-${t.id}`);
-  const reviewCount = col.key === 'review' ? tasks.filter(t => t.completed_by === 'hermes').length : 0;
+  const reviewCount = col.key === 'review' ? tasks.filter(t => t.completed_by === 'hermes' || t.completed_by === 'claude-code').length : 0;
 
   return (
     <div className={`flex flex-col rounded-xl border ${col.border} ${col.bg} transition-colors duration-150
@@ -501,7 +503,7 @@ export default function TasksPage() {
   const filtered = filterCategory === 'all' ? tasks : tasks.filter(t => t.category === filterCategory);
   const byStatus = (status: Status) => filtered.filter(t => t.status === status);
 
-  const pendingReview = tasks.filter(t => t.status === 'review' && t.completed_by === 'hermes').length;
+  const pendingReview = tasks.filter(t => t.status === 'review' && (t.completed_by === 'hermes' || t.completed_by === 'claude-code')).length;
 
   const handleDragStart = (event: DragStartEvent) => {
     const id = Number(String(event.active.id).replace('task-', ''));

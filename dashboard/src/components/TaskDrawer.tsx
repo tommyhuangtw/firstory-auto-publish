@@ -19,7 +19,7 @@ export interface CommentMeta {
 export interface TaskComment {
   id: number;
   task_id: number;
-  author: 'hermes' | 'tommy';
+  author: 'hermes' | 'tommy' | 'claude-code';
   type: CommentType;
   content: string;
   metadata: string | null; // JSON string
@@ -42,6 +42,28 @@ export interface Task {
   created_at: string;
   updated_at: string;
   completed_at?: string;
+}
+
+// ─── Linkify ──────────────────────────────────────────────────────────────────
+
+const URL_REGEX = /(https?:\/\/[^\s<]+)/g;
+
+function Linkify({ children, className }: { children: string; className?: string }) {
+  const parts = children.split(URL_REGEX);
+  return (
+    <span className={className}>
+      {parts.map((part, i) =>
+        URL_REGEX.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all">
+            {part.replace(/^https?:\/\/localhost:\d+\/api\/research\//, '📄 ')}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,20 +105,21 @@ function formatTime(dateStr: string): string {
 function CommentItem({ comment }: { comment: TaskComment }) {
   const meta = parseMeta(comment.metadata);
   const typeMeta = TYPE_META[comment.type] ?? TYPE_META.note;
-  const isHermes = comment.author === 'hermes';
+  const isBot = comment.author === 'hermes' || comment.author === 'claude-code';
+  const authorDisplay = isBot ? '懶懶' : 'Tommy';
 
   return (
     <div className="flex gap-3 group">
       {/* Avatar */}
       <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mt-0.5
-        ${isHermes ? 'bg-indigo-600/30 text-indigo-300' : 'bg-zinc-700 text-zinc-300'}`}>
-        {isHermes ? '🤖' : '👤'}
+        ${isBot ? 'bg-indigo-600/30 text-indigo-300' : 'bg-zinc-700 text-zinc-300'}`}>
+        {isBot ? '🤖' : '👤'}
       </div>
 
       <div className="flex-1 min-w-0 space-y-1">
         {/* Header */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-medium text-zinc-300">{isHermes ? '懶懶' : 'Tommy'}</span>
+          <span className="text-xs font-medium text-zinc-300">{authorDisplay}</span>
           <span className={`text-[10px] ${typeMeta.color}`}>{typeMeta.icon} {typeMeta.label}</span>
           <span className="text-[10px] text-zinc-600 ml-auto">{formatTime(comment.created_at)}</span>
         </div>
@@ -141,7 +164,7 @@ function CommentItem({ comment }: { comment: TaskComment }) {
             ${comment.type === 'discussion' ? 'text-amber-200/80' : 'text-zinc-300'}
             ${comment.type === 'research' || comment.type === 'analysis' || comment.type === 'test' ? 'bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30 text-xs' : ''}
           `}>
-            {comment.content}
+            <Linkify>{comment.content}</Linkify>
           </div>
         )}
       </div>
@@ -291,6 +314,7 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
                 ${task.status === 'review'      ? 'bg-amber-500/15 text-amber-400' :
                   task.status === 'done'        ? 'bg-green-500/15 text-green-400' :
                   task.status === 'in_progress' ? 'bg-blue-500/15 text-blue-400'  :
+                  task.status === 'blocked'     ? 'bg-red-500/15 text-red-400'    :
                   'bg-zinc-700/60 text-zinc-400'}`}>
                 {task.status.replace('_', ' ')}
               </span>
@@ -317,9 +341,29 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
             )}
 
             {task.result_notes && (
-              <div className="p-3 rounded-lg bg-green-500/8 border border-green-500/20">
-                <p className="text-[10px] text-green-500/70 mb-1 font-medium">📋 執行結果</p>
-                <p className="text-xs text-green-200/80 whitespace-pre-wrap leading-relaxed">{task.result_notes}</p>
+              <div className={`p-3 rounded-lg border ${
+                task.status === 'blocked'
+                  ? 'bg-red-500/8 border-red-500/20'
+                  : task.status === 'review'
+                    ? 'bg-amber-500/8 border-amber-500/20'
+                    : 'bg-green-500/8 border-green-500/20'
+              }`}>
+                <p className={`text-[10px] mb-1.5 font-semibold ${
+                  task.status === 'blocked'
+                    ? 'text-red-400'
+                    : task.status === 'review'
+                      ? 'text-amber-400'
+                      : 'text-green-500/70'
+                }`}>
+                  {task.status === 'blocked' ? '⛔ 需要你處理' : task.status === 'review' ? '📋 等待你 Review' : '📋 執行結果'}
+                </p>
+                <p className={`text-xs whitespace-pre-wrap leading-relaxed ${
+                  task.status === 'blocked'
+                    ? 'text-red-200/80'
+                    : task.status === 'review'
+                      ? 'text-amber-200/80'
+                      : 'text-green-200/80'
+                }`}><Linkify>{task.result_notes}</Linkify></p>
               </div>
             )}
 

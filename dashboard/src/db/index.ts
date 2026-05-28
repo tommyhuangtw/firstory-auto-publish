@@ -125,6 +125,22 @@ export function getDb(): Database.Database {
   safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_yt_video_composite ON youtube_video_stats(video_id, snapshot_date)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_yt_video_date ON youtube_video_stats(snapshot_date)');
 
+  // Knowledge docs table
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS knowledge_docs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename    TEXT    UNIQUE NOT NULL,
+      title       TEXT    NOT NULL,
+      category    TEXT    NOT NULL DEFAULT 'research',
+      task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      word_count  INTEGER,
+      created_at  TEXT    DEFAULT (datetime('now')),
+      indexed_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_knowledge_docs_category ON knowledge_docs(category)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_knowledge_docs_task ON knowledge_docs(task_id)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');
