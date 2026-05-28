@@ -251,9 +251,14 @@ async function executeAvailableTasks(sessionId: string): Promise<void> {
   let stopEarly = false;
 
   // Resumable tasks first
-  const resumable = await findResumableTasks();
-  if (resumable.length > 0) {
-    log('info', `Found ${resumable.length} resumable task(s)`);
+  let resumable: Array<{ task: Task; userReply: string; branch: string }> = [];
+  try {
+    resumable = await findResumableTasks();
+    if (resumable.length > 0) {
+      log('info', `Found ${resumable.length} resumable task(s)`);
+    }
+  } catch (e) {
+    log('warn', `Failed to find resumable tasks: ${String(e)}`);
   }
 
   for (const { task, userReply, branch } of resumable) {

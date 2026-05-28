@@ -24,6 +24,7 @@ import {
   log,
   generateSessionId,
   callClaude,
+  extractJson,
   logDiscussion,
   createProposal,
   updateProposalDecision,
@@ -219,9 +220,9 @@ Respond with ONLY a JSON object:
   // 7. Parse verdict
   let result: ReviewResult;
   try {
-    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found');
-    result = JSON.parse(jsonMatch[0]) as ReviewResult;
+    const jsonStr = extractJson(response.content);
+    if (!jsonStr) throw new Error('No JSON found');
+    result = JSON.parse(jsonStr) as ReviewResult;
     // Validate
     if (!['approved', 'needs_changes', 'needs_tommy'].includes(result.verdict)) {
       throw new Error(`Invalid verdict: ${result.verdict}`);
@@ -377,9 +378,9 @@ ${proposalList}
   }> = [];
 
   try {
-    const jsonMatch = response.content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('No JSON found');
-    rawDecisions = JSON.parse(jsonMatch[0]);
+    const jsonStr = extractJson(response.content);
+    if (!jsonStr) throw new Error('No JSON found');
+    rawDecisions = JSON.parse(jsonStr);
   } catch (e) {
     log('warn', `Failed to parse proposal decisions: ${String(e)}`);
     // Mark all as needs_tommy
@@ -408,7 +409,7 @@ ${proposalList}
         const taskId = await createTask(
           proposal.title,
           proposal.description,
-          proposal.proposal_type === 'research' ? 'research' : 'dev',
+          proposal.proposal_type === 'research' ? 'research' : proposal.proposal_type === 'content' ? 'content' : 'infra',
           raw.ticketPriority || proposal.priority_suggestion || 'medium',
           true, // auto_execute
           '懶懶',

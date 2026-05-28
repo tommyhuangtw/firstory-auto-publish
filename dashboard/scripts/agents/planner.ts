@@ -21,6 +21,7 @@ import {
   log,
   generateSessionId,
   callClaude,
+  extractJson,
   logDiscussion,
   createProposal,
   createAlert,
@@ -233,9 +234,9 @@ ${context}
   // Parse proposals
   let proposals: Proposal[] = [];
   try {
-    const jsonMatch = response.content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('No JSON array found');
-    proposals = JSON.parse(jsonMatch[0]) as Proposal[];
+    const jsonStr = extractJson(response.content);
+    if (!jsonStr) throw new Error(`No JSON found in response: ${response.content.slice(0, 200)}`);
+    proposals = JSON.parse(jsonStr) as Proposal[];
     if (!Array.isArray(proposals)) throw new Error('Not an array');
   } catch (e) {
     log('warn', `Failed to parse proposals: ${String(e)}`);

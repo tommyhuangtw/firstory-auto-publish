@@ -5,21 +5,20 @@
  * and prompt assembly for all agents (懶懶 PM, 小企 Planner, 小工 Engineer).
  */
 
+// Allow self-signed certs for local dev server (https://localhost:3000)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import { getDb } from '@/db';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, unlinkSync } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { execSync } from 'child_process';
 
 // ── Constants ────────────────────────────────────────────────────────
-const BASE_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
+const BASE_URL = process.env.DASHBOARD_URL || 'https://localhost:3000';
 const HERMES_WEBHOOK_URL = process.env.HERMES_WEBHOOK_URL || 'http://localhost:8644/webhooks/podcast-events';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
-
-// Agent model — use a capable model for agent reasoning
-const AGENT_MODEL = 'google/gemini-2.5-flash';
-const COMPACT_MODEL = 'google/gemini-2.5-flash';  // cheaper model for memory compaction
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface AgentConfig {
@@ -69,47 +68,58 @@ export function generateSessionId(): string {
   return randomUUID();
 }
 
-// ── LLM Call (via OpenRouter) ────────────────────────────────────────
+// ── LLM Call (via Claude Code CLI — uses Claude Max subscription) ─────
 export async function callClaude(
   systemPrompt: string,
   userPrompt: string,
-  options?: { model?: string; maxTokens?: number; temperature?: number }
+  _options?: { model?: string; maxTokens?: number; temperature?: number }
 ): Promise<LLMResponse> {
-  const model = options?.model || AGENT_MODEL;
   const start = Date.now();
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: options?.maxTokens || 4096,
-      temperature: options?.temperature ?? 0.7,
-    }),
-  });
+  // Combine system + user prompt into a single prompt file
+  // Claude CLI -p mode treats the entire input as the user message
+  const tmpFile = path.join(DASHBOARD_DIR, 'data', `agent-prompt-${Date.now()}.txt`);
+  const combined = `<instructions>\n${systemPrompt}\n</instructions>\n\n${userPrompt}`;
+  writeFileSync(tmpFile, combined, 'utf-8');
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OpenRouter call failed (${res.status}): ${text}`);
+  try {
+    const output = execSync(
+      `cat "${tmpFile}" | claude -p --output-format text --max-turns 1`,
+      {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        timeout: 180_000,  // 3 minutes
+        env: {
+          ...process.env,
+          NODE_TLS_REJECT_UNAUTHORIZED: '0',
+          CLAUDECODE: '',  // allow nested CLI invocation
+        },
+      }
+    ).trim();
+
+    return {
+      content: output,
+      tokenUsage: 0,  // CLI doesn't report token usage
+      durationMs: Date.now() - start,
+    };
+  } finally {
+    try { unlinkSync(tmpFile); } catch {}
   }
+}
 
-  const data = await res.json() as {
-    choices: Array<{ message: { content: string } }>;
-    usage?: { total_tokens?: number };
-  };
-
-  return {
-    content: data.choices[0]?.message?.content || '',
-    tokenUsage: data.usage?.total_tokens || 0,
-    durationMs: Date.now() - start,
-  };
+// ── JSON Extraction (handles markdown code fences) ───────────────────
+/** Extract JSON array or object from LLM response, stripping markdown fences */
+export function extractJson(raw: string): string | null {
+  let cleaned = raw;
+  // Strip markdown code fences
+  const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (codeBlockMatch) cleaned = codeBlockMatch[1];
+  // Try array first, then object
+  const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+  if (arrayMatch) return arrayMatch[0];
+  const objMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (objMatch) return objMatch[0];
+  return null;
 }
 
 // ── DB Logging: agent_discussions ────────────────────────────────────
@@ -260,6 +270,8 @@ export async function getRecentEpisodes(limit: number = 5): Promise<Array<{
   }>;
 }
 
+const VALID_CATEGORIES = ['content', 'infra', 'social_media', 'youtube', 'ig', 'threads', 'research', 'ops', 'growth'];
+
 export async function createTask(
   title: string,
   description: string,
@@ -268,18 +280,20 @@ export async function createTask(
   autoExecute: boolean = true,
   createdBy: string = 'agent'
 ): Promise<number> {
-  const data = await apiFetch<{ task: { id: number } }>('/api/tasks', {
+  // Ensure category is valid
+  const safeCategory = VALID_CATEGORIES.includes(category) ? category : 'ops';
+  const data = await apiFetch<{ id: number }>('/api/tasks', {
     method: 'POST',
     body: JSON.stringify({
       title,
       description,
-      category,
+      category: safeCategory,
       priority,
       auto_execute: autoExecute ? 1 : 0,
       created_by: createdBy,
     }),
   });
-  return data.task.id;
+  return data.id;
 }
 
 export async function updateTask(id: number, body: Record<string, unknown>): Promise<void> {
@@ -429,7 +443,7 @@ async function compactMemory(oldSummary: string, newInfo: string): Promise<strin
     const result = await callClaude(
       'You are a memory compaction system. Merge the old summary with new information into a single concise summary (max 500 characters, Traditional Chinese preferred). Keep the most important and recent facts. Drop outdated or redundant info.',
       `Old summary:\n${oldSummary}\n\nNew information:\n${newInfo}`,
-      { model: COMPACT_MODEL, maxTokens: 256, temperature: 0.3 }
+      { maxTokens: 256, temperature: 0.3 }
     );
     return result.content.slice(0, 500);
   } catch {
@@ -451,13 +465,13 @@ Return a JSON array of objects: [{"topic": "short key", "memoryType": "lesson|pr
 Only include genuinely useful insights. Return [] if nothing notable.
 Use Traditional Chinese for content.`,
       `Work description: ${workDescription}\n\nResult:\n${workResult.slice(0, 2000)}`,
-      { model: COMPACT_MODEL, maxTokens: 512, temperature: 0.3 }
+      { maxTokens: 512, temperature: 0.3 }
     );
 
     // Parse JSON from response
-    const jsonMatch = result.content.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const lessons = JSON.parse(jsonMatch[0]) as Array<{ topic: string; memoryType: string; content: string }>;
+    const jsonStr = extractJson(result.content);
+    if (jsonStr) {
+      const lessons = JSON.parse(jsonStr) as Array<{ topic: string; memoryType: string; content: string }>;
       if (Array.isArray(lessons) && lessons.length > 0) {
         await updateAgentMemory(agentId, lessons);
         log('info', `Agent ${agentId} learned ${lessons.length} lesson(s)`);
