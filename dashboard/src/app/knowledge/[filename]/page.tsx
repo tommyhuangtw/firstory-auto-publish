@@ -29,7 +29,7 @@ export default async function KnowledgeDetailPage({
   const { filename } = await params;
   const decoded = decodeURIComponent(filename);
 
-  if (!/^[\w\-.]+\.md$/.test(decoded)) notFound();
+  if (!/^[\w\u4e00-\u9fff\-.]+\.md$/.test(decoded)) notFound();
 
   const doc = getDocByFilename(decoded);
   const content = getDocContent(decoded);
