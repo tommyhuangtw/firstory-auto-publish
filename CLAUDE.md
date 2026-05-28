@@ -20,11 +20,14 @@
 3. **Surgical Changes** — 只改必要的部分。不「順便改善」旁邊的 code/comments/formatting。只清理自己造成的 orphans。
 4. **Goal-Driven Execution** — 把模糊需求轉成可驗證的 success criteria，loop 直到驗證通過。
 
-### 開發完成前必須驗證
-- 每次開發完成後，**必須先跑測試確認沒問題**才能讓使用者 review
+### 開發完成前必須驗證（自己測、不要問）
+- 每次開發完成後，**必須自己跑完整測試**，確認沒問題才能呈現給使用者
+- 這是資深工程師的基本素養 — **不要問使用者要不要測試，直接測**
 - 最低驗證標準：`cd dashboard && npm run build` 編譯通過
 - 有改動 pipeline/service 邏輯時，用 `scripts/` 下的測試腳本跑一次 smoke test
+- 新增 agent/script 時，必須跑 import 驗證 + 實際功能 smoke test
 - 不要只說「應該沒問題」— 要實際執行、看到結果、確認正確
+- 不要只驗證 build — 要跑實際 use case 驗證功能是否正常運作
 
 ### Task Board Ticket 流程
 - Task Board 狀態流程：`todo` → `in_progress` → `review` → `done`（另有 `blocked`、`cancelled`）

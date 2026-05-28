@@ -400,3 +400,96 @@ CREATE TABLE IF NOT EXISTS knowledge_docs (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_docs_category ON knowledge_docs(category);
 CREATE INDEX IF NOT EXISTS idx_knowledge_docs_task ON knowledge_docs(task_id);
+
+-- ── Content Summaries (Task #10: Podcast & YouTube content summarization) ─────
+CREATE TABLE IF NOT EXISTS content_summaries (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  url         TEXT    NOT NULL,
+  source_type TEXT    NOT NULL,           -- 'youtube' | 'podcast_rss' | 'podcast_episode'
+  title       TEXT,
+  channel_name TEXT,                      -- channel or podcast name
+  thumbnail_url TEXT,
+  transcript  TEXT,                       -- raw transcript/description text
+  summary_json TEXT,                      -- JSON: structured AI analysis result
+  status      TEXT    NOT NULL DEFAULT 'pending',  -- 'pending' | 'processing' | 'completed' | 'failed'
+  error_message TEXT,
+  cost_usd    REAL    DEFAULT 0,
+  created_at  TEXT    DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_summaries_status ON content_summaries(status);
+CREATE INDEX IF NOT EXISTS idx_content_summaries_type ON content_summaries(source_type);
+
+-- ── Multi-Agent System ──────────────────────────────────────────────
+
+-- Agent discussions: conversation log between agents within a session
+CREATE TABLE IF NOT EXISTS agent_discussions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id       INTEGER REFERENCES tasks(id),
+  session_id    TEXT    NOT NULL,           -- groups messages in same orchestrator run
+  agent_id      TEXT    NOT NULL,           -- 'pm' | 'planner' | 'engineer'
+  agent_name    TEXT    NOT NULL,           -- '懶懶' | '小企' | '小工'
+  message_type  TEXT    NOT NULL,           -- 'proposal' | 'review' | 'decision' | 'execution' | 'report'
+  content       TEXT    NOT NULL,
+  token_usage   INTEGER,
+  duration_ms   INTEGER,
+  created_at    TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_disc_session ON agent_discussions(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_disc_task ON agent_discussions(task_id);
+CREATE INDEX IF NOT EXISTS idx_agent_disc_agent ON agent_discussions(agent_id);
+
+-- Agent proposals: any agent can propose ideas for PM to evaluate
+CREATE TABLE IF NOT EXISTS agent_proposals (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id          TEXT    NOT NULL,
+  proposed_by         TEXT    NOT NULL,     -- 'planner' | 'engineer' | 'pm'
+  proposal_type       TEXT    NOT NULL,     -- 'feature' | 'optimization' | 'research' | 'bugfix' | 'content'
+  title               TEXT    NOT NULL,
+  description         TEXT    NOT NULL,
+  priority_suggestion TEXT,                 -- proposer's suggested priority
+  pm_decision         TEXT,                 -- 'approved' | 'rejected' | 'needs_tommy' | 'deferred'
+  pm_reasoning        TEXT,                 -- PM's decision rationale
+  task_id             INTEGER,              -- created task ID if approved
+  created_at          TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_prop_decision ON agent_proposals(pm_decision);
+CREATE INDEX IF NOT EXISTS idx_agent_prop_by ON agent_proposals(proposed_by);
+
+-- Alerts: notifications requiring Tommy's attention (Dashboard + Telegram)
+CREATE TABLE IF NOT EXISTS alerts (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_agent        TEXT    NOT NULL,     -- 'pm' | 'planner' | 'engineer'
+  alert_type          TEXT    NOT NULL,     -- 'needs_decision' | 'review_ready' | 'proposal' | 'error' | 'daily_summary'
+  title               TEXT    NOT NULL,
+  description         TEXT    NOT NULL,
+  urgency             TEXT    NOT NULL DEFAULT 'normal',  -- 'low' | 'normal' | 'high' | 'urgent'
+  status              TEXT    NOT NULL DEFAULT 'unread',  -- 'unread' | 'read' | 'actioned' | 'dismissed'
+  related_task_id     INTEGER,
+  related_proposal_id INTEGER,
+  telegram_sent       INTEGER DEFAULT 0,
+  created_at          TEXT    DEFAULT (datetime('now')),
+  actioned_at         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+CREATE INDEX IF NOT EXISTS idx_alerts_urgency ON alerts(urgency);
+CREATE INDEX IF NOT EXISTS idx_alerts_agent ON alerts(source_agent);
+
+-- Agent memory: per-agent persistent knowledge with LSM-tree compaction
+CREATE TABLE IF NOT EXISTS agent_memory (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id        TEXT    NOT NULL,         -- 'pm' | 'planner' | 'engineer'
+  memory_type     TEXT    NOT NULL,         -- 'lesson' | 'preference' | 'pattern' | 'context'
+  topic           TEXT    NOT NULL,         -- memory key for merge
+  current_summary TEXT    NOT NULL,         -- ≤500 chars, LSM-compacted
+  summary_version INTEGER DEFAULT 1,
+  last_updated    TEXT    DEFAULT (datetime('now')),
+  UNIQUE(agent_id, topic)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_mem_agent ON agent_memory(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_mem_updated ON agent_memory(last_updated);

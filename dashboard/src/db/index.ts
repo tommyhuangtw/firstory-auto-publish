@@ -81,6 +81,7 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category)');
   safeAlter('ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT NULL');
+  safeAlter('ALTER TABLE tasks ADD COLUMN images TEXT DEFAULT NULL');
 
   // task_comments table
   _db!.exec(`
@@ -140,6 +141,99 @@ export function getDb(): Database.Database {
   `);
   safeIndex('CREATE INDEX IF NOT EXISTS idx_knowledge_docs_category ON knowledge_docs(category)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_knowledge_docs_task ON knowledge_docs(task_id)');
+
+  // Content summaries table (Task #10)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS content_summaries (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      url           TEXT    NOT NULL,
+      source_type   TEXT    NOT NULL,
+      title         TEXT,
+      channel_name  TEXT,
+      thumbnail_url TEXT,
+      transcript    TEXT,
+      summary_json  TEXT,
+      status        TEXT    NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      cost_usd      REAL    DEFAULT 0,
+      created_at    TEXT    DEFAULT (datetime('now')),
+      completed_at  TEXT
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_status ON content_summaries(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_type ON content_summaries(source_type)');
+
+  // Multi-Agent System tables
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS agent_discussions (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       INTEGER REFERENCES tasks(id),
+      session_id    TEXT    NOT NULL,
+      agent_id      TEXT    NOT NULL,
+      agent_name    TEXT    NOT NULL,
+      message_type  TEXT    NOT NULL,
+      content       TEXT    NOT NULL,
+      token_usage   INTEGER,
+      duration_ms   INTEGER,
+      created_at    TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_disc_session ON agent_discussions(session_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_disc_task ON agent_discussions(task_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_disc_agent ON agent_discussions(agent_id)');
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS agent_proposals (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id          TEXT    NOT NULL,
+      proposed_by         TEXT    NOT NULL,
+      proposal_type       TEXT    NOT NULL,
+      title               TEXT    NOT NULL,
+      description         TEXT    NOT NULL,
+      priority_suggestion TEXT,
+      pm_decision         TEXT,
+      pm_reasoning        TEXT,
+      task_id             INTEGER,
+      created_at          TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_prop_decision ON agent_proposals(pm_decision)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_prop_by ON agent_proposals(proposed_by)');
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS alerts (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_agent        TEXT    NOT NULL,
+      alert_type          TEXT    NOT NULL,
+      title               TEXT    NOT NULL,
+      description         TEXT    NOT NULL,
+      urgency             TEXT    NOT NULL DEFAULT 'normal',
+      status              TEXT    NOT NULL DEFAULT 'unread',
+      related_task_id     INTEGER,
+      related_proposal_id INTEGER,
+      telegram_sent       INTEGER DEFAULT 0,
+      created_at          TEXT    DEFAULT (datetime('now')),
+      actioned_at         TEXT
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_alerts_urgency ON alerts(urgency)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_alerts_agent ON alerts(source_agent)');
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS agent_memory (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id        TEXT    NOT NULL,
+      memory_type     TEXT    NOT NULL,
+      topic           TEXT    NOT NULL,
+      current_summary TEXT    NOT NULL,
+      summary_version INTEGER DEFAULT 1,
+      last_updated    TEXT    DEFAULT (datetime('now')),
+      UNIQUE(agent_id, topic)
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_mem_agent ON agent_memory(agent_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_mem_updated ON agent_memory(last_updated)');
 
   // Seed tool families
   try {
