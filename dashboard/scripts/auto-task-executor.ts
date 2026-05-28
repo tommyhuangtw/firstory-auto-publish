@@ -572,9 +572,23 @@ async function processNewTask(task: Task): Promise<void> {
   // 5. Record work log
   await addComment(task.id, 'action', `工作紀錄:\n${outputForComment}`);
 
-  // 6. Check if output indicates a blocker
+  // 6. Check if output indicates a blocker or max turns
   const outputLower = result.output.toLowerCase();
+  const hitMaxTurns = outputLower.includes('max turns') || outputLower.includes('reached max');
   const isBlocked = outputLower.includes('blocker') || outputLower.includes('blocked') || outputLower.includes('cannot resolve');
+
+  if (hitMaxTurns) {
+    log('warn', `Task #${task.id}: hit max turns limit`);
+    await addComment(task.id, 'note', `⚠️ Claude Code 達到最大回合數 (${MAX_TURNS_PER_TASK} turns)，任務可能未完成。\n\n## Pickup Context\n- Branch: ${branchName}\n- 恢復方式: git checkout ${branchName}\n- 查看上方工作紀錄了解進度`);
+    await commitChanges(branchName, task.id, 'partial progress (max turns)');
+    await updateTask(task.id, {
+      status: 'blocked',
+      result_notes: `Hit max turns (${MAX_TURNS_PER_TASK}) — 需要: 確認進度並決定是否繼續`,
+    });
+    await notifyTelegram(task, 'blocked', `⚠️ 達到最大回合數，任務可能未完成\nBranch: ${branchName}`);
+    await execGit('checkout', 'main').catch(() => {});
+    return;
+  }
 
   if (isBlocked && !outputLower.includes('resolved')) {
     // Extract blocker context from output
@@ -615,7 +629,30 @@ async function processNewTask(task: Task): Promise<void> {
     await postResearchWithLink(task.id, task.title, result.output);
   }
 
-  // 10. Move to review
+  // 10. Verify actual work was produced before moving to review
+  if (task.category !== 'research') {
+    // Dev tasks: check if branch has any commits ahead of main
+    const commitsAhead = await execGit('rev-list', '--count', `main..${branchName}`).catch(() => '0');
+    const hasCommits = parseInt(commitsAhead) > 0;
+
+    // Also check if there are any file changes vs main
+    const diffStat = await execGit('diff', '--stat', `main..${branchName}`).catch(() => '');
+    const hasChanges = diffStat.trim().length > 0;
+
+    if (!hasCommits && !hasChanges) {
+      log('warn', `Task #${task.id}: no commits or changes on branch ${branchName}. Not moving to review.`);
+      await addComment(task.id, 'note', `⚠️ Branch ${branchName} 沒有任何 commits 或程式碼變更。Claude Code 可能未實際執行修改。\n\n請檢查上方工作紀錄，決定是否需要重新執行。`);
+      await updateTask(task.id, {
+        status: 'blocked',
+        result_notes: `No code changes produced — 需要: 確認是否需要重跑`,
+      });
+      await notifyTelegram(task, 'blocked', `⚠️ 沒有產出程式碼變更\nBranch: ${branchName}\n請檢查 ticket`);
+      await execGit('checkout', 'main').catch(() => {});
+      return;
+    }
+  }
+
+  // 11. Move to review
   const summary = result.output.length > 500 ? result.output.slice(0, 500) + '...' : result.output;
   await updateTask(task.id, {
     status: 'review',
@@ -686,6 +723,22 @@ async function processResumedTask(
 
   if (task.category === 'research') {
     await postResearchWithLink(task.id, task.title, result.output);
+  }
+
+  // Verify actual work was produced before moving to review
+  if (task.category !== 'research') {
+    const commitsAhead = await execGit('rev-list', '--count', `main..${branchName}`).catch(() => '0');
+    const diffStat = await execGit('diff', '--stat', `main..${branchName}`).catch(() => '');
+    if (parseInt(commitsAhead) === 0 && !diffStat.trim()) {
+      log('warn', `Resumed task #${task.id}: no commits or changes. Not moving to review.`);
+      await addComment(task.id, 'note', `⚠️ 恢復執行後仍無程式碼變更。請檢查工作紀錄。`);
+      await updateTask(task.id, {
+        status: 'blocked',
+        result_notes: `No code changes after resume — 需要: 確認是否需要重跑`,
+      });
+      await execGit('checkout', 'main').catch(() => {});
+      return;
+    }
   }
 
   const summary = result.output.length > 500 ? result.output.slice(0, 500) + '...' : result.output;
