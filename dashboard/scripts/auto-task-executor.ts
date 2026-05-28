@@ -16,8 +16,8 @@ import { tmpdir } from 'os';
 // ── Constants ────────────────────────────────────────────────────────
 const BASE_URL = 'http://localhost:3000';
 const MAX_TASKS_PER_RUN = 3;
-const MAX_TURNS_PER_TASK = 30;
-const CLAUDE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes per task
+const MAX_TURNS_PER_TASK = 50;
+const CLAUDE_TIMEOUT_MS = 50 * 60 * 1000; // 50 minutes per task
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 const LOCKFILE = path.join(DASHBOARD_DIR, 'data', 'auto-task-executor.lock');
@@ -505,7 +505,7 @@ async function findResumableTasks(): Promise<Array<{ task: Task; userReply: stri
 }
 
 // ── Process Single Task ──────────────────────────────────────────────
-async function processNewTask(task: Task): Promise<void> {
+async function processNewTask(task: Task): Promise<{ hitMaxTurns: boolean }> {
   log('info', `Processing task #${task.id}: ${task.title}`, {
     category: task.category,
     priority: task.priority,
@@ -519,7 +519,7 @@ async function processNewTask(task: Task): Promise<void> {
   const fresh = await apiFetch<Task>(`/api/tasks/${task.id}`);
   if (fresh.status !== 'todo') {
     log('info', `Task #${task.id} no longer todo (now: ${fresh.status}), skipping`);
-    return;
+    return { hitMaxTurns: false };
   }
   await updateTask(task.id, { status: 'in_progress' });
   await notifyTelegram(task, 'in_progress', `🤖 懶懶開始執行\nCategory: ${task.category} | Priority: ${task.priority}`);
@@ -531,7 +531,7 @@ async function processNewTask(task: Task): Promise<void> {
   } catch (e) {
     log('error', `Failed to create branch for task #${task.id}`, { error: String(e) });
     await addComment(task.id, 'note', `Failed to create feature branch: ${e}`);
-    return;
+    return { hitMaxTurns: false };
   }
 
   // 4. Record branch + start
@@ -557,7 +557,7 @@ async function processNewTask(task: Task): Promise<void> {
     await notifyTelegram(task, 'blocked', `❌ Claude Code 執行失敗\n請檢查 ticket comments`);
     // Switch back to main
     await execGit('checkout', 'main').catch(() => {});
-    return;
+    return { hitMaxTurns: false };
   }
 
   // 5a. Ensure we're back on the feature branch (Claude Code may have switched)
@@ -587,7 +587,7 @@ async function processNewTask(task: Task): Promise<void> {
     });
     await notifyTelegram(task, 'blocked', `⚠️ 達到最大回合數，任務可能未完成\nBranch: ${branchName}`);
     await execGit('checkout', 'main').catch(() => {});
-    return;
+    return { hitMaxTurns: true };
   }
 
   if (isBlocked && !outputLower.includes('resolved')) {
@@ -600,7 +600,7 @@ async function processNewTask(task: Task): Promise<void> {
     await notifyTelegram(task, 'blocked', `⛔ 遇到 Blocker，需要你的 input\n請檢查 ticket comments`);
     await commitChanges(branchName, task.id, 'partial progress (blocked)');
     await execGit('checkout', 'main').catch(() => {});
-    return;
+    return { hitMaxTurns: false };
   }
 
   // 7. For dev tasks: verify build
@@ -617,7 +617,7 @@ async function processNewTask(task: Task): Promise<void> {
       await notifyTelegram(task, 'blocked', `❌ Build 失敗\nBranch: ${branchName}\n請檢查 ticket comments`);
       await commitChanges(branchName, task.id, 'implementation (build failing)');
       await execGit('checkout', 'main').catch(() => {});
-      return;
+      return { hitMaxTurns: false };
     }
   }
 
@@ -648,7 +648,7 @@ async function processNewTask(task: Task): Promise<void> {
       });
       await notifyTelegram(task, 'blocked', `⚠️ 沒有產出程式碼變更\nBranch: ${branchName}\n請檢查 ticket`);
       await execGit('checkout', 'main').catch(() => {});
-      return;
+      return { hitMaxTurns: false };
     }
   }
 
@@ -664,13 +664,14 @@ async function processNewTask(task: Task): Promise<void> {
   await notifyTelegram(task, 'review', `完成！等待 review\nBranch: ${branchName}\n\n${reviewSummary}`);
   log('info', `Task #${task.id} completed and moved to review`);
   await execGit('checkout', 'main').catch(() => {});
+  return { hitMaxTurns: false };
 }
 
 async function processResumedTask(
   task: Task,
   userReply: string,
   branchName: string
-): Promise<void> {
+): Promise<{ hitMaxTurns: boolean }> {
   log('info', `Resuming blocked task #${task.id}: ${task.title}`);
 
   const comments = await getComments(task.id);
@@ -684,7 +685,7 @@ async function processResumedTask(
   } catch (e) {
     log('error', `Failed to checkout ${branchName}`, { error: String(e) });
     await addComment(task.id, 'note', `Failed to checkout branch ${branchName}: ${e}`);
-    return;
+    return { hitMaxTurns: false };
   }
 
   // Build pickup prompt and run
@@ -698,10 +699,27 @@ async function processResumedTask(
   if (!result.success) {
     await addComment(task.id, 'action', `❌ Resumed execution failed:\n\`\`\`\n${outputForComment}\n\`\`\``);
     await execGit('checkout', 'main').catch(() => {});
-    return;
+    return { hitMaxTurns: false };
   }
 
   await addComment(task.id, 'action', `工作紀錄 (恢復):\n${outputForComment}`);
+
+  // Check if output indicates max turns
+  const outputLower = result.output.toLowerCase();
+  const hitMaxTurns = outputLower.includes('max turns') || outputLower.includes('reached max');
+
+  if (hitMaxTurns) {
+    log('warn', `Resumed task #${task.id}: hit max turns limit`);
+    await addComment(task.id, 'note', `⚠️ Claude Code 達到最大回合數 (${MAX_TURNS_PER_TASK} turns)，任務可能未完成。\n\n## Pickup Context\n- Branch: ${branchName}\n- 恢復方式: git checkout ${branchName}\n- 查看上方工作紀錄了解進度`);
+    await commitChanges(branchName, task.id, 'partial progress (max turns)');
+    await updateTask(task.id, {
+      status: 'blocked',
+      result_notes: `Hit max turns (${MAX_TURNS_PER_TASK}) after resume — 需要: 確認進度並決定是否繼續`,
+    });
+    await notifyTelegram(task, 'blocked', `⚠️ 恢復後達到最大回合數，任務可能未完成\nBranch: ${branchName}`);
+    await execGit('checkout', 'main').catch(() => {});
+    return { hitMaxTurns: true };
+  }
 
   // Build verification for dev tasks
   if (task.category !== 'research') {
@@ -715,7 +733,7 @@ async function processResumedTask(
       });
       await commitChanges(branchName, task.id, 'resumed work (build failing)');
       await execGit('checkout', 'main').catch(() => {});
-      return;
+      return { hitMaxTurns: false };
     }
   }
 
@@ -737,7 +755,7 @@ async function processResumedTask(
         result_notes: `No code changes after resume — 需要: 確認是否需要重跑`,
       });
       await execGit('checkout', 'main').catch(() => {});
-      return;
+      return { hitMaxTurns: false };
     }
   }
 
@@ -752,6 +770,7 @@ async function processResumedTask(
   await notifyTelegram(task, 'review', `恢復完成！等待 review\nBranch: ${branchName}\n\n${reviewSummary}`);
   log('info', `Resumed task #${task.id} completed and moved to review`);
   await execGit('checkout', 'main').catch(() => {});
+  return { hitMaxTurns: false };
 }
 
 // ── Lockfile ─────────────────────────────────────────────────────────
@@ -827,11 +846,17 @@ async function main() {
     // Process tasks (resumable first, then new, up to MAX_TASKS_PER_RUN total)
     let processed = 0;
 
+    let stopEarly = false;
+
     for (const { task, userReply, branch } of resumable) {
-      if (processed >= MAX_TASKS_PER_RUN) break;
+      if (processed >= MAX_TASKS_PER_RUN || stopEarly) break;
       try {
-        await processResumedTask(task, userReply, branch);
+        const result = await processResumedTask(task, userReply, branch);
         processed++;
+        if (result.hitMaxTurns) {
+          log('info', `Task #${task.id} hit max turns — stopping early to conserve budget`);
+          stopEarly = true;
+        }
       } catch (e) {
         log('error', `Error processing resumed task #${task.id}`, { error: String(e) });
         await addComment(task.id, 'note', `Executor error: ${e}`).catch(() => {});
@@ -840,13 +865,19 @@ async function main() {
     }
 
     for (const task of sorted) {
-      if (processed >= MAX_TASKS_PER_RUN) {
-        log('info', `Reached max tasks per run (${MAX_TASKS_PER_RUN}), skipping remaining`);
+      if (processed >= MAX_TASKS_PER_RUN || stopEarly) {
+        log('info', stopEarly
+          ? 'Previous task hit max turns — skipping remaining tasks to conserve budget'
+          : `Reached max tasks per run (${MAX_TASKS_PER_RUN}), skipping remaining`);
         break;
       }
       try {
-        await processNewTask(task);
+        const result = await processNewTask(task);
         processed++;
+        if (result.hitMaxTurns) {
+          log('info', `Task #${task.id} hit max turns — stopping early to conserve budget`);
+          stopEarly = true;
+        }
       } catch (e) {
         log('error', `Error processing task #${task.id}`, { error: String(e) });
         await addComment(task.id, 'note', `Executor error: ${e}`).catch(() => {});
