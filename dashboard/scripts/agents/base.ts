@@ -340,10 +340,15 @@ export async function addComment(
   content: string,
   metadata?: Record<string, unknown>
 ): Promise<void> {
-  await apiFetch(`/api/tasks/${taskId}/comments`, {
-    method: 'POST',
-    body: JSON.stringify({ author, type, content, metadata }),
-  });
+  try {
+    await apiFetch(`/api/tasks/${taskId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ author, type, content, metadata }),
+    });
+  } catch (e) {
+    // Comment posting is non-critical — log but don't crash the task
+    log('warn', `addComment failed (task #${taskId}, author=${author}): ${String(e)}`);
+  }
 }
 
 // ── Memory System ────────────────────────────────────────────────────
