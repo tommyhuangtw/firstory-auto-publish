@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 interface Discussion {
   id: number;
@@ -63,12 +64,38 @@ const decisionBadge: Record<string, string> = {
 type Tab = 'timeline' | 'proposals';
 
 export default function AgentLogPage() {
-  const [tab, setTab] = useState<Tab>('timeline');
+  return (
+    <Suspense fallback={<div className="text-zinc-500 text-center py-12">Loading...</div>}>
+      <AgentLogContent />
+    </Suspense>
+  );
+}
+
+function AgentLogContent() {
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get('tab') === 'proposals' ? 'proposals' : 'timeline') as Tab;
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [discussions, setDiscussions] = useState<Discussion[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [stats, setStats] = useState<ProposalStats>({ total: 0, approved: 0, rejected: 0, pending: 0 });
   const [agentFilter, setAgentFilter] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [deciding, setDeciding] = useState<number | null>(null);
+
+  const decideProposal = async (id: number, decision: string, reasoning?: string) => {
+    setDeciding(id);
+    try {
+      const res = await fetch('/api/agent-proposals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, decision, reasoning }),
+      });
+      await res.json();
+      fetchData();
+    } finally {
+      setDeciding(null);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -240,15 +267,38 @@ export default function AgentLogPage() {
                       )}
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex flex-col gap-1.5 items-end">
                       {p.pm_decision ? (
                         <span className={`px-2 py-0.5 text-[10px] rounded-full ${decisionBadge[p.pm_decision] || 'bg-zinc-700 text-zinc-400'}`}>
                           {p.pm_decision}
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          pending
-                        </span>
+                        <>
+                          <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            pending
+                          </span>
+                          <button
+                            disabled={deciding === p.id}
+                            onClick={() => decideProposal(p.id, 'approved')}
+                            className="px-2.5 py-1 text-[10px] rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            disabled={deciding === p.id}
+                            onClick={() => decideProposal(p.id, 'rejected')}
+                            className="px-2.5 py-1 text-[10px] rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            disabled={deciding === p.id}
+                            onClick={() => decideProposal(p.id, 'deferred')}
+                            className="px-2.5 py-1 text-[10px] rounded bg-zinc-800 text-zinc-500 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Defer
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

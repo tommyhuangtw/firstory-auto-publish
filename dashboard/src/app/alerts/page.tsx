@@ -146,7 +146,9 @@ export default function AlertsPage() {
                         </a>
                       )}
                       {alert.related_proposal_id && (
-                        <span className="text-xs text-zinc-500">Proposal #{alert.related_proposal_id}</span>
+                        <a href="/agent-log?tab=proposals" className="text-xs text-brand hover:text-brand-light transition-colors cursor-pointer">
+                          Proposal #{alert.related_proposal_id}
+                        </a>
                       )}
                     </div>
                   )}

@@ -39,3 +39,60 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ proposals, stats });
 }
+
+export async function PATCH(request: NextRequest) {
+  const db = getDb();
+  const body = await request.json();
+  const { id, decision, reasoning } = body;
+
+  if (!id || !decision) {
+    return NextResponse.json({ error: 'id and decision are required' }, { status: 400 });
+  }
+
+  const validDecisions = ['approved', 'rejected', 'deferred'];
+  if (!validDecisions.includes(decision)) {
+    return NextResponse.json({ error: `decision must be one of: ${validDecisions.join(', ')}` }, { status: 400 });
+  }
+
+  // Check proposal exists and is pending
+  const proposal = db.prepare('SELECT * FROM agent_proposals WHERE id = ?').get(id) as {
+    id: number; title: string; description: string; proposal_type: string;
+    priority_suggestion: string | null; pm_decision: string | null;
+  } | undefined;
+
+  if (!proposal) {
+    return NextResponse.json({ error: 'Proposal not found' }, { status: 404 });
+  }
+  if (proposal.pm_decision) {
+    return NextResponse.json({ error: 'Proposal already decided' }, { status: 409 });
+  }
+
+  // Update decision
+  db.prepare(
+    'UPDATE agent_proposals SET pm_decision = ?, pm_reasoning = ? WHERE id = ?'
+  ).run(decision, reasoning || null, id);
+
+  let taskId: number | null = null;
+
+  // If approved, create a ticket
+  if (decision === 'approved') {
+    const categoryMap: Record<string, string> = {
+      content: 'content', feature: 'infra', optimization: 'infra',
+      bugfix: 'infra', research: 'research',
+    };
+    const category = categoryMap[proposal.proposal_type] || 'ops';
+    const priority = proposal.priority_suggestion || 'medium';
+
+    const result = db.prepare(`
+      INSERT INTO tasks (title, description, status, priority, category, auto_execute, created_by)
+      VALUES (?, ?, 'todo', ?, ?, 1, 'agent-proposal')
+    `).run(proposal.title, proposal.description, priority, category);
+
+    taskId = Number(result.lastInsertRowid);
+
+    // Link task back to proposal
+    db.prepare('UPDATE agent_proposals SET task_id = ? WHERE id = ?').run(taskId, id);
+  }
+
+  return NextResponse.json({ success: true, taskId });
+}
