@@ -115,36 +115,16 @@ export function initializeSchedulerJobs(): void {
   registerJobs(config);
 
   // SoundOn analytics auto-sync — runs every day at 09:00
-  scheduler.register('soundon-analytics-sync', '0 9 * * *', async () => {
-    log.info('Running scheduled SoundOn analytics sync...');
-    try {
-      const res = await fetch('https://localhost:3000/api/analytics/soundon-sync', {
-        method: 'POST',
-        // Self-signed cert — skip verification in internal calls
-        // @ts-expect-error Node 18+ fetch options
-        dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } }),
-      });
-      const data = await res.json() as { daily_imported?: number; episode_imported?: number; errors?: string[] };
-      log.info(data, 'SoundOn analytics sync complete');
-    } catch (err) {
-      log.error({ err: (err as Error).message }, 'SoundOn analytics sync failed');
-    }
-  });
+  scheduler.register('soundon-analytics-sync', '0 9 * * *', runSoundonSync);
 
   // YouTube analytics auto-sync — runs every day at 10:00
-  scheduler.register('youtube-analytics-sync', '0 10 * * *', async () => {
-    log.info('Running scheduled YouTube analytics sync...');
-    try {
-      const { syncYoutubeAnalytics } = await import('@/services/youtubeAnalytics');
-      const result = await syncYoutubeAnalytics();
-      log.info(result, 'YouTube analytics sync complete');
-    } catch (err) {
-      log.error({ err: (err as Error).message }, 'YouTube analytics sync failed');
-    }
-  });
+  scheduler.register('youtube-analytics-sync', '0 10 * * *', runYoutubeSync);
 
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
+
+  // Catch up any missed analytics syncs on startup
+  scheduleStartupCatchUp();
 }
 
 /** Hot-reload: read DB config → stop all → re-register → start */
@@ -162,6 +142,60 @@ export function reloadScheduleFromDb(): void {
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler reloaded from DB config');
 }
+
+// ── Analytics sync handlers ──────────────────────────────────────────
+
+async function runSoundonSync(): Promise<void> {
+  log.info('Running SoundOn analytics sync...');
+  try {
+    const res = await fetch('http://localhost:3000/api/analytics/soundon-sync', {
+      method: 'POST',
+    });
+    const data = await res.json() as { daily_imported?: number; episode_imported?: number; errors?: string[] };
+    log.info(data, 'SoundOn analytics sync complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'SoundOn analytics sync failed');
+  }
+}
+
+async function runYoutubeSync(): Promise<void> {
+  log.info('Running YouTube analytics sync...');
+  try {
+    const { syncYoutubeAnalytics } = await import('@/services/youtubeAnalytics');
+    const result = await syncYoutubeAnalytics();
+    log.info(result, 'YouTube analytics sync complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'YouTube analytics sync failed');
+  }
+}
+
+/** Check if today's analytics syncs have already run; if not, catch up */
+function scheduleStartupCatchUp(): void {
+  setTimeout(async () => {
+    const db = getDb();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Check SoundOn
+    const hasSoundon = db.prepare(
+      'SELECT 1 FROM soundon_daily_downloads WHERE date = ?'
+    ).get(today);
+    if (!hasSoundon) {
+      log.info({ today }, 'Startup catch-up: SoundOn sync missing for today, running now');
+      await runSoundonSync();
+    }
+
+    // Check YouTube
+    const hasYoutube = db.prepare(
+      'SELECT 1 FROM youtube_channel_stats WHERE snapshot_date = ?'
+    ).get(today);
+    if (!hasYoutube) {
+      log.info({ today }, 'Startup catch-up: YouTube sync missing for today, running now');
+      await runYoutubeSync();
+    }
+  }, 10_000); // 10s delay to let server fully initialize
+}
+
+// ── Pipeline runner ─────────────────────────────────────────────────
 
 async function runPipeline(segmentType: SegmentType): Promise<void> {
   const db = getDb();
