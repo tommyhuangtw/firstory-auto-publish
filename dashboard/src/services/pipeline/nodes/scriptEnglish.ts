@@ -221,9 +221,12 @@ It should feel smart, human, and grounded in engineering reality — like a robo
 📋 Guidelines:
 
 1. Greeting & Intro:
-Start with a warm, friendly opening. Then quickly tease the most surprising or exciting highlight from today's updates — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener think "wait, what?" and want to keep listening. Then move straight into the content.
+Start with a warm, friendly opening. Then quickly tease the most surprising or exciting highlight from today's updates — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener think "wait, what?" and want to keep listening.
 
-2. For each featured robotics update
+2. Episode Overview (2-5 sentences):
+Then give a brief episode overview that maps out the terrain of this week's updates — which domains or areas of robotics are represented and what the overall direction feels like this week. The listener should feel oriented and know the shape of the episode before the details begin. Don't list specific companies or papers — describe the landscape. End with a natural transition into the first topic.
+
+3. For each featured robotics update
 
 Highlight:
 
@@ -545,6 +548,8 @@ __TARGET_WORDS__ words
 1. Opening Hook (1-2 min):
 Start casual — acknowledge the topic and why it caught your attention. Don't start with a formal intro. Drop the most provocative or surprising insight right away to hook the listener. Something like "So I've been thinking about this idea of AI-native organizations, and honestly, it's making me question whether most companies are doing AI completely wrong..."
 
+Then give a brief thread preview (2-5 sentences) that names the thematic threads you'll explore in this episode — framed as questions or tensions, not topic labels. This gives the listener a roadmap of your thought journey and builds curiosity about where you'll land. End with a natural transition into the first thread.
+
 2. Core Discussion (bulk of the episode):
 The material you receive is organized by THEMES that cut across multiple sources — NOT by individual video. Follow this theme-driven structure:
 - Build your narrative around 3-5 thematic threads, NOT around individual sources
@@ -609,7 +614,10 @@ Write a natural, spoken-style podcast script for a single narrator that feels sm
 📋 Guidelines:
 
 Greeting & Intro:
-Start with a warm, friendly opening. Then quickly tease the most surprising or exciting thing from today's content — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener want to keep listening, then move straight into the content.
+Start with a warm, friendly opening. Then quickly tease the most surprising or exciting thing from today's content — use curiosity or a provocative question to hook the listener. Don't list all topics or read a table of contents. Just drop one compelling hook that makes the listener want to keep listening.
+
+Episode Overview (2-5 sentences):
+Then, before diving into the first tool, give a brief episode overview. Paint the thematic landscape of today's content — what kinds of areas, categories, or themes are covered. The goal is to orient the listener and build anticipation so they know the shape of what's coming. Don't list tool names or read a table of contents — describe the territory at a high level. End with a natural transition into the first topic.
 
 For each featured tool or trend:
 
