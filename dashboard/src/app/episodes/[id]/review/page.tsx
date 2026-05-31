@@ -207,7 +207,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const headerLabel = formatEpisodeHeader(episode);
 
   return (
-    <div className="p-6 md:p-8 max-w-4xl">
+    <div className="p-4 md:p-8 max-w-4xl pb-36 md:pb-8">
       {/* Back link + Header */}
       <header className="mb-8">
         <Link
@@ -219,7 +219,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           </svg>
           Episodes
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-2xl font-semibold tracking-tight">{headerLabel}</h1>
           <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
             {segmentLabels[episode.segment_type] || episode.segment_type}
@@ -262,7 +262,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Cover + Audio row */}
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <RegenerateCoverButton
             episodeId={episode.id}
             coverPath={episode.cover_path}

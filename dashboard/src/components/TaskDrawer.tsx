@@ -727,11 +727,11 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
   if (!task) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
 
       <div
-        className="relative z-10 w-full max-w-4xl max-h-[88vh] bg-zinc-900 border border-zinc-700/60 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative z-10 w-full md:max-w-4xl h-[95vh] md:h-auto md:max-h-[88vh] bg-zinc-900 border-t md:border border-zinc-700/60 rounded-t-2xl md:rounded-xl shadow-2xl flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -758,10 +758,10 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
         </div>
 
         {/* Body — two columns */}
-        <div className="flex flex-1 min-h-0 divide-x divide-zinc-800/60">
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 md:divide-x divide-zinc-800/60">
 
           {/* Left: review summary or default */}
-          <div className="w-80 shrink-0 overflow-y-auto px-6 py-4">
+          <div className="w-full md:w-80 shrink-0 overflow-y-auto px-4 md:px-6 py-4 border-b md:border-b-0 border-zinc-800/60 max-h-[40vh] md:max-h-none">
             {isReview ? (
               <ReviewSummaryPanel task={task} data={reviewData} />
             ) : (

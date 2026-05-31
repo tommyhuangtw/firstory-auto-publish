@@ -90,7 +90,7 @@ export default function EpisodesPage() {
   );
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl">
+    <div className="p-4 md:p-8 max-w-5xl">
       {/* Header */}
       <header className="mb-8">
         <div className="flex items-center justify-between">
@@ -150,9 +150,9 @@ export default function EpisodesPage() {
                 className="group block rounded-xl bg-zinc-900/60 border border-zinc-800/60 hover:border-brand/30 hover:bg-zinc-900 transition-all duration-200 cursor-pointer"
               >
                 <div className="p-4">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-3">
                     {/* Left: EP label + badges */}
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span className="text-base font-mono font-semibold text-zinc-200 tabular-nums shrink-0">
                         {epLabel}
                       </span>
@@ -164,8 +164,8 @@ export default function EpisodesPage() {
                       </span>
                     </div>
 
-                    {/* Right: metadata */}
-                    <div className="flex items-center gap-4 text-xs text-zinc-400 shrink-0">
+                    {/* Right: metadata — hidden on mobile, visible on sm+ */}
+                    <div className="hidden sm:flex items-center gap-4 text-xs text-zinc-400 shrink-0">
                       {ep.quality_score != null && (
                         <span className="tabular-nums">{ep.quality_score.toFixed(0)} pts</span>
                       )}
@@ -180,6 +180,11 @@ export default function EpisodesPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                       </svg>
                     </div>
+
+                    {/* Mobile: just chevron */}
+                    <svg className="sm:hidden w-4 h-4 text-zinc-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
                   </div>
 
                   {/* Title */}

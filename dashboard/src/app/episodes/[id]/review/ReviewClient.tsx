@@ -308,7 +308,7 @@ export default function ReviewClient({
 
       {/* Approve / Reject Actions — placed right after title for quick workflow */}
       {canReview && (
-        <section className="space-y-3">
+        <section className="fixed bottom-16 inset-x-0 z-40 bg-zinc-900/95 backdrop-blur-sm border-t border-zinc-800 px-4 py-3 md:static md:bg-transparent md:backdrop-blur-none md:border-0 md:px-0 md:py-0 space-y-3">
           <div className="flex gap-3">
             <button
               onClick={handleApprove}

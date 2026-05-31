@@ -1,9 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const navItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const allNavItems: NavItem[] = [
   {
     href: '/', label: 'Dashboard',
     icon: (
@@ -69,7 +76,7 @@ const navItems = [
     ),
   },
   {
-    href: '/tasks', label: '🦥 Tasks',
+    href: '/tasks', label: 'Tasks',
     icon: (
       <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
@@ -128,60 +135,106 @@ const navItems = [
   },
 ];
 
+// Mobile bottom bar: 4 priority pages + "More" toggle
+const MOBILE_PRIMARY_HREFS = ['/', '/episodes', '/tasks', '/alerts'];
+
+const moreIcon = (
+  <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+  </svg>
+);
+
 export default function Navigation() {
   const pathname = usePathname();
+  const [showMore, setShowMore] = useState(false);
+
+  const primaryItems = allNavItems.filter(item => MOBILE_PRIMARY_HREFS.includes(item.href));
+  const secondaryItems = allNavItems.filter(item => !MOBILE_PRIMARY_HREFS.includes(item.href));
+
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname.startsWith(href);
 
   return (
     <>
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — unchanged */}
       <aside className="hidden md:flex md:flex-col md:w-56 md:fixed md:inset-y-0 bg-zinc-900 border-r border-zinc-800">
         <div className="px-4 py-5 border-b border-zinc-800">
           <h1 className="text-lg font-bold text-brand">AI懶人報</h1>
           <p className="text-xs text-brand-taupe">Podcast Dashboard</p>
         </div>
         <nav className="flex-1 px-2 py-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = item.href === '/'
-              ? pathname === '/'
-              : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-brand/15 text-brand border-l-2 border-brand'
-                    : 'text-zinc-400 hover:text-brand-cream hover:bg-brand/8'
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            );
-          })}
+          {allNavItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                isActive(item.href)
+                  ? 'bg-brand/15 text-brand border-l-2 border-brand'
+                  : 'text-zinc-400 hover:text-brand-cream hover:bg-brand/8'
+              }`}
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          ))}
         </nav>
       </aside>
 
-      {/* Mobile bottom bar */}
+      {/* Mobile "More" sheet */}
+      {showMore && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setShowMore(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            className="absolute bottom-16 inset-x-0 bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-4 pb-2"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-8 h-1 rounded-full bg-zinc-700 mx-auto mb-3" />
+            <div className="grid grid-cols-3 gap-1">
+              {secondaryItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setShowMore(false)}
+                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-lg text-xs transition-colors ${
+                    isActive(item.href)
+                      ? 'bg-brand/15 text-brand'
+                      : 'text-zinc-400 hover:text-brand-cream hover:bg-zinc-800'
+                  }`}
+                >
+                  {item.icon}
+                  <span className="truncate max-w-full">{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile bottom bar — 4 primary + More */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900 border-t border-zinc-800 z-50">
         <div className="flex">
-          {navItems.map((item) => {
-            const isActive = item.href === '/'
-              ? pathname === '/'
-              : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex-1 flex flex-col items-center py-2 text-xs transition-colors ${
-                  isActive ? 'text-brand' : 'text-zinc-400'
-                }`}
-              >
-                {item.icon}
-                <span className="mt-0.5">{item.label}</span>
-              </Link>
-            );
-          })}
+          {primaryItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setShowMore(false)}
+              className={`flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
+                isActive(item.href) ? 'text-brand' : 'text-zinc-400'
+              }`}
+            >
+              {item.icon}
+              <span className="mt-1">{item.label}</span>
+            </Link>
+          ))}
+          <button
+            onClick={() => setShowMore(prev => !prev)}
+            className={`flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
+              showMore ? 'text-brand' : 'text-zinc-400'
+            }`}
+          >
+            {moreIcon}
+            <span className="mt-1">More</span>
+          </button>
         </div>
       </nav>
     </>

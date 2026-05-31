@@ -366,7 +366,7 @@ function TaskCard({ task, onUpdate, onEdit, onOpenDrawer, isDragging = false }: 
           <span className="text-[10px] text-teal-400 shrink-0 mt-0.5" title="懶懶自動執行">🤖</span>
         )}
         <button onClick={() => onOpenDrawer(task)}
-          className="shrink-0 mt-0.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors opacity-0 group-hover:opacity-100"
+          className="shrink-0 mt-0.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors md:opacity-0 md:group-hover:opacity-100"
           title="查看紀錄">
           💬
         </button>
@@ -488,7 +488,8 @@ export default function TasksPage() {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [overColumnKey, setOverColumnKey] = useState<Status | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [activeColumn, setActiveColumn] = useState<Status>('review');
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 10 } }));
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -593,13 +594,50 @@ export default function TasksPage() {
         </div>
       </div>
 
+      {/* Mobile: tab bar to switch columns (always visible, even during loading) */}
+      <div className="md:hidden flex overflow-x-auto gap-1 px-4 pt-3 pb-2 no-scrollbar">
+        {COLUMNS.map(col => {
+          const count = byStatus(col.key).length;
+          const reviewCount = col.key === 'review' ? tasks.filter(t => t.status === 'review' && (t.completed_by === 'hermes' || t.completed_by === 'claude-code')).length : 0;
+          return (
+            <button key={col.key} onClick={() => setActiveColumn(col.key)}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                activeColumn === col.key
+                  ? 'bg-zinc-700 text-zinc-100'
+                  : 'text-zinc-500'
+              }`}>
+              <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+              {col.label}
+              <span className="text-zinc-600 ml-0.5">{count}</span>
+              {reviewCount > 0 && (
+                <span className="text-[9px] px-1 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium">
+                  {reviewCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Board */}
       {loading ? (
         <div className="flex items-center justify-center h-64 text-zinc-600 text-sm">載入中...</div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCorners}
           onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-start">
+
+          {/* Mobile: single column view */}
+          <div className="md:hidden p-4">
+            {COLUMNS.filter(col => col.key === activeColumn).map(col => (
+              <ColumnDropZone key={col.key} colKey={col.key}>
+                <KanbanColumn col={col} tasks={byStatus(col.key)} onUpdate={fetchTasks}
+                  onEdit={setEditingTask} onOpenDrawer={t => setDrawerTask(t as DrawerTask)} isOver={overColumnKey === col.key} />
+              </ColumnDropZone>
+            ))}
+          </div>
+
+          {/* Desktop: full grid */}
+          <div className="hidden md:grid md:grid-cols-2 xl:grid-cols-5 gap-3 p-5 items-start">
             {COLUMNS.map(col => (
               <ColumnDropZone key={col.key} colKey={col.key}>
                 <KanbanColumn col={col} tasks={byStatus(col.key)} onUpdate={fetchTasks}
@@ -607,6 +645,7 @@ export default function TasksPage() {
               </ColumnDropZone>
             ))}
           </div>
+
           <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
             {activeTask ? <DragOverlayCard task={activeTask} /> : null}
           </DragOverlay>
