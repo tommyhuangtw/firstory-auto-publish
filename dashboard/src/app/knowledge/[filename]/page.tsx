@@ -29,7 +29,8 @@ export default async function KnowledgeDetailPage({
   const { filename } = await params;
   const decoded = decodeURIComponent(filename);
 
-  if (!/^[\w\u4e00-\u9fff\-.]+\.md$/.test(decoded)) notFound();
+  // Allow alphanumeric, CJK, common CJK punctuation, hyphens, dots
+  if (!/^[\w\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\-.]+\.md$/.test(decoded)) notFound();
 
   const doc = getDocByFilename(decoded);
   const content = getDocContent(decoded);

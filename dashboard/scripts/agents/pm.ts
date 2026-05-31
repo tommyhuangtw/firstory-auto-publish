@@ -30,6 +30,8 @@ import {
   updateProposalDecision,
   createAlert,
   sendTelegram,
+  sendTelegramWithButtons,
+  buildQuickActionUrl,
   apiFetch,
   updateTask,
   addComment,
@@ -95,6 +97,7 @@ function execGit(...args: string[]): Promise<string> {
 
 export interface ReviewResult {
   verdict: 'approved' | 'needs_changes' | 'needs_tommy';
+  confidence: 'high' | 'medium' | 'low';
   reasoning: string;
   feedback?: string; // detailed feedback for 小工 if needs_changes
 }
@@ -142,6 +145,7 @@ export async function reviewTask(task: Task, sessionId: string): Promise<ReviewR
   if (!branchName) {
     const result: ReviewResult = {
       verdict: 'needs_changes',
+      confidence: 'low',
       reasoning: 'Cannot find branch name in task comments',
       feedback: 'Branch name not recorded — cannot review. Please re-execute.',
     };
@@ -203,13 +207,20 @@ Review this work against the task description. Evaluate:
 Respond with ONLY a JSON object:
 {
   "verdict": "approved" | "needs_changes" | "needs_tommy",
+  "confidence": "high" | "medium" | "low",
   "reasoning": "1-3 sentence explanation",
   "feedback": "specific feedback for 小工 if needs_changes, or question for Tommy if needs_tommy"
 }
 
+Verdict:
 - "approved": code is ready for Tommy's final review
 - "needs_changes": send back to 小工 with specific feedback
-- "needs_tommy": requires Tommy's decision (architectural, product, or policy question)`;
+- "needs_tommy": requires Tommy's decision (architectural, product, or policy question)
+
+Confidence (how sure are you about this verdict):
+- "high": clearly fulfills requirements, build passes, changes are surgical and scoped
+- "medium": looks correct but has some ambiguity or edge cases
+- "low": uncertain, complex changes, or borderline quality`;
 
   // 6. Call LLM for review verdict
   const response = await callClaude(agentPrompt, reviewPrompt, {
@@ -222,7 +233,11 @@ Respond with ONLY a JSON object:
   try {
     const jsonStr = extractJson(response.content);
     if (!jsonStr) throw new Error('No JSON found');
-    result = JSON.parse(jsonStr) as ReviewResult;
+    const parsed = JSON.parse(jsonStr);
+    result = {
+      ...parsed,
+      confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'low',
+    } as ReviewResult;
     // Validate
     if (!['approved', 'needs_changes', 'needs_tommy'].includes(result.verdict)) {
       throw new Error(`Invalid verdict: ${result.verdict}`);
@@ -232,6 +247,7 @@ Respond with ONLY a JSON object:
     // Default to needs_tommy if we can't parse
     result = {
       verdict: 'needs_tommy',
+      confidence: 'low',
       reasoning: 'Could not auto-review — forwarding to Tommy for manual review',
       feedback: response.content.slice(0, 500),
     };
@@ -246,14 +262,29 @@ Respond with ONLY a JSON object:
   );
 
   await addComment(task.id, '懶懶', 'review',
-    `${verdictEmoji[result.verdict]} 懶懶 Review: **${result.verdict}**\n\n${result.reasoning}${result.feedback ? `\n\n**Feedback**: ${result.feedback}` : ''}`,
+    `${verdictEmoji[result.verdict]} 懶懶 Review: **${result.verdict}** (confidence: ${result.confidence})\n\n${result.reasoning}${result.feedback ? `\n\n**Feedback**: ${result.feedback}` : ''}`,
   );
 
   if (result.verdict === 'approved') {
-    // Keep in review status — Tommy does final approve
-    await createAlert('pm', 'review_ready', `Task #${task.id} 通過 review`,
-      `${task.title}\nBranch: ${branchName}\n${result.reasoning}`, 'normal', { taskId: task.id });
-    await sendTelegram(`✅ 懶懶 approved Task #${task.id}: ${task.title}\nBranch: ${branchName}\n等待 Tommy 最終 review`);
+    const isResearch = task.category === 'research';
+    const canAutoApprove = isResearch && result.confidence === 'high';
+
+    if (canAutoApprove) {
+      // Auto-approve: research + high confidence → done directly
+      await updateTask(task.id, { status: 'done', completed_by: '懶懶' });
+      await addComment(task.id, '懶懶', 'review',
+        `Auto-approved (research + high confidence)\n${result.reasoning}`);
+      await sendTelegram(
+        `✅ Auto-approved Task #${task.id}: ${task.title}\n` +
+        `(research + high confidence, 已自動完成)`
+      );
+      log('info', `Task #${task.id} auto-approved (research + high confidence)`);
+    } else {
+      // Keep in review status — Tommy does final approve
+      await createAlert('pm', 'review_ready', `Task #${task.id} 通過 review`,
+        `${task.title}\nBranch: ${branchName}\n${result.reasoning}`, 'normal', { taskId: task.id });
+      await sendTelegram(`✅ 懶懶 approved Task #${task.id}: ${task.title}\nBranch: ${branchName}\n等待 Tommy 最終 review`);
+    }
 
   } else if (result.verdict === 'needs_changes') {
     // Send back to 小工
@@ -403,7 +434,7 @@ ${proposalList}
       reasoning: raw.reasoning,
     };
 
-    // Create ticket if approved
+    // Create ticket if approved — but auto_execute=false until Tommy approves
     if (raw.decision === 'approved' && raw.createTicket) {
       try {
         const taskId = await createTask(
@@ -411,11 +442,28 @@ ${proposalList}
           proposal.description,
           proposal.proposal_type === 'research' ? 'research' : proposal.proposal_type === 'content' ? 'content' : 'infra',
           raw.ticketPriority || proposal.priority_suggestion || 'medium',
-          true, // auto_execute
+          false, // auto_execute OFF — needs Tommy's approval first
           '懶懶',
         );
         decision.taskId = taskId;
-        log('info', `Created ticket #${taskId} from proposal #${raw.proposalId}`);
+        log('info', `Created ticket #${taskId} from proposal #${raw.proposalId} (pending Tommy approval)`);
+
+        // Notify Tommy to approve
+        const approveUrl = buildQuickActionUrl(taskId, 'approve');
+        const rejectUrl = buildQuickActionUrl(taskId, 'reject');
+        if (approveUrl && rejectUrl) {
+          await sendTelegramWithButtons(
+            `🆕 懶懶建了新 ticket #${taskId}\n<b>${proposal.title}</b>\n\n${proposal.description.slice(0, 200)}${proposal.description.length > 200 ? '...' : ''}\n\n要執行嗎？`,
+            [[
+              { text: '✅ 批准執行', url: approveUrl },
+              { text: '❌ 不需要', url: rejectUrl },
+            ]],
+          );
+        } else {
+          await sendTelegram(
+            `🆕 懶懶建了新 ticket #${taskId}: ${proposal.title}\n需要你到 Dashboard 批准才會執行`,
+          );
+        }
       } catch (e) {
         log('warn', `Failed to create ticket for proposal #${raw.proposalId}: ${String(e)}`);
       }
@@ -502,6 +550,136 @@ ${proposalSummary}
   return summary;
 }
 
+/** Send a structured review digest to Tommy via Telegram with quick-action buttons. */
+export async function sendReviewDigest(sessionId: string): Promise<void> {
+  const { tasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=review&limit=20');
+
+  if (tasks.length === 0) {
+    log('info', 'No tasks in review — skipping digest');
+    return;
+  }
+
+  log('info', `Sending review digest for ${tasks.length} task(s)`);
+
+  // Send header
+  await sendTelegram(`📋 <b>Review Digest</b> — ${tasks.length} 張待 review\n按 Approve 會自動開 PR 到 main`);
+
+  // Send one message per task with inline buttons
+  for (const task of tasks) {
+    const { comments } = await apiFetch<{ comments: TaskComment[] }>(
+      `/api/tasks/${task.id}/comments`
+    ).catch(() => ({ comments: [] as TaskComment[] }));
+
+    // Find PM review comment (most recent)
+    const reviewComment = [...comments].reverse()
+      .find(c => c.author === '懶懶' && c.type === 'review');
+
+    // Find branch
+    const branchComment = comments.find(c => c.type === 'branch');
+    const branch = branchComment?.metadata
+      ? (() => { try { return JSON.parse(branchComment.metadata!).branch; } catch { return ''; } })()
+      : '';
+
+    // Extract confidence
+    const confMatch = reviewComment?.content.match(/confidence: (high|medium|low)/);
+    const confidence = confMatch ? confMatch[1] : '';
+    const confEmoji = confidence === 'high' ? '🟢' : confidence === 'medium' ? '🟡' : '🔴';
+
+    // ── Build rich message ──
+    const lines: string[] = [];
+
+    // Header
+    lines.push(`<b>#${task.id}</b> [${task.category}] ${task.title}`);
+    if (confidence) lines.push(`${confEmoji} Confidence: ${confidence}`);
+
+    // What: task description (what this ticket is about)
+    if (task.description) {
+      const desc = task.description.replace(/<[^>]+>/g, '').slice(0, 200);
+      lines.push(`\n<b>任務：</b>${desc}${task.description.length > 200 ? '...' : ''}`);
+    }
+
+    // Work done: agent's work summary from result_notes or action comments
+    const workSummary = task.result_notes
+      || [...comments].reverse().find(c => c.type === 'action' && c.content.includes('工作紀錄'))?.content
+      || '';
+    if (workSummary) {
+      const clean = workSummary
+        .replace(/<[^>]+>/g, '')
+        .replace(/\*\*/g, '')
+        .replace(/^Branch:.*\n?/m, '')
+        .replace(/^\d+ commit.*\n?/m, '')
+        .trim()
+        .slice(0, 250);
+      lines.push(`\n<b>完成內容：</b>\n${clean}${workSummary.length > 250 ? '...' : ''}`);
+    }
+
+    // PM review verdict
+    if (reviewComment) {
+      // Extract just the reasoning, skip the emoji/verdict header
+      const reasoning = reviewComment.content
+        .replace(/<[^>]+>/g, '')
+        .replace(/\*\*/g, '')
+        .replace(/^.*?(approved|needs_changes|needs_tommy).*?\n/i, '')
+        .trim()
+        .slice(0, 200);
+      if (reasoning) lines.push(`\n<b>懶懶評語：</b>${reasoning}`);
+    }
+
+    // Test results
+    const testComment = [...comments].reverse()
+      .find(c => c.type === 'test');
+    if (testComment) {
+      const passed = testComment.content.includes('passed') || testComment.content.includes('✅') || testComment.content.includes('成功');
+      const icon = passed ? '✅' : '⚠️';
+      const testSnippet = testComment.content
+        .replace(/<[^>]+>/g, '')
+        .replace(/\*\*/g, '')
+        .slice(0, 120);
+      lines.push(`\n<b>測試：</b>${icon} ${testSnippet}`);
+    } else {
+      lines.push(`\n<b>測試：</b>⚠️ 無測試紀錄`);
+    }
+
+    // Branch info
+    if (branch) lines.push(`\nBranch: <code>${branch}</code>`);
+
+    // Research report link — look up real filename from knowledge_docs
+    if (task.category === 'research') {
+      const publicUrl = process.env.DASHBOARD_PUBLIC_URL || '';
+      if (publicUrl) {
+        const db = getDb();
+        const knowledgeDoc = db.prepare(
+          `SELECT filename FROM knowledge_docs WHERE filename LIKE ? ORDER BY id DESC LIMIT 1`
+        ).get(`task-${task.id}-%`) as { filename: string } | undefined;
+        if (knowledgeDoc) {
+          const encodedFilename = encodeURIComponent(knowledgeDoc.filename);
+          lines.push(`📄 <a href="${publicUrl}/knowledge/${encodedFilename}">查看研究報告</a>`);
+        }
+      }
+    }
+
+    const msg = lines.join('\n');
+
+    // Build quick-action URLs (only available if DASHBOARD_PUBLIC_URL is set)
+    const approveUrl = buildQuickActionUrl(task.id, 'approve');
+    const rejectUrl = buildQuickActionUrl(task.id, 'reject');
+
+    if (approveUrl && rejectUrl) {
+      await sendTelegramWithButtons(msg, [
+        [
+          { text: '✅ Approve + 開 PR', url: approveUrl },
+          { text: '❌ Reject', url: rejectUrl },
+        ],
+      ]);
+    } else {
+      await sendTelegram(msg);
+    }
+  }
+
+  logDiscussion('pm', sessionId, 'report',
+    `Review digest sent (${tasks.length} items with quick-action buttons)`, {});
+}
+
 /** Review all tasks in 'review' status that were completed by 小工. */
 export async function reviewPendingTasks(sessionId: string): Promise<ReviewResult[]> {
   const { tasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=review&limit=20');
@@ -535,6 +713,7 @@ export async function reviewPendingTasks(sessionId: string): Promise<ReviewResul
       log('error', `Review failed for task #${task.id}`, { error: String(e) });
       results.push({
         verdict: 'needs_tommy',
+        confidence: 'low',
         reasoning: `Review errored: ${String(e)}`,
       });
     }

@@ -14,11 +14,29 @@ export async function GET(
 
   const comments = db
     .prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC')
-    .all(Number(id));
+    .all(Number(id)) as Array<{ id: number; type: string; metadata: string | null }>;
+
+  // Auto-resolve knowledgeLink for doc comments using real filenames from knowledge_docs
+  const taskId = Number(id);
+  const knowledgeDoc = db.prepare(
+    `SELECT filename FROM knowledge_docs WHERE filename LIKE ? ORDER BY id DESC LIMIT 1`
+  ).get(`task-${taskId}-%`) as { filename: string } | undefined;
+
+  if (knowledgeDoc) {
+    for (const c of comments) {
+      if (c.type === 'doc' && c.metadata) {
+        try {
+          const meta = JSON.parse(c.metadata);
+          meta.filename = knowledgeDoc.filename;
+          meta.knowledgeLink = '/knowledge/' + encodeURIComponent(knowledgeDoc.filename);
+          (c as Record<string, unknown>).metadata = JSON.stringify(meta);
+        } catch {}
+      }
+    }
+  }
 
   // Auto-sync PR statuses in the background (non-blocking)
-  const prComments = (comments as Array<{ id: number; type: string; metadata: string | null }>)
-    .filter((c) => c.type === 'pr' && c.metadata);
+  const prComments = comments.filter((c) => c.type === 'pr' && c.metadata);
   if (prComments.length > 0) {
     syncPrStatus(prComments as Array<{ id: number; metadata: string }>).catch(() => {});
   }

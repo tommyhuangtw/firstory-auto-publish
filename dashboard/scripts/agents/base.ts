@@ -5,17 +5,33 @@
  * and prompt assembly for all agents (懶懶 PM, 小企 Planner, 小工 Engineer).
  */
 
-// Allow self-signed certs for local dev server (https://localhost:3000)
+// Allow self-signed certs for local dev server
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-import { getDb } from '@/db';
+// Load .env.local so agent scripts pick up DASHBOARD_PUBLIC_URL etc.
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+const envLocalPath = path.join(__dirname, '..', '..', '.env.local');
+if (existsSync(envLocalPath)) {
+  for (const line of readFileSync(envLocalPath, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx > 0) {
+      const key = trimmed.slice(0, eqIdx);
+      if (!process.env[key]) {
+        process.env[key] = trimmed.slice(eqIdx + 1);
+      }
+    }
+  }
+}
+
+import { getDb } from '@/db';
+import { randomUUID, createHmac } from 'crypto';
 import { execSync } from 'child_process';
 
 // ── Constants ────────────────────────────────────────────────────────
-const BASE_URL = process.env.DASHBOARD_URL || 'https://localhost:3000';
+const BASE_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
 // Telegram Bot API credentials (read from ~/.hermes/.env if not in process.env)
 function loadHermesEnv(): { botToken: string; chatId: string } {
   let botToken = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -247,6 +263,60 @@ export async function sendTelegram(message: string, _event?: string): Promise<vo
     }
   } catch (e) {
     log('warn', `Failed to send Telegram: ${String(e)}`);
+  }
+}
+
+/** Generate HMAC token for quick-action URLs */
+export function generateQuickActionToken(taskId: number, action: string): string {
+  const secret = _telegramCreds.botToken || 'fallback-secret';
+  return createHmac('sha256', secret).update(`${taskId}:${action}`).digest('hex').slice(0, 16);
+}
+
+/** Verify HMAC token for quick-action URLs */
+export function verifyQuickActionToken(taskId: number, action: string, token: string): boolean {
+  return generateQuickActionToken(taskId, action) === token;
+}
+
+/** Build quick-action URL for a task. Returns null if no public URL is configured. */
+export function buildQuickActionUrl(taskId: number, action: 'approve' | 'reject'): string | null {
+  const publicUrl = process.env.DASHBOARD_PUBLIC_URL;
+  if (!publicUrl) return null; // No public URL → buttons not available
+  const token = generateQuickActionToken(taskId, action);
+  const base = publicUrl.replace(/\/$/, '');
+  return `${base}/api/tasks/quick-action?id=${taskId}&action=${action}&token=${token}`;
+}
+
+/** Send Telegram message with inline keyboard buttons */
+export async function sendTelegramWithButtons(
+  message: string,
+  buttons: Array<Array<{ text: string; url: string }>>,
+): Promise<void> {
+  const { botToken, chatId } = _telegramCreds;
+  if (!botToken || !chatId) {
+    log('warn', 'Telegram credentials not found');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: buttons.map(row =>
+            row.map(btn => ({ text: btn.text, url: btn.url }))
+          ),
+        },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      log('warn', `Telegram API error ${res.status}: ${body.slice(0, 200)}`);
+    }
+  } catch (e) {
+    log('warn', `Failed to send Telegram with buttons: ${String(e)}`);
   }
 }
 

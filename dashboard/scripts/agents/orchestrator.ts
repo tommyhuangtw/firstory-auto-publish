@@ -28,7 +28,7 @@ import {
 } from './base';
 
 import { checkAndPropose } from './planner';
-import { evaluateProposals, reviewPendingTasks, reviewTask, dailySummary } from './pm';
+import { evaluateProposals, reviewPendingTasks, reviewTask, dailySummary, sendReviewDigest } from './pm';
 import { executeTask, resumeTask, type ExecutionResult } from './engineer';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -164,6 +164,13 @@ async function morningRun(sessionId: string): Promise<void> {
 
   // Step 3: 小工 executes tasks
   await executeAvailableTasks(sessionId);
+
+  // Step 4: Send review digest (remind Tommy of pending reviews)
+  try {
+    await sendReviewDigest(sessionId);
+  } catch (e) {
+    log('warn', `Review digest failed: ${String(e)}`);
+  }
 }
 
 /**
@@ -185,8 +192,15 @@ async function eveningRun(sessionId: string): Promise<void> {
     log('error', `懶懶 review failed: ${String(e)}`);
   }
 
-  // Step 3: Daily summary
-  log('info', 'Step 3: 懶懶 generating daily summary...');
+  // Step 3: Send review digest
+  try {
+    await sendReviewDigest(sessionId);
+  } catch (e) {
+    log('warn', `Review digest failed: ${String(e)}`);
+  }
+
+  // Step 4: Daily summary
+  log('info', 'Step 4: 懶懶 generating daily summary...');
   try {
     await dailySummary(sessionId);
     log('info', 'Daily summary sent');
@@ -232,8 +246,15 @@ async function fullRun(sessionId: string): Promise<void> {
     log('error', `懶懶 review failed: ${String(e)}`);
   }
 
-  // Step 5: Daily summary
-  log('info', 'Step 5: Daily summary...');
+  // Step 5: Review digest
+  try {
+    await sendReviewDigest(sessionId);
+  } catch (e) {
+    log('warn', `Review digest failed: ${String(e)}`);
+  }
+
+  // Step 6: Daily summary
+  log('info', 'Step 6: Daily summary...');
   try {
     await dailySummary(sessionId);
   } catch (e) {
