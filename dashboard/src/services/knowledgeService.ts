@@ -42,12 +42,15 @@ export function syncResearchFiles(): void {
     let title = filename.replace(/\.md$/, '').replace(/^task-\d+-/, '').replace(/-/g, ' ');
     let category = 'research';
 
+    let validTaskId: number | null = taskId;
     if (taskId) {
       const task = db.prepare('SELECT title, category FROM tasks WHERE id = ?').get(taskId) as
         { title: string; category: string } | undefined;
       if (task) {
         title = task.title;
         category = task.category;
+      } else {
+        validTaskId = null;  // task no longer exists — avoid FK violation
       }
     }
 
@@ -66,7 +69,7 @@ export function syncResearchFiles(): void {
 
     db.prepare(
       'INSERT OR IGNORE INTO knowledge_docs (filename, title, category, task_id, word_count, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(filename, title, category, taskId, wordCount, createdAt);
+    ).run(filename, title, category, validTaskId, wordCount, createdAt);
   }
 }
 
