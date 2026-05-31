@@ -66,9 +66,27 @@ export default function ReviewClient({
   function handleTitleChange(newTitle: string) {
     const oldTitle = title;
     setTitle(newTitle);
-    // Update tracked IG caption so the next save writes the correct value
+    // Update tracked IG caption — try multiple replacement strategies
     if (oldTitle && newTitle && oldTitle !== newTitle) {
-      setTrackedIgCaption(prev => prev.replace(oldTitle, newTitle));
+      setTrackedIgCaption(prev => {
+        // Strategy 1: exact match (most common)
+        if (prev.includes(oldTitle)) {
+          return prev.replace(oldTitle, newTitle);
+        }
+        // Strategy 2: title preceded by EP prefix (e.g. "EP326 Title" or "EP 326 Title")
+        const epPattern = new RegExp(`EP\\s*\\d+\\s+${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        const epMatch = prev.match(epPattern);
+        if (epMatch) {
+          return prev.replace(epMatch[0], newTitle);
+        }
+        // Strategy 3: title after ｜ delimiter (單元標示 line)
+        const delimPattern = new RegExp(`(｜)${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        if (delimPattern.test(prev)) {
+          return prev.replace(delimPattern, `$1${newTitle}`);
+        }
+        // Fallback: no match found, return unchanged
+        return prev;
+      });
     }
     window.dispatchEvent(new CustomEvent('title-changed', { detail: { oldTitle, newTitle } }));
   }
