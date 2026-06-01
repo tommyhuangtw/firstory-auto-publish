@@ -27,34 +27,17 @@ export default function IgCaptionSection({ episodeId, igCaption: initialCaption,
     setSavedCaption(initialCaption);
   }, [initialCaption]);
 
-  // Live preview: replace title in caption when user picks a different title
+  // Sync from explicit server response (avoids router.refresh() race)
   useEffect(() => {
-    function onTitleChanged(e: Event) {
-      const { oldTitle, newTitle } = (e as CustomEvent).detail;
-      if (oldTitle && newTitle && oldTitle !== newTitle) {
-        setCaption(prev => {
-          // Strategy 1: exact match
-          if (prev.includes(oldTitle)) {
-            return prev.replace(oldTitle, newTitle);
-          }
-          // Strategy 2: title preceded by EP prefix (e.g. "EP326 Title")
-          const escaped = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const epPattern = new RegExp(`EP\\s*\\d+\\s+${escaped}`);
-          const epMatch = prev.match(epPattern);
-          if (epMatch) {
-            return prev.replace(epMatch[0], newTitle);
-          }
-          // Strategy 3: title after ｜ delimiter
-          const delimPattern = new RegExp(`(｜)${escaped}`);
-          if (delimPattern.test(prev)) {
-            return prev.replace(delimPattern, `$1${newTitle}`);
-          }
-          return prev;
-        });
+    function onCaptionSynced(e: Event) {
+      const { caption: newCaption } = (e as CustomEvent).detail;
+      if (newCaption) {
+        setCaption(newCaption);
+        setSavedCaption(newCaption);
       }
     }
-    window.addEventListener('title-changed', onTitleChanged);
-    return () => window.removeEventListener('title-changed', onTitleChanged);
+    window.addEventListener('ig-caption-synced', onCaptionSynced);
+    return () => window.removeEventListener('ig-caption-synced', onCaptionSynced);
   }, []);
 
   const isDirty = caption !== savedCaption;

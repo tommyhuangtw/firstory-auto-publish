@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Props {
@@ -26,7 +26,6 @@ export default function ReviewClient({
   selectedTitle: initialTitle,
   description: initialDescription,
   tags,
-  igCaption: initialIgCaption,
 }: Props) {
   const router = useRouter();
   const [candidateTitles, setCandidateTitles] = useState(initialCandidates);
@@ -49,12 +48,6 @@ export default function ReviewClient({
   const [savedTitle, setSavedTitle] = useState(initialTitle);
   const [savedDescription, setSavedDescription] = useState(initialDescription);
 
-  // Track IG caption locally so title replacements accumulate correctly
-  const [trackedIgCaption, setTrackedIgCaption] = useState(initialIgCaption);
-  useEffect(() => {
-    setTrackedIgCaption(initialIgCaption);
-  }, [initialIgCaption]);
-
   const canReview = status === 'pending_review';
   const canEdit = status === 'pending_review' || status === 'published' || status === 'approved' || status === 'publishing';
 
@@ -64,46 +57,18 @@ export default function ReviewClient({
   [title, description, savedTitle, savedDescription]);
 
   function handleTitleChange(newTitle: string) {
-    const oldTitle = title;
     setTitle(newTitle);
-    // Update tracked IG caption — try multiple replacement strategies
-    if (oldTitle && newTitle && oldTitle !== newTitle) {
-      setTrackedIgCaption(prev => {
-        // Strategy 1: exact match (most common)
-        if (prev.includes(oldTitle)) {
-          return prev.replace(oldTitle, newTitle);
-        }
-        // Strategy 2: title preceded by EP prefix (e.g. "EP326 Title" or "EP 326 Title")
-        const epPattern = new RegExp(`EP\\s*\\d+\\s+${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
-        const epMatch = prev.match(epPattern);
-        if (epMatch) {
-          return prev.replace(epMatch[0], newTitle);
-        }
-        // Strategy 3: title after ｜ delimiter (單元標示 line)
-        const delimPattern = new RegExp(`(｜)${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
-        if (delimPattern.test(prev)) {
-          return prev.replace(delimPattern, `$1${newTitle}`);
-        }
-        // Fallback: no match found, return unchanged
-        return prev;
-      });
-    }
-    window.dispatchEvent(new CustomEvent('title-changed', { detail: { oldTitle, newTitle } }));
   }
 
   async function handleSave() {
     setSaving(true);
     setMessage('');
     try {
-      const titleChanged = title !== savedTitle;
-      // Build a single save payload — include igCaption when title changed
+      // Server-side save-meta handles title→igCaption sync automatically
       const payload: Record<string, string> = {
         selectedTitle: title,
         description,
       };
-      if (titleChanged && trackedIgCaption) {
-        payload.igCaption = trackedIgCaption;
-      }
       const res = await fetch(`/api/episodes/${episodeId}/save-meta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,7 +79,10 @@ export default function ReviewClient({
       setSavedTitle(title);
       setSavedDescription(description);
       setMessage('已儲存');
-      router.refresh();
+      // Sync IG caption from server response immediately (no full page refresh needed)
+      if (data.igCaption) {
+        window.dispatchEvent(new CustomEvent('ig-caption-synced', { detail: { caption: data.igCaption } }));
+      }
     } catch (err) {
       setMessage(`Error: ${(err as Error).message}`);
     } finally {
