@@ -89,12 +89,66 @@ Publish 時，每個平台獨立執行，一個失敗不影響其他：
 4. **Facebook** — 封面圖 + LLM 生成貼文 → Graph API 發布
 5. **Threads** — LLM 生成貼文 → Threads API 發布
 
-### Video Creation
+### Video Creation（FFmpeg 影片生成）
 
-- **影片畫面**: 永遠使用 composite 雙面板佈局（`thumbnailGenerator.ts` 生成：左面板=EP+標題，右面板=IG 封面圖）
-- **字幕**: FFmpeg `subtitles` filter 燒錄 SRT（白字+半透明黑底，10fps）
-- **YouTube 縮圖**: User-selected 或 composite，獨立於影片畫面
-- **SRT**: 同時上傳到 YouTube 作為 closed captions（SEO 用）
+**核心概念**：YouTube 影片 = 靜態圖片 + 音檔 + 燒錄字幕。畫面全程不變，只有字幕在切換。
+
+**Service**: `dashboard/src/services/videoCreator.ts`
+
+#### 影片生成流程
+
+1. `thumbnailGenerator.ts` 生成 composite 雙面板圖（左面板=EP+標題，右面板=IG 封面圖）→ 1280×720 JPEG
+2. `videoCreator.ts` 用 FFmpeg 合成：靜態圖片 + MP3 音檔 + SRT 字幕 → MP4
+3. 上傳 MP4 到 YouTube + 設定縮圖 + 上傳 SRT 作為 closed captions（SEO 用）
+
+#### FFmpeg 編碼參數
+
+```
+ffmpeg -loop 1 -framerate {fps} -i {composite.jpg}
+       -i {audio.mp3}
+       -c:v libx264 -preset ultrafast -tune stillimage
+       -crf 28 -g 99999 -r {fps}
+       -c:a aac -b:a 192k -pix_fmt yuv420p
+       -vf "scale=1280:720:...,subtitles='{srt}':force_style='FontName=Heiti TC,...'"
+       -shortest output.mp4
+```
+
+| 參數 | 值 | 說明 |
+|------|-----|------|
+| fps | `2`（有字幕）/ `1`（無字幕） | 靜態圖片不需高 fps，字幕每 2-3 秒切換一次，2fps 足夠 |
+| `-tune stillimage` | 永遠啟用 | 靜態畫面壓縮最佳化 |
+| `-g 99999` | 永遠啟用 | 超大 keyframe 間距，因為畫面幾乎不變 |
+| `-crf 28` | 固定 | 畫質足夠（靜態圖片不需低 CRF） |
+| `-preset ultrafast` | 固定 | 最快編碼速度 |
+| 解析度 | 1280×720 | 輸入輸出都是 720p |
+| 字型 | `Heiti TC`（黑體-繁） | macOS 內建 CJK 字型，必須明確指定否則中文顯示為框框 |
+| Timeout | 30 min（有字幕）/ 10 min（無字幕） | spawn + SIGKILL |
+
+#### 字幕燒錄（Hardcoded Subtitles）
+
+- 使用 FFmpeg `subtitles` filter（libass 引擎）將 SRT 燒錄進影片
+- **必須指定 `FontName=Heiti TC`**，否則 libass 預設字型不支援中文會顯示 □□□
+- 字幕樣式：白字 + 半透明黑底（`BorderStyle=4`），底部置中（`Alignment=2, MarginV=40`）
+- SRT 同時也上傳到 YouTube 作為 closed captions（雙軌字幕：硬字幕 + CC）
+
+#### 字幕生成流程
+
+**Service**: `dashboard/src/services/subtitleGenerator.ts`
+
+1. OpenAI Whisper 轉錄音檔 → 取得逐字時間戳
+2. 腳本文字與 Whisper 結果對齊（sentence-level alignment）
+3. 產生 SRT 格式字幕檔
+
+#### YouTube 縮圖 vs 影片畫面
+
+- **影片畫面**：永遠用 composite 雙面板圖（自動生成，不可選）
+- **YouTube 縮圖**：User-selected（review 頁面選擇）或 fallback 到 composite
+- 兩者獨立：縮圖是 YouTube metadata，影片畫面是 MP4 內容
+
+#### 效能備註
+
+- 26 分鐘 episode 在 2fps + stillimage 下約 2.5 分鐘編碼完成
+- **禁止調高 fps**：10fps 曾導致 15+ 分鐘編碼 + timeout，靜態圖片完全不需要高 fps
 
 ---
 
