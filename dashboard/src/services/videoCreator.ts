@@ -4,7 +4,7 @@
  * Uses FFmpeg to combine an audio file with a cover image into a video.
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
@@ -48,13 +48,14 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
   }
 
   const hasSubs = srtPath && fs.existsSync(srtPath);
-  const fps = hasSubs ? '10' : '1';
+  // 2fps is enough for subtitle transitions (change every ~2-3s); 1fps for no subs
+  const fps = hasSubs ? '2' : '1';
 
   const args: string[] = [];
 
   if (coverPath && fs.existsSync(coverPath)) {
     // Build -vf filter chain
-    const vfParts = ['scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black'];
+    const vfParts = ['scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black'];
     if (hasSubs) {
       const escaped = escapeFFmpegSubPath(srtPath);
       vfParts.push(`subtitles='${escaped}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
@@ -68,9 +69,9 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
       '-i', audioPath,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      ...(hasSubs ? [] : ['-tune', 'stillimage']),
-      '-crf', '23',
-      ...(hasSubs ? [] : ['-g', '99999']),
+      '-tune', 'stillimage',
+      '-crf', '28',
+      '-g', '99999',
       '-r', fps,
       '-c:a', 'aac',
       '-b:a', '192k',
@@ -90,13 +91,13 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
     args.push(
       '-y', '-nostdin',
       '-f', 'lavfi',
-      '-i', `color=c=black:s=1920x1080:r=${fps}`,
+      '-i', `color=c=black:s=1280x720:r=${fps}`,
       '-i', audioPath,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      ...(hasSubs ? [] : ['-tune', 'stillimage']),
-      '-crf', '23',
-      ...(hasSubs ? [] : ['-g', '99999']),
+      '-tune', 'stillimage',
+      '-crf', '28',
+      '-g', '99999',
       '-r', fps,
       '-c:a', 'aac',
       '-b:a', '192k',
@@ -110,7 +111,29 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
   log.info({ audioPath, coverPath, outputPath, srtPath: hasSubs ? srtPath : undefined, fps }, 'Creating video...');
 
   try {
-    await execFileAsync('ffmpeg', args, { timeout: 600000 }); // 10min max
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stderrTail = '';           // keep only last 4KB for error reporting
+      const TAIL_SIZE = 4096;
+
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString()).slice(-TAIL_SIZE);
+      });
+      proc.stdout.resume();          // drain stdout to prevent backpressure
+
+      const timeoutMs = hasSubs ? 1800000 : 600000; // 30 min with subs, 10 min without
+      const timer = setTimeout(() => {
+        proc.kill('SIGKILL');
+        reject(new Error(`FFmpeg timed out after ${timeoutMs / 60000} minutes`));
+      }, timeoutMs);
+
+      proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg exited with code ${code}\n${stderrTail}`));
+      });
+    });
     log.info({ outputPath }, 'Video created');
     return outputPath;
   } catch (err) {
