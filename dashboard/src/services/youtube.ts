@@ -150,7 +150,7 @@ export class YouTubeService {
           '-vf', `scale=${width}:-1`,
           '-q:v', String(qv),
           finalPath,
-        ]);
+        ], { maxBuffer: 10 * 1024 * 1024 });
         const size = (await fs.stat(finalPath)).size;
         log.info({ width, qv, sizeMB: (size / (1024 * 1024)).toFixed(2) }, 'Compression attempt');
         if (size <= 2 * 1024 * 1024) break;
@@ -202,6 +202,12 @@ export class YouTubeService {
     });
 
     log.info({ videoId, language }, 'Caption uploaded');
+  }
+
+  async deleteVideo(videoId: string): Promise<void> {
+    const yt = this.ensureYt();
+    await yt.videos.delete({ id: videoId });
+    log.info({ videoId }, 'Video deleted');
   }
 
   async getChannelInfo(): Promise<ChannelInfo | null> {

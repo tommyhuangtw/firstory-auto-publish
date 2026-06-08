@@ -27,11 +27,11 @@ export function formatSoundonTitle(episodeNumber: number, segmentType: string, t
 }
 
 export function formatYoutubeTitle(episodeNumber: number, segmentType: string, title: string): string {
-  if (segmentType === 'weekly') return `AI懶人報Podcast ｜ EP${episodeNumber} AI懶人精選週報 - ${title}`;
-  if (segmentType === 'robot') return `AI懶人報Podcast ｜ EP${episodeNumber} 機器人觀察週報 - ${title}`;
-  if (segmentType === 'sysdesign') return `AI懶人報Podcast ｜ EP${episodeNumber} 系統設計懶懶學 - ${title}`;
-  if (segmentType === 'quickchat') return `AI懶人報Podcast ｜ EP${episodeNumber} 懶懶碎碎念 - ${title}`;
-  return `AI懶人報Podcast ｜ EP${episodeNumber} - ${title}`;
+  if (segmentType === 'weekly') return `EP${episodeNumber} AI懶人精選週報 - ${title}`;
+  if (segmentType === 'robot') return `EP${episodeNumber} 機器人觀察週報 - ${title}`;
+  if (segmentType === 'sysdesign') return `EP${episodeNumber} 系統設計懶懶學 - ${title}`;
+  if (segmentType === 'quickchat') return `EP${episodeNumber} 懶懶碎碎念 - ${title}`;
+  return `EP${episodeNumber} - ${title}`;
 }
 
 export async function publish(state: PipelineState): Promise<Partial<PipelineState>> {
@@ -43,40 +43,41 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
   const results: Partial<PipelineState> = { status: 'completed' };
   const publishErrors: Array<{ platform: string; error: string }> = [];
 
-  // SoundOn (Playwright)
-  try {
-    const soundonUrl = await publishToSoundOnPlatform(state);
-    results.soundonUrl = soundonUrl;
-    log.info({ soundonUrl }, 'SoundOn published');
-  } catch (error) {
-    const msg = (error as Error).message;
+  // Run all platforms in parallel — each is independent
+  const [soundonResult, youtubeResult, igResult] = await Promise.allSettled([
+    // SoundOn (Playwright)
+    publishToSoundOnPlatform(state),
+    // YouTube (video creator + API upload)
+    publishToYouTubePlatform(state),
+    // Instagram (cover image + caption)
+    (state.coverUrl && state.igCaption && process.env.INSTAGRAM_ACCESS_TOKEN)
+      ? import('@/services/instagram').then(({ postToInstagram }) => postToInstagram(state.coverUrl!, state.igCaption!))
+      : Promise.resolve(null),
+  ]);
+
+  if (soundonResult.status === 'fulfilled' && soundonResult.value) {
+    results.soundonUrl = soundonResult.value;
+    log.info({ soundonUrl: soundonResult.value }, 'SoundOn published');
+  } else if (soundonResult.status === 'rejected') {
+    const msg = (soundonResult.reason as Error).message;
     log.error({ error: msg }, 'SoundOn publish failed');
     publishErrors.push({ platform: 'SoundOn', error: msg });
   }
 
-  // YouTube (video creator + API upload)
-  try {
-    const youtubeUrl = await publishToYouTubePlatform(state);
-    results.youtubeUrl = youtubeUrl;
-    log.info({ youtubeUrl }, 'YouTube published');
-  } catch (error) {
-    const msg = (error as Error).message;
+  if (youtubeResult.status === 'fulfilled' && youtubeResult.value) {
+    results.youtubeUrl = youtubeResult.value;
+    log.info({ youtubeUrl: youtubeResult.value }, 'YouTube published');
+  } else if (youtubeResult.status === 'rejected') {
+    const msg = (youtubeResult.reason as Error).message;
     log.error({ error: msg }, 'YouTube publish failed');
     publishErrors.push({ platform: 'YouTube', error: msg });
   }
 
-  // Instagram (cover image + caption)
-  try {
-    if (state.coverUrl && state.igCaption && process.env.INSTAGRAM_ACCESS_TOKEN) {
-      const { postToInstagram } = await import('@/services/instagram');
-      const postId = await postToInstagram(state.coverUrl, state.igCaption);
-      results.igPostId = postId;
-      log.info({ postId }, 'Instagram posted');
-    } else {
-      log.info('Skipping Instagram (no cover URL, caption, or token)');
-    }
-  } catch (error) {
-    const msg = (error as Error).message;
+  if (igResult.status === 'fulfilled' && igResult.value) {
+    results.igPostId = igResult.value;
+    log.info({ postId: igResult.value }, 'Instagram posted');
+  } else if (igResult.status === 'rejected') {
+    const msg = (igResult.reason as Error).message;
     log.error({ error: msg }, 'Instagram post failed');
     publishErrors.push({ platform: 'Instagram', error: msg });
   }
