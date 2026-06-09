@@ -487,8 +487,7 @@ Telegram 的 approve/reject 按鈕連結指向 `https://hub.ailanbao.org/api/tas
 | `test-subtitles.ts` | 測試 Whisper 轉錄 + SRT 生成 |
 | `test-soundon.ts` | 測試 SoundOn Playwright 上傳 |
 | `test-quality-loop.ts` | 測試品質評分迴圈 |
-| `test-topic-pipeline.ts` | 測試完整 pipeline |
-| `seed-memory.ts` | 初始化工具記憶 DB |
+| `test-soundon-scraper.ts` | 測試 SoundOn 數據擷取 |
 
 ---
 
