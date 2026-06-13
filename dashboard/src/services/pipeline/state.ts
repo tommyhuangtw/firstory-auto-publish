@@ -83,8 +83,9 @@ export interface PipelineState {
   segmentType: SegmentType;
   pipelineRunId: number;
 
-  // ── Manual input (sysdesign / quickchat) ──
+  // ── Manual input (any segment can use manualVideoUrls; episodeLength is quickchat-only) ──
   manualVideoUrls: string[];
+  customInstructions: string;
   episodeLength: 12 | 15 | 18 | 21 | 25 | null;
   sourceLinks: SourceLink[];
 
@@ -180,6 +181,7 @@ export function createInitialState(
     segmentType,
     pipelineRunId,
     manualVideoUrls: [],
+    customInstructions: '',
     episodeLength: null,
     sourceLinks: [],
     videos: [],

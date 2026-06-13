@@ -6,10 +6,11 @@ import type { SegmentType } from '@/services/pipeline/state';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { segmentType, manualVideoUrls, episodeLength } = body as {
+    const { segmentType, manualVideoUrls, episodeLength, customInstructions } = body as {
       segmentType: SegmentType;
       manualVideoUrls?: string[];
       episodeLength?: 12 | 15 | 18 | 21 | 25;
+      customInstructions?: string;
     };
 
     if (!segmentType) {
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
     startPipeline(episodeId, segmentType, pipelineRunId, {
       manualVideoUrls: manualVideoUrls || [],
       episodeLength: episodeLength,
+      customInstructions: customInstructions || '',
     }).catch(async (error) => {
       // DB is already updated by startPipeline; send email notification
       try {

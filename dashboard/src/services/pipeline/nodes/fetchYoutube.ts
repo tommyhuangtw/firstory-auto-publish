@@ -91,8 +91,8 @@ export function getSearchQueries(): Record<string, string[]> {
 export async function fetchYoutube(state: PipelineState): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId, segmentType: state.segmentType }, 'Fetching YouTube videos');
 
-  // sysdesign / quickchat: skip search, parse manual URLs into VideoSource stubs
-  if (state.segmentType === 'sysdesign' || state.segmentType === 'quickchat') {
+  // Any segment with manual URLs: skip search, parse URLs into VideoSource stubs
+  if (state.manualVideoUrls?.length > 0) {
     const urls = state.manualVideoUrls || [];
     log.info({ count: urls.length, segmentType: state.segmentType }, 'Using manual video URLs');
     const videos: VideoSource[] = [];

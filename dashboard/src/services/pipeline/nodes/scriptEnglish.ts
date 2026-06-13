@@ -742,6 +742,11 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
     systemPrompt += `\n\n---\n\n${narrativeContextParts.join('\n\n')}`;
   }
 
+  // Inject producer's custom instructions (e.g. "focus on X", "compare A vs B")
+  if (state.customInstructions?.trim()) {
+    systemPrompt += `\n\n---\n\nADDITIONAL INSTRUCTIONS FROM THE PRODUCER:\n${state.customInstructions.trim()}`;
+  }
+
   // Build content string — sysdesign/quickchat summarize long transcripts first, others use full transcript
   let content: string;
   if (isSysdesign || isQuickchat) {
@@ -776,8 +781,9 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
       .join('\n\n---\n\n');
   }
 
-  const quickchatTargetMap: Record<number, string> = { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' };
-  const targetWords = isQuickchat ? (quickchatTargetMap[state.episodeLength || 18] || '6200')
+  const lengthTargetMap: Record<number, string> = { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' };
+  const hasEpisodeLength = state.episodeLength && lengthTargetMap[state.episodeLength];
+  const targetWords = hasEpisodeLength ? lengthTargetMap[state.episodeLength!]
     : isSysdesign ? '10000' : isRobot ? '6000' : '5000';
 
   // n8n exact user prompt

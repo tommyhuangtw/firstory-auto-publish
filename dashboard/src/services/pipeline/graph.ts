@@ -53,6 +53,7 @@ const PipelineAnnotation = Annotation.Root({
   segmentType: Annotation<SegmentType>,
   pipelineRunId: Annotation<number>,
   manualVideoUrls: Annotation<string[]>,
+  customInstructions: Annotation<string>,
   episodeLength: Annotation<12 | 15 | 18 | 21 | 25 | null>,
   sourceLinks: Annotation<SourceLink[]>,
   videos: Annotation<VideoSource[]>,
@@ -146,7 +147,7 @@ export async function startPipeline(
   episodeId: number,
   segmentType: SegmentType,
   pipelineRunId?: number,
-  opts?: { manualVideoUrls?: string[]; episodeLength?: 12 | 15 | 18 | 21 | 25 }
+  opts?: { manualVideoUrls?: string[]; episodeLength?: 12 | 15 | 18 | 21 | 25; customInstructions?: string }
 ): Promise<{ pipelineRunId: number; state: PipelineState }> {
   const db = getDb();
 
@@ -170,6 +171,9 @@ export async function startPipeline(
   }
   if (opts?.episodeLength) {
     initialState.episodeLength = opts.episodeLength;
+  }
+  if (opts?.customInstructions) {
+    initialState.customInstructions = opts.customInstructions;
   }
 
   log.info({ episodeId, segmentType, pipelineRunId }, 'Pipeline started');
@@ -300,6 +304,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     segmentType: episode.segment_type as SegmentType,
     pipelineRunId: 0,
     manualVideoUrls: [],
+    customInstructions: '',
     episodeLength: null,
     sourceLinks: JSON.parse((episode.source_links as string) || '[]'),
     videos: [],

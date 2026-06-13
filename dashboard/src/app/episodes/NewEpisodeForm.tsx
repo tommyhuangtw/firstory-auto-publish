@@ -59,6 +59,7 @@ export default function NewEpisodeForm() {
   const [open, setOpen] = useState(false);
   const [segmentType, setSegmentType] = useState<string>('daily');
   const [manualUrls, setManualUrls] = useState('');
+  const [customInstructions, setCustomInstructions] = useState('');
   const [episodeLength, setEpisodeLength] = useState<12 | 15 | 18 | 21 | 25>(18);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -105,15 +106,20 @@ export default function NewEpisodeForm() {
     setTracking(null);
     try {
       const body: Record<string, unknown> = { segmentType };
-      if (segmentType === 'sysdesign' || segmentType === 'quickchat') {
+      if (segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily') {
         const urls = manualUrls.split('\n').map(u => u.trim()).filter(Boolean);
-        if (urls.length === 0) {
+        if ((segmentType === 'sysdesign' || segmentType === 'quickchat') && urls.length === 0) {
           setMessage('請至少貼入一個 YouTube URL');
           setLoading(false);
           return;
         }
-        body.manualVideoUrls = urls;
-        if (segmentType === 'quickchat') {
+        if (urls.length > 0) {
+          body.manualVideoUrls = urls;
+        }
+        if (customInstructions.trim()) {
+          body.customInstructions = customInstructions.trim();
+        }
+        if (segmentType === 'quickchat' || (segmentType === 'daily' && urls.length > 0)) {
           body.episodeLength = episodeLength;
         }
       }
@@ -338,11 +344,11 @@ export default function NewEpisodeForm() {
           })}
         </div>
 
-        {/* Manual URL input for sysdesign */}
-        {(segmentType === 'sysdesign' || segmentType === 'quickchat') && (
+        {/* Manual URL input for sysdesign / quickchat / daily */}
+        {(segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily') && (
           <div className="mb-4">
             <label className="block text-xs text-zinc-400 mb-1.5">
-              YouTube URL（一行一個）
+              YouTube URL（一行一個）{segmentType === 'daily' && <span className="text-zinc-500">（選填，留空則自動搜尋）</span>}
               {manualUrls.trim() && (
                 <span className="ml-2 text-teal-400">
                   {manualUrls.split('\n').filter(u => u.trim()).length} 個影片
@@ -359,8 +365,24 @@ export default function NewEpisodeForm() {
           </div>
         )}
 
-        {/* Episode length selector for quickchat */}
-        {segmentType === 'quickchat' && (
+        {/* Custom instructions (visible when daily has URLs) */}
+        {segmentType === 'daily' && manualUrls.split('\n').some(u => u.trim()) && (
+          <div className="mb-4">
+            <label className="block text-xs text-zinc-400 mb-1.5">
+              指定方向（選填）
+            </label>
+            <textarea
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="例：請著重比較 Claude 和 GPT 的差異、請從開發者角度分析..."
+              rows={3}
+              className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50 resize-none"
+            />
+          </div>
+        )}
+
+        {/* Episode length selector for quickchat or daily with manual URLs */}
+        {(segmentType === 'quickchat' || (segmentType === 'daily' && manualUrls.split('\n').some(u => u.trim()))) && (
           <div className="mb-4">
             <label className="block text-xs text-zinc-400 mb-1.5">節目長度</label>
             <div className="flex gap-2">
@@ -371,7 +393,7 @@ export default function NewEpisodeForm() {
                   onClick={() => setEpisodeLength(len)}
                   className={`px-3 py-1.5 rounded-lg border text-sm transition-all cursor-pointer ${
                     episodeLength === len
-                      ? 'border-pink-500/40 bg-pink-500/10 text-pink-400'
+                      ? (segmentType === 'daily' ? 'border-blue-500/40 bg-blue-500/10 text-blue-400' : 'border-pink-500/40 bg-pink-500/10 text-pink-400')
                       : 'border-zinc-800 bg-zinc-800/50 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
                 >
