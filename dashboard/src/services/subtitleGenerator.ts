@@ -88,7 +88,7 @@ export async function transcribeAudio(
     const trimmedPath = audioPath.replace(/\.mp3$/, `_trim${maxDuration}s.mp3`);
     execSync(
       `ffmpeg -y -nostdin -i "${audioPath}" -t ${maxDuration} -c copy "${trimmedPath}"`,
-      { stdio: 'pipe' }
+      { stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }
     );
     inputPath = trimmedPath;
   }

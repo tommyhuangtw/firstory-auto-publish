@@ -117,7 +117,8 @@ export async function generateYouTubeThumbnail(options: ThumbnailOptions): Promi
   try {
     const page = await context.newPage();
     await page.setContent(html, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+    // Wait for Google Fonts to load (replaces hardcoded 2s wait)
+    await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: outputPath, type: 'jpeg', quality: 90 });
   } finally {
     await context.close();

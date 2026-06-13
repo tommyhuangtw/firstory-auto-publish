@@ -41,7 +41,11 @@ export default function YouTubeThumbnailSection({
   const [customPromptFor, setCustomPromptFor] = useState<string | null>(null); // style name
   const [customPrompt, setCustomPrompt] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [cacheBuster, setCacheBuster] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stable cache-buster set once on client to avoid hydration mismatch
+  useEffect(() => { setCacheBuster(String(Date.now())); }, []);
 
   // Load existing thumbnails from filesystem on mount
   useEffect(() => {
@@ -360,7 +364,7 @@ export default function YouTubeThumbnailSection({
                   }`}
                 >
                   <img
-                    src={t.url + (t.url.includes('?') ? '&' : '?') + 't=' + Date.now()}
+                    src={t.url + (cacheBuster ? (t.url.includes('?') ? '&' : '?') + 't=' + cacheBuster : '')}
                     alt={t.style}
                     className="w-full aspect-video object-contain bg-zinc-950"
                   />
