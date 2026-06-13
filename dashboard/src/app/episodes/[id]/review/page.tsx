@@ -18,6 +18,7 @@ import AudioSection from './AudioSection';
 import SponsorAudioSelector from './SponsorAudioSelector';
 import FbCaptionSection from './FbCaptionSection';
 import ThreadsCaptionSection from './ThreadsCaptionSection';
+import SocialPromoSection from './SocialPromoSection';
 import YouTubeThumbnailSection from './YouTubeThumbnailSection';
 
 export const dynamic = 'force-dynamic';
@@ -322,6 +323,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           fbCaption={episode.fb_caption || ''}
           fbPostId={episode.fb_post_id}
           coverPath={episode.cover_path}
+          canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
+        />
+
+        {/* 社群行銷貼文生成器 */}
+        <SocialPromoSection
+          episodeId={episode.id}
           canEdit={episode.status === 'pending_review' || episode.status === 'published' || episode.status === 'approved' || episode.status === 'publishing'}
         />
 
