@@ -24,7 +24,14 @@ const CLASSIFICATION_MODEL = 'google/gemini-3.1-flash-lite-preview';
 
 const MIN_DURATION_SEC = 300;
 const MAX_DURATION_SEC_WEEKLY = 2400; // Weekly: max 40 min (n8n)
-const MIN_VIEWS = 5000;
+// Per-segment minimum view count for auto-fetched videos (manual URLs bypass this filter
+// via the classifySysdesign path). Fewer than TOP_N survivors is acceptable.
+const MIN_VIEWS_BY_SEGMENT: Record<string, number> = {
+  daily: 18000,
+  robot: 18000,
+  weekly: 25000,
+};
+const MIN_VIEWS_DEFAULT = 5000;
 const MIN_LIKES = 50;
 const MIN_COMMENTS = 20;
 const TOP_N = 5;
@@ -43,8 +50,9 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   const isSysdesign = state.segmentType === 'sysdesign';
   const isQuickchat = state.segmentType === 'quickchat';
 
-  // ── sysdesign / quickchat: skip classification, fetch stats+transcripts for all ──
-  if (isSysdesign || isQuickchat) {
+  // ── sysdesign / quickchat / any segment with manual URLs: skip classification ──
+  const hasManualUrls = (state.manualVideoUrls?.length ?? 0) > 0;
+  if (isSysdesign || isQuickchat || hasManualUrls) {
     return classifySysdesign(state, db);
   }
 
@@ -160,6 +168,9 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
   // Robot: min 270s (n8n), daily/weekly: min 300s
   const minDuration = isRobot ? 270 : MIN_DURATION_SEC;
 
+  // Per-segment minimum views (daily/robot: 18000, weekly: 30000)
+  const minViews = MIN_VIEWS_BY_SEGMENT[state.segmentType] ?? MIN_VIEWS_DEFAULT;
+
   // Excluded videos (user-removed from review page)
   const excludedIds = new Set(state.excludedVideoIds || []);
   if (excludedIds.size > 0) {
@@ -184,8 +195,8 @@ export async function classify(state: PipelineState): Promise<Partial<PipelineSt
       log.debug({ videoId: v.videoId, duration: v.durationSeconds }, 'Filtered: too long for weekly');
       return false;
     }
-    if (v.viewCount < MIN_VIEWS) {
-      log.debug({ videoId: v.videoId, views: v.viewCount }, 'Filtered: low views');
+    if (v.viewCount < minViews) {
+      log.debug({ videoId: v.videoId, views: v.viewCount, minViews }, 'Filtered: low views');
       return false;
     }
     if (v.likeCount < MIN_LIKES) {
@@ -331,6 +342,27 @@ async function classifySysdesign(
       video.transcript = '';
     }
     if (i < videos.length - 1) await sleep(TRANSCRIPT_DELAY_MS);
+  }
+
+  // Save to segment-specific history table (daily/weekly/robot only; sysdesign/quickchat have no dedicated table)
+  const saveTableMap: Record<string, string> = {
+    daily: 'youtube_sources',
+    weekly: 'weekly_youtube_sources',
+    robot: 'robot_youtube_sources',
+  };
+  const saveTable = saveTableMap[state.segmentType];
+  if (saveTable) {
+    for (const video of videos) {
+      db.prepare(
+        `INSERT OR REPLACE INTO ${saveTable} (video_id, title, channel_name, published_at, view_count, like_count, comment_count, duration_seconds, transcript)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        video.videoId, video.title, video.channelName, video.publishedAt,
+        video.viewCount, video.likeCount, video.commentCount, video.durationSeconds,
+        video.transcript,
+      );
+    }
+    log.info({ table: saveTable, count: videos.length }, 'Manual videos saved to history table');
   }
 
   // Build sourceLinks for publishing (original video URLs + titles)
