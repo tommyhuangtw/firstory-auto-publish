@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast.dashboard</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; . "$NVM_DIR/nvm.sh"; cd /Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard &amp;&amp; exec npm run dev</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/tommyhuang/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/dashboard.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/dashboard.err</string>
+</dict>
+</plist>
