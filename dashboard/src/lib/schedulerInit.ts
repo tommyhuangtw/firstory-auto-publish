@@ -115,10 +115,10 @@ export function initializeSchedulerJobs(): void {
   registerJobs(config);
 
   // SoundOn analytics auto-sync — runs every day at 09:00
-  scheduler.register('soundon-analytics-sync', '0 9 * * *', runSoundonSync);
+  scheduler.register('SoundOn 數據同步', '0 9 * * *', runSoundonSync);
 
   // YouTube analytics auto-sync — runs every day at 10:00
-  scheduler.register('youtube-analytics-sync', '0 10 * * *', runYoutubeSync);
+  scheduler.register('YouTube 數據同步', '0 10 * * *', runYoutubeSync);
 
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
