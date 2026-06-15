@@ -8,9 +8,21 @@
 import { getLLMService } from '@/services/llmService';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
+import {
+  VERSION_GUARD_ZH,
+  detectModelVersions,
+  detectUngroundedVersions,
+  hasVersionUpdateClaim,
+} from '@/services/llm/versionGuard';
+import { verifyVersionClaims } from '@/services/modelVersionRegistry';
 import type { PipelineState, SourceLink } from '../state';
 
 const log = createChildLogger('pipeline:meta');
+
+/** Append the version-guard rule to a generation prompt (suppress invented model versions). */
+function withVersionGuard(prompt: string): string {
+  return `${prompt}\n\n${VERSION_GUARD_ZH}`;
+}
 
 /** Append source links section to a description string. Reusable across pipeline and API. */
 export function appendSourceLinks(description: string, sourceLinks: SourceLink[] | undefined): string {
@@ -56,16 +68,16 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
   } catch { /* non-critical */ }
 
   // Steps 1-3: Generate titles, description, tags in parallel (all depend only on summary)
-  const titlePrompt = isQuickchat ? buildQuickchatTitlePrompt(summary)
+  const titlePrompt = withVersionGuard(isQuickchat ? buildQuickchatTitlePrompt(summary)
     : isSysdesign ? buildSysdesignTitlePrompt(summary)
     : isRobot ? buildRobotTitlePrompt(summary)
     : isWeekly ? buildWeeklyTitlePrompt(summary)
-    : buildTitlePrompt(summary);
-  const descPrompt = isQuickchat ? buildQuickchatDescriptionPrompt(summary)
+    : buildTitlePrompt(summary));
+  const descPrompt = withVersionGuard(isQuickchat ? buildQuickchatDescriptionPrompt(summary)
     : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
-    : buildDescriptionPrompt(summary);
+    : buildDescriptionPrompt(summary));
 
   const [titlesResult, descResult, tagsResult] = await Promise.all([
     llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
@@ -115,6 +127,13 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
 
   log.info({ descLength: finalDescription.length, tagCount: tags.length }, 'Meta generation complete');
 
+  // Non-blocking: flag outdated/invented version numbers in the user-facing output.
+  try {
+    await runVersionCheck(state.episodeId, selectedTitle, candidateTitles, finalDescription, summary, content);
+  } catch (err) {
+    log.warn({ error: (err as Error).message }, 'Version check failed (non-blocking)');
+  }
+
   return {
     scriptSummary: summary,
     candidateTitles,
@@ -124,6 +143,56 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     tags,
     status: 'tts',
   };
+}
+
+// ── Version Check (non-blocking) ──
+
+/**
+ * Detect AI-model version numbers in the user-facing output, flag ones not grounded
+ * in the source, and (only when the content makes a version/update claim) web-verify
+ * them. Result is stored to episodes.version_check for the review UI. Never throws.
+ */
+export interface VersionCheckResult {
+  detected: string[];
+  ungrounded: string[];
+  verdicts: { claim: string; isOutdated: boolean; current: string; note: string }[];
+  checkedAt: string;
+  model: string | null;
+}
+
+async function runVersionCheck(
+  episodeId: number,
+  selectedTitle: string,
+  candidateTitles: string[],
+  description: string,
+  summary: string,
+  scriptContent: string,
+): Promise<void> {
+  const userFacing = [selectedTitle, ...(candidateTitles || []), description].filter(Boolean).join('\n');
+  const detected = detectModelVersions(userFacing);
+  const ungrounded = detectUngroundedVersions(userFacing, `${summary || ''}\n${scriptContent || ''}`);
+
+  let verdicts: VersionCheckResult['verdicts'] = [];
+  let model: string | null = null;
+  if (detected.length > 0 && hasVersionUpdateClaim(userFacing)) {
+    const r = await verifyVersionClaims(detected, summary);
+    verdicts = r.verdicts;
+    model = r.model;
+  }
+
+  const payload: VersionCheckResult = {
+    detected,
+    ungrounded,
+    verdicts,
+    checkedAt: new Date().toISOString(),
+    model,
+  };
+  getDb().prepare('UPDATE episodes SET version_check = ? WHERE id = ?')
+    .run(JSON.stringify(payload), episodeId);
+  log.info(
+    { detected: detected.length, ungrounded: ungrounded.length, verdicts: verdicts.length },
+    'Version check stored',
+  );
 }
 
 // ── Script Summarization ──
@@ -213,10 +282,9 @@ ${summary}${userDirection}
   例：「Claude Code 竟讓資料憑空消失！工程師親揭恐怖真相：AI 代理真的能失控？」(1,103 下載)
 
 模式F「版本號新聞感」(+40% 下載)：工具名 + 版本號製造「最新消息」緊迫感
-  例：「Google Jules 2.0 免費升級！這個 AI 寫程式工具太神，開發者必看！」(6,668 下載)
-  例：「Claude Code 2.0 終於來了！Anthropic 這波操作，讓你的程式碼效率直接起飛！」(1,374 下載)
-  例：「Google Gemma 4 震撼登場！新功能超乎想像，AI 個人助理變超神！」(1,222 下載)
-  關鍵：版本號讓聽眾覺得是「新聞」而非「舊文」，緊迫感提升點擊
+  ⚠️ 只有當「內容摘要」中明確出現該版本號時才可使用，嚴禁自行編造或憑記憶補上版本號。不確定版本就只寫工具名（如寫「Claude」不要寫「Claude 3.5」）。
+  例（版本號須來自內容摘要）：「{工具名} {內容提到的版本號} 終於來了！這波操作讓你的工作效率直接起飛！」
+  關鍵：真實版本號讓聽眾覺得是「新聞」而非「舊文」；但用錯版本會適得其反——寧可不寫版本號，也不要寫錯。
 
 ── 必須避免的 5 大雷區（會導致低下載量）──
 ❌ 用聽眾不認識的小工具當主角（如 TuriX、Auto Whisk、Orchids）→ 改用知名品牌帶流量
@@ -241,7 +309,7 @@ ${summary}${userDirection}
 • 2 個用模式C（大品牌+強動詞）
 • 2 個用模式D（免費/賺錢）
 • 1 個用模式E（秘密/危險）
-• 1 個用模式F（版本號新聞感）
+• 1 個用模式F（版本號新聞感，**僅當內容摘要有明確版本號時**；否則改用模式C）
 
 生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
 
@@ -284,6 +352,7 @@ ${summary}${userDirection}
 模式E「版本號/事件新聞感」：特定事件或產品版本製造緊迫感
   例：「NVIDIA GTC 2026 震撼彈！」「Figure AI 機器人進化速度超乎想像」
   關鍵：讓聽眾覺得是「新聞」而非「舊文」
+  ⚠️ 版本號／型號只有在「內容摘要」明確提到時才可使用，不要自行編造或補上版本號。
 
 ── 必須避免 ──
 ❌ 沒人認識的小公司/品牌當主角
@@ -345,9 +414,9 @@ ${summary}${userDirection}
   例：「這週 AI 圈不想讓你知道的3件事，最後一個太離譜」(1,000+ 下載)
 
 模式F「版本號新聞感」(+40% 下載)：工具名 + 版本號製造「最新消息」緊迫感
-  例：「Google Jules 2.0 免費升級！這個 AI 寫程式工具太神，開發者必看！」(6,668 下載)
-  例：「GPT-5.4 正式發布！這次 OpenAI 終於超越 Claude？完整比較」(1,500+ 下載)
-  關鍵：版本號讓聽眾覺得是「新聞」而非「舊文」，緊迫感提升點擊
+  ⚠️ 只有當「內容摘要」中明確出現該版本號時才可使用，嚴禁自行編造或憑記憶補上版本號。不確定版本就只寫工具名（如寫「GPT」不要寫「GPT-4」）。
+  例（版本號須來自內容摘要）：「{工具名} {內容提到的版本號} 正式發布！這次更新到底強在哪？完整比較」
+  關鍵：真實版本號讓聽眾覺得是「新聞」而非「舊文」；但用錯版本會適得其反——寧可不寫版本號，也不要寫錯。
 
 ── 必須避免的 5 大雷區（會導致低下載量）──
 ❌ 用聽眾不認識的小工具當主角（如 TuriX、Auto Whisk）→ 改用知名品牌帶流量
@@ -373,7 +442,7 @@ ${summary}${userDirection}
 • 2 個用模式C（大品牌+強動詞）
 • 2 個用模式D（免費/賺錢）
 • 1 個用模式E（秘密/危險）
-• 1 個用模式F（版本號新聞感）
+• 1 個用模式F（版本號新聞感，**僅當內容摘要有明確版本號時**；否則改用模式C）
 
 生成完 10 個標題後，請同時從中選出最可能衝高下載量的標題。
 
@@ -665,11 +734,11 @@ export async function regenerateTitles(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const titlePrompt = isQuickchat ? buildQuickchatTitlePrompt(summary)
+  const titlePrompt = withVersionGuard(isQuickchat ? buildQuickchatTitlePrompt(summary)
     : isSysdesign ? buildSysdesignTitlePrompt(summary, userPrompt)
     : isRobot ? buildRobotTitlePrompt(summary, userPrompt)
     : isWeekly ? buildWeeklyTitlePrompt(summary, userPrompt)
-    : buildTitlePrompt(summary, userPrompt);
+    : buildTitlePrompt(summary, userPrompt));
 
   const titlesResult = await llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
     titlePrompt,
@@ -708,11 +777,11 @@ export async function regenerateDescription(
   // Try to use saved summary, otherwise generate one
   const summary = await getOrCreateSummary(scriptContent, segmentType, episodeId);
 
-  const descPrompt = isQuickchat ? buildQuickchatDescriptionPrompt(summary)
+  const descPrompt = withVersionGuard(isQuickchat ? buildQuickchatDescriptionPrompt(summary)
     : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
-    : buildDescriptionPrompt(summary);
+    : buildDescriptionPrompt(summary));
 
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,
@@ -764,8 +833,8 @@ async function getOrCreateSummary(
 function getFallbackTitles(): string[] {
   return [
     'AI 工具界核彈級更新！ChatGPT、Claude、Gemini 三強爭霸',
-    'OpenAI 放大招！GPT-5 功能曝光，Claude 緊急應戰',
-    'Google Gemini 2.0 狂飆升級！免費超越 GPT-4',
+    'OpenAI 放大招！新功能曝光，Claude 緊急應戰',
+    'Google Gemini 狂飆升級！免費功能直接超車對手',
     'AI 副業爆發中！ChatGPT + Claude 月入 10 萬攻略',
     'Meta 推出免費 AI 神器！挑戰 OpenAI 霸主地位',
   ];
@@ -777,7 +846,7 @@ function getFallbackDescription(): string {
 💡 ChatGPT Advanced：程式碼生成再進化，寫 App 像寫作文
 👉 全新程式模式支援多語言開發，初學者也能 30 分鐘做出原型！
 
-💡 Claude 3.5 Sonnet：AI 寫程式的天花板，Bug 偵測神準
+💡 Claude：AI 寫程式的天花板，Bug 偵測神準
 👉 上傳截圖自動生成前端代碼，設計稿秒變真實網頁！
 
 💡 Cursor IDE：AI 編程助手內建，寫程式效率翻 10 倍

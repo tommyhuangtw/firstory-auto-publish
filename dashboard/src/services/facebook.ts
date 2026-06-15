@@ -9,6 +9,7 @@
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
+import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 
 const log = createChildLogger('facebook');
 const GRAPH_API = 'https://graph.facebook.com/v22.0';
@@ -200,7 +201,7 @@ ${linksText}
       stage: 'fb_caption',
       episodeNumber,
       messages: [
-        { role: 'system', content: FB_SYSTEM_PROMPT },
+        { role: 'system', content: `${FB_SYSTEM_PROMPT}\n\n${VERSION_GUARD_ZH}` },
         { role: 'user', content: userPrompt },
       ],
       options: {

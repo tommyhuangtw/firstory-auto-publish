@@ -339,7 +339,7 @@ INSTRUCTIONS based on this context:
 - For very well-known tools (5+ mentions): Do NOT explain what they are. Jump straight to what's NEW. Compare with previous versions or capabilities when relevant.
 - For tools mentioned before: Brief context is fine, but don't explain from scratch.
 - For tools not mentioned for 30+ days: A quick refresher is appropriate since the audience may have forgotten.
-- When a tool has a new version (e.g., GPT-4 Turbo → GPT-4o): Highlight what changed compared to the previous version.
+- When a tool ships a new version (a newer release supersedes an older one): Highlight what changed compared to the previous version. Only name a version if the source actually states it.
 - NEVER say "we discussed this in episode X" or reference previous episodes by number.`;
 
   const briefForQualityCheck = `KNOWN TOOLS CHECK — These tools are well-known to the audience:

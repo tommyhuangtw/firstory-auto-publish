@@ -9,6 +9,7 @@
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { buildMemoryContext } from '@/services/memory/memoryService';
+import { VERSION_GUARD_EN } from '@/services/llm/versionGuard';
 import type { PipelineState } from '../state';
 
 const log = createChildLogger('pipeline:script-en');
@@ -725,6 +726,9 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
     : isSysdesign ? SYSDESIGN_SYSTEM_PROMPT
     : isRobot ? ROBOT_SYSTEM_PROMPT
     : SYSTEM_PROMPT;
+
+  // Guard against the model inventing outdated AI model version numbers.
+  systemPrompt += `\n\n${VERSION_GUARD_EN}`;
 
   // Quickchat: inject dynamic word count target into prompt
   if (isQuickchat) {

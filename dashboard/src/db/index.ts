@@ -71,6 +71,7 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN scheduled_dates TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_path TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_content TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN version_check TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {
@@ -272,6 +273,14 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('kieai_kling_i2v_usd', '0.55');
   seedSetting('kieai_nano_banana_edit_usd', '0.04');
   seedSetting('falai_gpt_image_2_high_usd', '0.08');
+
+  // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).
+  // Inlined here (not imported) to avoid a circular import with the registry service.
+  seedSetting('current_model_versions', JSON.stringify([
+    { name: 'Claude', latest: 'Opus 4.8 / Sonnet 4.6 / Haiku 4.5 (Fable 5)', asOf: '2026-06-15' },
+    { name: 'GPT (OpenAI)', latest: 'GPT-5.5', asOf: '2026-06-15' },
+    { name: 'Gemini (Google)', latest: 'Gemini 3.1', asOf: '2026-06-15' },
+  ]));
 
   // Remove old youtube_ad_content setting (replaced by ad_presets table)
   _db!.prepare("DELETE FROM settings WHERE key = 'youtube_ad_content'").run();

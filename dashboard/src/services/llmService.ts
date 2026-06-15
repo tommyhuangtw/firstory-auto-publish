@@ -15,6 +15,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'openai/gpt-5.4': { input: 2.50, output: 10.00 },
   'openai/gpt-5.5': { input: 5.00, output: 30.00 },
   'anthropic/claude-sonnet-4.6': { input: 3.00, output: 15.00 },
+  'perplexity/sonar': { input: 1.00, output: 1.00 },
 };
 
 interface LLMMessage {

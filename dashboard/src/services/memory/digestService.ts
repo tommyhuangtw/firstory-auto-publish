@@ -116,8 +116,8 @@ Return JSON with these fields:
 - tools_covered: Array of AI tools/products/companies discussed (just names)
 - open_threads: Array of 1-3 unresolved questions or emerging trends mentioned (each max 100 chars). These are threads future episodes might pick up.
 - is_milestone: true ONLY if this episode covers a truly landmark event:
-  * A major product LAUNCH (not an update) — e.g., "Claude Code first released", "GPT-3.0 announced"
-  * A paradigm shift — e.g., "first open-source model beating GPT-4", "AI regulation law passed"
+  * A major product LAUNCH (not an update) — e.g., "Claude Code first released", "a major new flagship model announced"
+  * A paradigm shift — e.g., "first open-source model beating the leading closed model", "AI regulation law passed"
   * A major acquisition or shutdown — e.g., "Google acquires X", "major service shuts down"
   * An industry-defining moment — e.g., "AI passes bar exam", "1 billion users milestone"
   Most episodes are NOT milestones. Only mark true for genuinely historic events.

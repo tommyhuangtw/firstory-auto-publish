@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/db';
 import { LLMService } from '@/services/llmService';
+import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 
 export async function POST(
   request: NextRequest,
@@ -40,7 +41,9 @@ export async function POST(
 - 免費寫 Code
 - AI 取代工程師
 - 百萬晶片大戰
-- 機器人暴走了`,
+- 機器人暴走了
+
+${VERSION_GUARD_ZH}`,
         },
         {
           role: 'user',

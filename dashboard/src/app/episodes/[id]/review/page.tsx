@@ -55,6 +55,8 @@ interface Episode {
   threads_post_id: string | null;
   source_links: string | null;
   sponsor_audio_id: number | null;
+  script_summary: string | null;
+  version_check: string | null;
   created_at: string;
   approved_at: string | null;
   published_at: string | null;
@@ -306,6 +308,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           soundonUrl={episode.soundon_url}
           youtubeUrl={episode.youtube_url}
           igCaption={igCaption}
+          sourceText={`${episode.script_summary || ''}\n${episode.script_zh || ''}`}
+          versionCheck={episode.version_check}
         />
 
         {/* Podcast IG 貼文 — independent section */}

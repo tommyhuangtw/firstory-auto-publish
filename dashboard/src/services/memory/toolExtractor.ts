@@ -57,21 +57,21 @@ For each entity, provide:
 - aliases: Array of alternative names used in the script (empty array if none)
 - contextSnippet: A 1-2 sentence summary of what the script says — focus on WHAT'S NEW (new release, update, partnership, funding, controversy)
 - mentionType: "deep_dive" if discussed in detail (>2 paragraphs), "update" if discussing a new version/feature/announcement, "new" if introducing for the first time, "brief" if just mentioned in passing
-- isStandaloneProduct: true if this is a distinct product with its own purpose/category (e.g., "Claude Code" is a CLI dev tool, separate from "Claude" the LLM chatbot). false if this is just a version/update of an existing product (e.g., "Claude 3.5 Sonnet" is a version of Claude, "GPT-4o" is a version of ChatGPT).
+- isStandaloneProduct: true if this is a distinct product with its own purpose/category (e.g., "Claude Code" is a CLI dev tool, separate from "Claude" the LLM chatbot). false if this is just a version/update of an existing product (e.g., a specific model version like "Claude <version> Sonnet" is a version of Claude, "GPT-<version>" is a version of ChatGPT). Use whatever version actually appears in the script — never invent or guess a version number.
 
 PRODUCT vs VERSION — use these examples to guide your judgment:
 - "Claude Code" → isStandaloneProduct: true (CLI dev tool, different from Claude chatbot)
 - "Claude Design" → isStandaloneProduct: true (design tool, different product line)
-- "Claude Opus 4.6" → isStandaloneProduct: false (model version of Claude)
+- "Claude Opus <version>" → isStandaloneProduct: false (model version of Claude)
 - "ChatGPT Search" → isStandaloneProduct: true (search product, not a chatbot version)
-- "GPT-4o" → isStandaloneProduct: false (model version of ChatGPT)
+- "GPT-<version>" → isStandaloneProduct: false (model version of ChatGPT)
 - "Codex CLI" → isStandaloneProduct: true (coding agent, separate from ChatGPT)
 - "GitHub Copilot" → isStandaloneProduct: true (not a version of GitHub)
-- "Gemini 2.0 Flash" → isStandaloneProduct: false (model version of Gemini)
+- "Gemini <version> Flash" → isStandaloneProduct: false (model version of Gemini)
 
 EXTRACT these types of entities:
 1. AI/ML software products and services (ChatGPT, Midjourney, Cursor, n8n)
-2. AI models with version info (GPT-4o, Claude 3.5 Sonnet, Gemini 2.0)
+2. AI models with version info (e.g. GPT, Claude, Gemini model releases — record the version only if the script states it)
 3. Developer tools for AI (LangChain, Hugging Face, Ollama, ComfyUI)
 4. AI companies making news (OpenAI, Google, Anthropic, Meta, NVIDIA) — capture their latest moves, partnerships, releases, strategy shifts
 5. AI platforms with significant updates (GitHub Copilot, Replit)

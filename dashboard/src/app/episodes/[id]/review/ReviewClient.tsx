@@ -2,6 +2,15 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { detectModelVersions, detectUngroundedVersions } from '@/services/llm/versionGuard';
+
+interface VersionCheckData {
+  detected?: string[];
+  ungrounded?: string[];
+  verdicts?: { claim: string; isOutdated: boolean; current: string; note: string }[];
+  checkedAt?: string;
+  model?: string | null;
+}
 
 interface Props {
   episodeId: number;
@@ -16,6 +25,8 @@ interface Props {
   soundonUrl: string | null;
   youtubeUrl: string | null;
   igCaption: string;
+  sourceText?: string;
+  versionCheck?: string | null;
 }
 
 export default function ReviewClient({
@@ -26,6 +37,8 @@ export default function ReviewClient({
   selectedTitle: initialTitle,
   description: initialDescription,
   tags,
+  sourceText = '',
+  versionCheck = null,
 }: Props) {
   const router = useRouter();
   const [candidateTitles, setCandidateTitles] = useState(initialCandidates);
@@ -47,6 +60,35 @@ export default function ReviewClient({
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
   const [savedDescription, setSavedDescription] = useState(initialDescription);
+
+  // Version-number guard: detect (client-side, instant) + web verdicts (from pipeline / on-demand)
+  const [versionData, setVersionData] = useState<VersionCheckData | null>(() => {
+    if (!versionCheck) return null;
+    try { return JSON.parse(versionCheck) as VersionCheckData; } catch { return null; }
+  });
+  const [verifyingVersions, setVerifyingVersions] = useState(false);
+
+  const versionFlags = useMemo(() => {
+    const combined = `${title}\n${description}`;
+    const detected = detectModelVersions(combined);
+    const ungrounded = detectUngroundedVersions(combined, sourceText);
+    const outdated = (versionData?.verdicts || []).filter((v) => v.isOutdated);
+    return { detected, ungrounded, outdated };
+  }, [title, description, sourceText, versionData]);
+
+  async function handleVerifyVersions() {
+    setVerifyingVersions(true);
+    try {
+      const res = await fetch(`/api/episodes/${episodeId}/verify-versions`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) setVersionData(data as VersionCheckData);
+      else setMessage(`版本驗證失敗：${data.error || ''}`);
+    } catch (e) {
+      setMessage(`版本驗證失敗：${(e as Error).message}`);
+    } finally {
+      setVerifyingVersions(false);
+    }
+  }
 
   const canReview = status === 'pending_review';
   const canEdit = status === 'pending_review' || status === 'published' || status === 'approved' || status === 'publishing';
@@ -205,6 +247,50 @@ export default function ReviewClient({
             <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Title</h2>
             {canEdit && regenerateButton(handleRegenerateTitles, regenerating, '重新生成標題', '生成中...')}
           </div>
+          {versionFlags.detected.length > 0 && (
+            <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-amber-300">⚠️ 偵測到版本號（請確認是否為最新／正確版本）</span>
+                {canEdit && (
+                  <button
+                    onClick={handleVerifyVersions}
+                    disabled={verifyingVersions}
+                    className="shrink-0 rounded bg-amber-500/20 px-2 py-1 text-amber-200 hover:bg-amber-500/30 disabled:opacity-50 cursor-pointer"
+                  >
+                    {verifyingVersions ? '驗證中…' : '用網路驗證'}
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {versionFlags.detected.map((v) => {
+                  const isUngrounded = versionFlags.ungrounded.includes(v);
+                  return (
+                    <span
+                      key={v}
+                      className={`rounded px-1.5 py-0.5 ${isUngrounded ? 'bg-red-500/20 text-red-300' : 'bg-zinc-700/60 text-zinc-300'}`}
+                    >
+                      {v}{isUngrounded ? ' ·來源未提及' : ''}
+                    </span>
+                  );
+                })}
+              </div>
+              {versionFlags.ungrounded.length > 0 && (
+                <p className="mt-2 text-amber-200/80">紅色標記的版本號未出現在來源素材，可能是模型自行加上的，請特別確認。</p>
+              )}
+              {versionFlags.outdated.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {versionFlags.outdated.map((v, i) => (
+                    <p key={i} className="text-red-300">🌐 「{v.claim}」可能已過時 → 最新：{v.current}{v.note ? `（${v.note}）` : ''}</p>
+                  ))}
+                </div>
+              )}
+              {versionData?.checkedAt && (
+                <p className="mt-2 text-[10px] text-zinc-500">
+                  網路驗證時間：{new Date(versionData.checkedAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </div>
+          )}
           {canEdit && (
             <div className="mb-3">
               <textarea

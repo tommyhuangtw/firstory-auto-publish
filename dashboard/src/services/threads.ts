@@ -8,6 +8,7 @@
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
+import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 
 const log = createChildLogger('threads');
 const THREADS_API = 'https://graph.threads.net/v1.0';
@@ -231,7 +232,7 @@ ${igCaption}
       stage: 'threads_caption',
       episodeNumber,
       messages: [
-        { role: 'system', content: THREADS_SYSTEM_PROMPT },
+        { role: 'system', content: `${THREADS_SYSTEM_PROMPT}\n\n${VERSION_GUARD_ZH}` },
         { role: 'user', content: userPrompt },
       ],
       options: {

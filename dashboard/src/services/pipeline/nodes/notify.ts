@@ -8,6 +8,7 @@
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { getDb } from '@/db';
+import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 import type { PipelineState } from '../state';
 import { emitEvent } from '@/services/notificationHub';
 
@@ -373,7 +374,7 @@ Hashtag（壓縮成一整段，禁止換行）
     stage: 'ig_caption',
     episodeId,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: `${systemPrompt}\n\n${VERSION_GUARD_ZH}` },
       { role: 'user', content: userPrompt },
     ],
     options: {
