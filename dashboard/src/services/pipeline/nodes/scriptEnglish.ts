@@ -687,7 +687,11 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
   log.info({ videoCount: state.selectedVideos.length }, 'Generating English script');
 
   if (state.selectedVideos.length === 0) {
-    return { scriptEn: '', scriptWordCount: 0, memoryContext: null, status: 'translating', error: 'No videos selected for scripting' };
+    // No source video survived classification/metadata filtering. Abort the whole
+    // episode here instead of producing an empty script that confusingly dies later
+    // at TTS. The scheduled runner recognises this NO_ELIGIBLE_VIDEOS error, skips
+    // the (futile) auto-retry, and emails a "今日略過" notice.
+    throw new Error('NO_ELIGIBLE_VIDEOS: 今日無合格來源影片，已略過本集製作');
   }
 
   const llm = getLLMService();

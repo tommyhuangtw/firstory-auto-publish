@@ -27,7 +27,7 @@ const MAX_DURATION_SEC_WEEKLY = 2400; // Weekly: max 40 min (n8n)
 // Per-segment minimum view count for auto-fetched videos (manual URLs bypass this filter
 // via the classifySysdesign path). Fewer than TOP_N survivors is acceptable.
 const MIN_VIEWS_BY_SEGMENT: Record<string, number> = {
-  daily: 18000,
+  daily: 15000,
   robot: 18000,
   weekly: 25000,
 };

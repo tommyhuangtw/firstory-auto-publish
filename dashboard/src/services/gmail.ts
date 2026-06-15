@@ -263,7 +263,7 @@ export class GmailService {
     segmentType: string;
     failedStage: string | null;
     errorMessage: string;
-    type: 'failure' | 'retry_success' | 'retry_failure';
+    type: 'failure' | 'retry_success' | 'retry_failure' | 'skipped';
     retryError?: string;
   }): Promise<void> {
     const gmail = this.ensureGmail();
@@ -279,7 +279,22 @@ export class GmailService {
     let statusText: string;
     let bodyContent: string;
 
-    if (type === 'failure') {
+    if (type === 'skipped') {
+      subject = `[AI懶人報] 今日無合格影片，已略過 — ${segmentLabel}`;
+      statusColor = '#f59e0b';
+      statusText = '今日略過';
+      bodyContent = `
+        <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">今天的 <strong>${segmentLabel}</strong> 在篩選來源影片後，沒有任何一支影片通過門檻，所以這集自動略過、沒有產製（不會自動重試）。</p>
+        <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:16px;margin:16px 0">
+          <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#92400e">可能原因</p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#78350f;line-height:1.7">
+            <li>今天抓到的影片觀看數都偏低（未達門檻）</li>
+            <li>少數高觀看的是 Shorts / 直播（讚數、留言數不足）</li>
+            <li>品質夠的影片先前已經用過了</li>
+          </ul>
+        </div>
+        <p style="color:#475569;font-size:13px;line-height:1.7;margin:0">想手動補做的話，可到 Review 頁面用「重試」並提供影片網址，或調整搜尋來源後重跑。</p>`;
+    } else if (type === 'failure') {
       subject = `[AI懶人報] Pipeline 失敗 — EP${episodeNumber} ${segmentLabel}`;
       statusColor = '#ef4444';
       statusText = 'Pipeline 失敗';

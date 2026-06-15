@@ -232,6 +232,23 @@ async function runPipeline(segmentType: SegmentType): Promise<void> {
     const errMsg = (error as Error).message;
     log.error({ segmentType, episodeId, error: errMsg }, 'Scheduled pipeline failed');
 
+    // No eligible source videos today → skip this episode entirely. Don't auto-retry
+    // (retrying the same source batch will fail identically), just email a clear notice.
+    if (errMsg.includes('NO_ELIGIBLE_VIDEOS')) {
+      log.warn({ segmentType, episodeId }, 'No eligible source videos — skipping episode, no auto-retry');
+      try {
+        const gmail = getGmailService();
+        await gmail.initialize();
+        await gmail.sendPipelineNotification({
+          episodeNumber: episodeId, segmentType, failedStage: null,
+          errorMessage: errMsg, type: 'skipped',
+        });
+      } catch (emailErr) {
+        log.error({ error: (emailErr as Error).message }, 'Failed to send skipped notification email');
+      }
+      return;
+    }
+
     // Get failed stage from DB
     const failedRun = db.prepare(
       'SELECT current_stage FROM pipeline_runs WHERE id = ?'
