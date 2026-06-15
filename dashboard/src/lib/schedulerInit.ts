@@ -148,10 +148,10 @@ export function reloadScheduleFromDb(): void {
 async function runSoundonSync(): Promise<void> {
   log.info('Running SoundOn analytics sync...');
   try {
-    const res = await fetch('http://localhost:3000/api/analytics/soundon-sync', {
-      method: 'POST',
-    });
-    const data = await res.json() as { daily_imported?: number; episode_imported?: number; errors?: string[] };
+    // Call in-process (NOT a self-fetch): the dev server runs HTTPS-only
+    // (next dev --experimental-https), so a plain http:// fetch fails.
+    const { syncSoundonAnalytics } = await import('@/services/soundonSync');
+    const data = await syncSoundonAnalytics();
     log.info(data, 'SoundOn analytics sync complete');
   } catch (err) {
     log.error({ err: (err as Error).message }, 'SoundOn analytics sync failed');
