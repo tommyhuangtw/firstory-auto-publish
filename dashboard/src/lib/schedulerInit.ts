@@ -120,6 +120,11 @@ export function initializeSchedulerJobs(): void {
   // YouTube analytics auto-sync — runs every day at 10:00
   scheduler.register('YouTube 數據同步', '0 10 * * *', runYoutubeSync);
 
+  // Catch-up checks twice a day (13:00 + 21:00) — backfills the 09:00/10:00 syncs
+  // if they were missed (e.g. the Mac was asleep at that time, so node-cron never fired).
+  scheduler.register('數據補跑檢查（午）', '0 13 * * *', catchUpMissedSyncs);
+  scheduler.register('數據補跑檢查（晚）', '0 21 * * *', catchUpMissedSyncs);
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
@@ -170,29 +175,35 @@ async function runYoutubeSync(): Promise<void> {
 }
 
 /** Check if today's analytics syncs have already run; if not, catch up */
+/**
+ * Backfill today's analytics syncs if they're missing — e.g. the Mac was asleep at
+ * 09:00/10:00 so node-cron never fired. Idempotent (imports upsert), and only scrapes
+ * when today's data is actually absent. Called on startup + twice a day (13:00, 21:00).
+ */
+async function catchUpMissedSyncs(): Promise<void> {
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const hasSoundon = db.prepare(
+    'SELECT 1 FROM soundon_daily_downloads WHERE date = ?'
+  ).get(today);
+  if (!hasSoundon) {
+    log.info({ today }, 'Catch-up: SoundOn sync missing for today, running now');
+    await runSoundonSync();
+  }
+
+  const hasYoutube = db.prepare(
+    'SELECT 1 FROM youtube_channel_stats WHERE snapshot_date = ?'
+  ).get(today);
+  if (!hasYoutube) {
+    log.info({ today }, 'Catch-up: YouTube sync missing for today, running now');
+    await runYoutubeSync();
+  }
+}
+
 function scheduleStartupCatchUp(): void {
-  setTimeout(async () => {
-    const db = getDb();
-    const today = new Date().toISOString().slice(0, 10);
-
-    // Check SoundOn
-    const hasSoundon = db.prepare(
-      'SELECT 1 FROM soundon_daily_downloads WHERE date = ?'
-    ).get(today);
-    if (!hasSoundon) {
-      log.info({ today }, 'Startup catch-up: SoundOn sync missing for today, running now');
-      await runSoundonSync();
-    }
-
-    // Check YouTube
-    const hasYoutube = db.prepare(
-      'SELECT 1 FROM youtube_channel_stats WHERE snapshot_date = ?'
-    ).get(today);
-    if (!hasYoutube) {
-      log.info({ today }, 'Startup catch-up: YouTube sync missing for today, running now');
-      await runYoutubeSync();
-    }
-  }, 10_000); // 10s delay to let server fully initialize
+  // 10s delay to let the server fully initialize before the first check.
+  setTimeout(() => { void catchUpMissedSyncs(); }, 10_000);
 }
 
 // ── Pipeline runner ─────────────────────────────────────────────────
