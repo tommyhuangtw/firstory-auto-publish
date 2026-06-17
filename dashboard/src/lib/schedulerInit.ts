@@ -125,6 +125,12 @@ export function initializeSchedulerJobs(): void {
   scheduler.register('數據補跑檢查（午）', '0 13 * * *', catchUpMissedSyncs);
   scheduler.register('數據補跑檢查（晚）', '0 21 * * *', catchUpMissedSyncs);
 
+  // Social trend scan — scrape Threads hot posts, then Telegram-notify. 2x/day
+  // (settings.trend_scrape_times). Plus a slot-based catch-up every 30 min that
+  // guarantees a morning + evening scan even if the Mac slept through the cron times.
+  registerTrendScanJobs();
+  scheduler.register('社群熱點補跑檢查', '*/30 * * * *', trendCatchUp);
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
@@ -161,6 +167,108 @@ async function runSoundonSync(): Promise<void> {
   } catch (err) {
     log.error({ err: (err as Error).message }, 'SoundOn analytics sync failed');
   }
+}
+
+function registerTrendScanJobs(): void {
+  const scheduler = getScheduler();
+  // Low volume by design (avoid looking like a scraper): twice a day.
+  let times = ['10:00', '21:00'];
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('trend_scrape_times') as
+      { value: string } | undefined;
+    if (row?.value) {
+      const parsed = row.value.split(',').map((t) => t.trim()).filter((t) => /^\d{1,2}:\d{2}$/.test(t));
+      if (parsed.length) times = parsed;
+    }
+  } catch { /* DB not ready — use defaults */ }
+
+  for (const time of times) {
+    const [hour, minute] = time.split(':');
+    scheduler.register(`社群熱點掃描（${time}）`, `${minute} ${hour} * * *`, runTrendScan);
+  }
+}
+
+let trendScanInFlight = false;
+
+/** Core trend scan + Telegram notify (no jitter). Used by both cron and catch-up.
+ *  Guarded so cron + catch-up can never run two scans at once (also avoids the
+ *  single Threads browser profile being launched twice → lock conflict). */
+async function doTrendScan(): Promise<void> {
+  if (trendScanInFlight) {
+    log.info('Trend scan already running — skipping this trigger');
+    return;
+  }
+  trendScanInFlight = true;
+  log.info('Running social trend scan...');
+  try {
+    const { runTrendScan: scan } = await import('@/services/trends/pipeline');
+    const result = await scan();
+    log.info(result, 'Trend scan complete');
+    // Notify Tommy via Telegram after EVERY scan (scheduled or catch-up).
+    const { sendHotPostsNote } = await import('@/services/trends/digest');
+    await sendHotPostsNote();
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Trend scan failed');
+  } finally {
+    trendScanInFlight = false;
+  }
+}
+
+function getTrendHours(): number[] {
+  let times = ['10:00', '21:00'];
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_scrape_times') as
+      { value: string } | undefined;
+    if (row?.value) {
+      const p = row.value.split(',').map((t) => t.trim()).filter((t) => /^\d{1,2}:\d{2}$/.test(t));
+      if (p.length) times = p;
+    }
+  } catch { /* defaults */ }
+  return times.map((t) => parseInt(t.split(':')[0], 10));
+}
+
+/**
+ * Slot-based catch-up — guarantees a morning AND an evening scan each day even when
+ * the Mac sleeps through the exact cron times. Runs frequently (every 30 min); only
+ * actually scans when a slot is overdue (≥1h past its time) and hasn't run yet today.
+ */
+async function trendCatchUp(): Promise<void> {
+  const db = getDb();
+  const hours = getTrendHours();
+  const morningH = hours[0] ?? 10;
+  const eveningH = hours[hours.length - 1] ?? 21;
+  const split = Math.min(16, Math.max(morningH + 1, Math.floor((morningH + eveningH) / 2)));
+  const nowH = new Date().getHours(); // local (system TZ)
+
+  const slotHasScan = (from: number, to: number) =>
+    db.prepare(
+      `SELECT 1 FROM trend_posts
+       WHERE date(scraped_at, 'localtime') = date('now', 'localtime')
+         AND CAST(strftime('%H', scraped_at, 'localtime') AS INTEGER) >= ?
+         AND CAST(strftime('%H', scraped_at, 'localtime') AS INTEGER) < ? LIMIT 1`,
+    ).get(from, to);
+
+  // Morning slot overdue? (give the cron ~1h before backfilling; don't backfill morning at night)
+  if (nowH >= morningH + 1 && nowH < eveningH + 1 && !slotHasScan(0, split)) {
+    log.info({ nowH }, 'Catch-up: morning trend scan missing, running now');
+    await doTrendScan();
+    return;
+  }
+  // Evening slot overdue?
+  if (nowH >= eveningH + 1 && !slotHasScan(split, 24)) {
+    log.info({ nowH }, 'Catch-up: evening trend scan missing, running now');
+    await doTrendScan();
+  }
+}
+
+/** Scheduled (cron) trend scan — small jitter so it doesn't fire exactly on the minute,
+ *  but kept short (≤2 min) so a freshly-woken Mac runs it before idle-sleep kicks back in. */
+async function runTrendScan(): Promise<void> {
+  const jitterMs = Math.floor(Math.random() * 120_000);
+  log.info({ jitterSec: Math.round(jitterMs / 1000) }, 'Social trend scan scheduled — waiting jitter');
+  await new Promise((r) => setTimeout(r, jitterMs));
+  await doTrendScan();
 }
 
 async function runYoutubeSync(): Promise<void> {
@@ -204,6 +312,8 @@ async function catchUpMissedSyncs(): Promise<void> {
 function scheduleStartupCatchUp(): void {
   // 10s delay to let the server fully initialize before the first check.
   setTimeout(() => { void catchUpMissedSyncs(); }, 10_000);
+  // Slightly later, backfill the trend scan slot if one is overdue (heavier — runs a browser).
+  setTimeout(() => { void trendCatchUp(); }, 30_000);
 }
 
 // ── Pipeline runner ─────────────────────────────────────────────────

@@ -12,6 +12,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'google/gemini-3.1-pro-preview': { input: 2.00, output: 12.00 },
   'google/gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.50 },
   'google/gemini-3-flash-preview': { input: 0.15, output: 0.60 },
+  'google/gemini-3.5-flash': { input: 1.50, output: 9.00 }, // verified via OpenRouter 2026-06-17
   'openai/gpt-5.4': { input: 2.50, output: 10.00 },
   'openai/gpt-5.5': { input: 5.00, output: 30.00 },
   'anthropic/claude-sonnet-4.6': { input: 3.00, output: 15.00 },
@@ -28,6 +29,11 @@ interface LLMOptions {
   maxTokens?: number;
   preferredModel?: string;
   retryCount?: number;
+  /** Explicit model chain — overrides preferredModel + the default fallback entirely
+   *  (e.g. to avoid the expensive Claude fallback). Tried in order. */
+  models?: string[];
+  /** Per-request timeout in ms (default 90000). Lower it for short, latency-sensitive calls. */
+  timeoutMs?: number;
 }
 
 interface LLMUsage {
@@ -85,11 +91,15 @@ export class LLMService {
       maxTokens = 2048,
       preferredModel,
       retryCount = 3,
+      models,
+      timeoutMs = 90_000,
     } = options;
 
-    const modelsToTry = preferredModel
-      ? [preferredModel, ...Object.values(this.models).filter((m) => m !== preferredModel)]
-      : [this.models.primary, this.models.fallback];
+    const modelsToTry = models?.length
+      ? models
+      : preferredModel
+        ? [preferredModel, ...Object.values(this.models).filter((m) => m !== preferredModel)]
+        : [this.models.primary, this.models.fallback];
 
     const startTime = Date.now();
     let lastError: Error | null = null;
@@ -99,7 +109,7 @@ export class LLMService {
 
       for (let attempt = 1; attempt <= retryCount; attempt++) {
         try {
-          const result = await this.callAPI(model, messages, temperature, maxTokens);
+          const result = await this.callAPI(model, messages, temperature, maxTokens, timeoutMs);
 
           if (result.success) {
             const latency = Date.now() - startTime;
@@ -214,7 +224,8 @@ export class LLMService {
     model: string,
     messages: LLMMessage[],
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    timeoutMs = 90_000
   ): Promise<LLMResponse> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
@@ -223,10 +234,13 @@ export class LLMService {
     if (process.env.OPENROUTER_SITE_URL) headers['HTTP-Referer'] = process.env.OPENROUTER_SITE_URL;
     if (process.env.OPENROUTER_SITE_NAME) headers['X-Title'] = process.env.OPENROUTER_SITE_NAME;
 
+    // Per-request timeout: a stalled OpenRouter connection would otherwise hang
+    // forever (a never-resolving fetch never throws, so retry/fallback never fires).
     const response = await fetch(`${this.baseURL}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const data = await response.json();

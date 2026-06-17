@@ -40,4 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# trend bot — logged-in browser session (cookies!) + debug screenshots
+data/threads-crawl-profile/
+data/threads-*.png
+
 certificates

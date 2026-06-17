@@ -14,6 +14,7 @@ import { n8nTools } from './tools/n8n.js';
 import { gitTools } from './tools/git.js';
 import { taskTools } from './tools/tasks.js';
 import { claudeCodeTools } from './tools/claude-code.js';
+import { trendTools } from './tools/trends.js';
 
 const allTools: ToolDef[] = [
   ...pipelineTools,
@@ -27,6 +28,7 @@ const allTools: ToolDef[] = [
   ...gitTools,
   ...taskTools,
   ...claudeCodeTools,
+  ...trendTools,
 ];
 
 const server = new McpServer({

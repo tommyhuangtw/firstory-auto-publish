@@ -236,6 +236,68 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_mem_agent ON agent_memory(agent_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_agent_mem_updated ON agent_memory(last_updated)');
 
+  // Social trend bot tables (蹭大眾熱點 → 爆紅貼文草稿)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS trend_topics (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      topic         TEXT    NOT NULL,
+      heat_score    REAL    DEFAULT 0,
+      rideability   REAL,
+      risk_level    TEXT,
+      risk_reason   TEXT,
+      sample_posts  TEXT,
+      post_count    INTEGER DEFAULT 0,
+      top_velocity  REAL    DEFAULT 0,
+      status        TEXT    NOT NULL DEFAULT 'new',
+      created_at    TEXT    DEFAULT (datetime('now')),
+      updated_at    TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_topics_status ON trend_topics(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_topics_created ON trend_topics(created_at)');
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS trend_drafts (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      topic_id          INTEGER REFERENCES trend_topics(id) ON DELETE CASCADE,
+      draft_text        TEXT    NOT NULL,
+      format_suggestion TEXT    NOT NULL DEFAULT 'text',
+      format_reason     TEXT,
+      char_count        INTEGER,
+      status            TEXT    NOT NULL DEFAULT 'pending_review',
+      task_id           INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      reviewed_at       TEXT,
+      created_at        TEXT    DEFAULT (datetime('now')),
+      updated_at        TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_drafts_status ON trend_drafts(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_drafts_topic ON trend_drafts(topic_id)');
+
+  // Every scraped post is recorded here for later tracking (clickable permalinks).
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS trend_posts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      topic_id    INTEGER REFERENCES trend_topics(id) ON DELETE CASCADE,
+      topic       TEXT,
+      source      TEXT,
+      author      TEXT,
+      text        TEXT,
+      like_count  INTEGER DEFAULT 0,
+      reply_count INTEGER DEFAULT 0,
+      velocity    REAL    DEFAULT 0,
+      posted_at   TEXT,
+      permalink   TEXT,
+      relevant    INTEGER DEFAULT 0,
+      scraped_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN source TEXT');
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN relevant INTEGER DEFAULT 0');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_topic ON trend_posts(topic_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_permalink ON trend_posts(permalink)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_scraped ON trend_posts(scraped_at)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');
@@ -273,6 +335,16 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('kieai_kling_i2v_usd', '0.55');
   seedSetting('kieai_nano_banana_edit_usd', '0.04');
   seedSetting('falai_gpt_image_2_high_usd', '0.08');
+
+  // Social trend bot defaults
+  seedSetting('trend_seed_keywords', JSON.stringify([
+    'AI Agent', 'vibe coding', 'AI工具', 'AI 應用', '科技業', '台灣政治', '台灣新聞', '英國',
+  ]));                                       // targeted topics to also search (Tommy's 同溫層)
+  seedSetting('trend_recency_days', '2');    // drop posts older than this (kills stale evergreen)
+  seedSetting('trend_draft_count', '5');     // how many top posts to generate 蹭點 drafts for
+  seedSetting('trend_min_engagement', '80');    // general posts: keep 讚+留言 ≥ this
+  seedSetting('trend_min_engagement_ai', '30');  // AI posts: lower floor so more AI surfaces
+  seedSetting('trend_scrape_times', '10:00,21:00'); // 2x/day auto-scan times (HH:MM, comma-separated)
 
   // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).
   // Inlined here (not imported) to avoid a circular import with the registry service.
