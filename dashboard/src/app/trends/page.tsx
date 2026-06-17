@@ -130,6 +130,7 @@ export default function TrendsPage() {
             {busy === 'scan' ? '掃描中…' : '立即掃描'}
           </button>
           <button onClick={() => load()} className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">重新整理</button>
+          <a href="/trends/scans" className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">📋 掃描紀錄</a>
           <button onClick={pushTelegram} disabled={busy === 'tg'}
             className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
             {busy === 'tg' ? '推播中…' : '推 Telegram'}

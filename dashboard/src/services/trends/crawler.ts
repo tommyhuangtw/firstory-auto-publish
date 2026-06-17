@@ -303,7 +303,7 @@ export async function scrapeTopicPosts(
  *   2. any configured seed topics (settings `trend_seed_keywords`, e.g. "AI應用")
  * Each post is tagged with its `source`. Throws on hard failure so the caller can alert.
  */
-export async function runScrape(opts: { maxPosts?: number } = {}): Promise<RawThreadPost[]> {
+export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ posts: RawThreadPost[]; topics: string[] }> {
   const chromium = await getChromium();
   const userDataDir = path.resolve(process.cwd(), 'data', 'threads-crawl-profile');
   fs.mkdirSync(userDataDir, { recursive: true });
@@ -326,6 +326,7 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<RawTh
     if (!byKey.has(key)) byKey.set(key, { ...p, source });
   };
   const page = browser.pages()[0] || await browser.newPage();
+  const topicsSearched: string[] = ['為你推薦'];
 
   try {
     await ensureLoggedIn(page);
@@ -335,6 +336,7 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<RawTh
 
     // 2) Targeted seed topics — only a rotating subset per scan (anti-detection).
     const seeds = rotateSeeds(getCuratedSeeds());
+    topicsSearched.push(...seeds);
     log.info({ topics: seeds }, 'Seed topics this scan (rotating subset)');
     for (let i = 0; i < seeds.length; i++) {
       try {
@@ -353,5 +355,5 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<RawTh
     throw new Error('Threads scrape produced no posts (not logged in or selectors stale)');
   }
   log.info({ posts: out.length }, 'Scrape complete');
-  return out;
+  return { posts: out, topics: topicsSearched };
 }

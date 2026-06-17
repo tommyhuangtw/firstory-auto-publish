@@ -194,7 +194,7 @@ let trendScanInFlight = false;
 /** Core trend scan + Telegram notify (no jitter). Used by both cron and catch-up.
  *  Guarded so cron + catch-up can never run two scans at once (also avoids the
  *  single Threads browser profile being launched twice → lock conflict). */
-async function doTrendScan(): Promise<void> {
+async function doTrendScan(trigger: string): Promise<void> {
   if (trendScanInFlight) {
     log.info('Trend scan already running — skipping this trigger');
     return;
@@ -203,7 +203,7 @@ async function doTrendScan(): Promise<void> {
   log.info('Running social trend scan...');
   try {
     const { runTrendScan: scan } = await import('@/services/trends/pipeline');
-    const result = await scan();
+    const result = await scan({ trigger });
     log.info(result, 'Trend scan complete');
     // Notify Tommy via Telegram after EVERY scan (scheduled or catch-up).
     const { sendHotPostsNote } = await import('@/services/trends/digest');
@@ -252,13 +252,13 @@ async function trendCatchUp(): Promise<void> {
   // Morning slot overdue? (give the cron ~1h before backfilling; don't backfill morning at night)
   if (nowH >= morningH + 1 && nowH < eveningH + 1 && !slotHasScan(0, split)) {
     log.info({ nowH }, 'Catch-up: morning trend scan missing, running now');
-    await doTrendScan();
+    await doTrendScan('catchup');
     return;
   }
   // Evening slot overdue?
   if (nowH >= eveningH + 1 && !slotHasScan(split, 24)) {
     log.info({ nowH }, 'Catch-up: evening trend scan missing, running now');
-    await doTrendScan();
+    await doTrendScan('catchup');
   }
 }
 
@@ -277,7 +277,7 @@ async function runTrendScan(): Promise<void> {
   const jitterMs = Math.floor(Math.random() * maxMin * 60_000);
   log.info({ jitterSec: Math.round(jitterMs / 1000), maxMin }, 'Social trend scan scheduled — waiting jitter');
   await new Promise((r) => setTimeout(r, jitterMs));
-  await doTrendScan();
+  await doTrendScan('scheduled');
 }
 
 async function runYoutubeSync(): Promise<void> {

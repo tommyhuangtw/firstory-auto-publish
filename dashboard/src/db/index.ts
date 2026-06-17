@@ -298,10 +298,32 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE trend_posts ADD COLUMN relevant INTEGER DEFAULT 0');
   safeAlter('ALTER TABLE trend_posts ADD COLUMN embedding TEXT');           // OpenAI vector (JSON)
   safeAlter('ALTER TABLE trend_posts ADD COLUMN interested INTEGER DEFAULT 0'); // 👍 想留
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN scan_run_id INTEGER');         // which scan recorded it
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_interested ON trend_posts(interested)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_topic ON trend_posts(topic_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_permalink ON trend_posts(permalink)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_scraped ON trend_posts(scraped_at)');
+
+  // Per-scan audit log: when it ran, topics searched, the full funnel, and EVERY dropped
+  // post with its filter reason (below_floor / stale / duplicate). Lets Tommy review each crawl.
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS trend_scan_runs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at  TEXT,
+      finished_at TEXT,
+      duration_ms INTEGER,
+      trigger     TEXT,        -- 'manual' | 'scheduled' | 'catchup'
+      topics      TEXT,        -- JSON: topics searched (incl 為你推薦)
+      scraped     INTEGER DEFAULT 0,
+      below_floor INTEGER DEFAULT 0,
+      stale       INTEGER DEFAULT 0,
+      deduped     INTEGER DEFAULT 0,
+      recorded    INTEGER DEFAULT 0,
+      dropped     TEXT,        -- JSON: [{a,t,e,r,p}] dropped posts + reason
+      error       TEXT
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_scan_runs_started ON trend_scan_runs(started_at)');
 
   // Seed tool families
   try {
