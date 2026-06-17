@@ -17,6 +17,16 @@ export async function POST(request: NextRequest) {
 
   const { runTrendScan } = await import('@/services/trends/pipeline');
 
+  // ?sync=1 → await and return the funnel stats (manual runs); default is fire-and-forget.
+  if (request.nextUrl.searchParams.get('sync') === '1') {
+    try {
+      const r = await runTrendScan({ maxPosts });
+      return NextResponse.json({ done: true, ...r });
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    }
+  }
+
   runTrendScan({ maxPosts })
     .then((r) => log.info(r, 'Background trend scan complete'))
     .catch((e) => log.error({ err: (e as Error).message }, 'Background trend scan failed'));

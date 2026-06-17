@@ -347,8 +347,7 @@ Apple Podcast / Spotify / KKBOX
   ]));                                       // targeted topics to also search (Tommy's 同溫層)
   seedSetting('trend_recency_days', '2');    // drop posts older than this (kills stale evergreen)
   seedSetting('trend_draft_count', '5');     // how many top posts to generate 蹭點 drafts for
-  seedSetting('trend_min_engagement', '80');    // general posts: keep 讚+留言 ≥ this
-  seedSetting('trend_min_engagement_ai', '30');  // AI posts: lower floor so more AI surfaces
+  seedSetting('trend_min_engagement', '80');    // keep posts with 讚+留言 ≥ this (flat, AI too)
   seedSetting('trend_scrape_times', '10:00,21:00'); // 2x/day auto-scan times (HH:MM, comma-separated)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 

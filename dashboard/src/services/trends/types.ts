@@ -43,4 +43,9 @@ export interface TrendScanResult {
   postsRecorded: number;   // every fresh post recorded (for the reply use-case)
   draftsCreated: number;   // 蹭點 drafts generated for top on-brand posts
   skipped: number;
+  // Funnel breakdown (for reporting how many crawled vs displayed):
+  scraped: number;         // raw posts returned by the crawler
+  belowFloor: number;      // dropped: 讚+留言 < min engagement (NOT embedded, NOT stored)
+  stale: number;           // dropped: older than recency window
+  deduped: number;         // dropped: permalink already recorded recently
 }

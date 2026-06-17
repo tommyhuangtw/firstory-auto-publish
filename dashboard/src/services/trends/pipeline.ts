@@ -26,7 +26,6 @@ export async function runTrendScan(opts: { maxPosts?: number } = {}): Promise<Tr
   const db = getDb();
   const recencyDays = parseInt(getSetting('trend_recency_days', '2'), 10);
   const minEngagement = parseInt(getSetting('trend_min_engagement', '80'), 10);
-  const minEngagementAI = parseInt(getSetting('trend_min_engagement_ai', '30'), 10);
 
   let feed: RawThreadPost[];
   try {
@@ -38,14 +37,19 @@ export async function runTrendScan(opts: { maxPosts?: number } = {}): Promise<Tr
     throw err;
   }
 
-  const result: TrendScanResult = { postsRecorded: 0, draftsCreated: 0, skipped: 0 };
+  const result: TrendScanResult = {
+    postsRecorded: 0, draftsCreated: 0, skipped: 0,
+    scraped: feed.length, belowFloor: 0, stale: 0, deduped: 0,
+  };
 
-  // Keep only posts with traction (AI gets a lower floor) AND that are recent.
+  // HARD GATE: 讚+留言 must clear the engagement floor (flat — applies to AI too) AND be
+  // recent. Posts that fail here are dropped BEFORE embedding — we never spend an embedding
+  // call on a post we won't display.
   const cutoff = Date.now() - recencyDays * 86_400_000;
   const recent = feed.filter((p) => {
-    const eng = p.likeCount + p.replyCount;
-    const floor = isAIRelevant(p.text, p.source) ? minEngagementAI : minEngagement;
-    return eng >= floor && (!p.timestamp || new Date(p.timestamp).getTime() >= cutoff);
+    if (p.likeCount + p.replyCount < minEngagement) { result.belowFloor++; return false; }
+    if (p.timestamp && new Date(p.timestamp).getTime() < cutoff) { result.stale++; return false; }
+    return true;
   });
 
   // Dedup vs already-recorded permalinks so the same post isn't recorded twice.
@@ -54,6 +58,7 @@ export async function runTrendScan(opts: { maxPosts?: number } = {}): Promise<Tr
   ).all(`-${recencyDays + 1} days`) as { permalink: string }[];
   const seen = new Set(seenRows.map((r) => r.permalink));
   const fresh = recent.filter((p) => !p.permalink || !seen.has(p.permalink));
+  result.deduped = recent.length - fresh.length;
 
   // Rank: AI/tech-relevant first (Tommy's core content), then by engagement velocity.
   const ranked = fresh
@@ -78,7 +83,8 @@ export async function runTrendScan(opts: { maxPosts?: number } = {}): Promise<Tr
   });
 
   log.info(
-    { scraped: feed.length, recent: recent.length, fresh: fresh.length, recorded: result.postsRecorded },
+    { scraped: result.scraped, belowFloor: result.belowFloor, stale: result.stale,
+      deduped: result.deduped, recorded: result.postsRecorded },
     'Trend scan complete (posts only — drafts are on-demand)',
   );
   return result;
