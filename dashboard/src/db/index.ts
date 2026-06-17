@@ -350,6 +350,8 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_draft_count', '5');     // how many top posts to generate 蹭點 drafts for
   seedSetting('trend_min_engagement', '80');    // keep posts with 讚+留言 ≥ this (flat, AI too)
   seedSetting('trend_scrape_times', '10:00,21:00'); // 2x/day auto-scan times (HH:MM, comma-separated)
+  seedSetting('trend_topics_per_scan', '5');  // topic rotation: # of seed topics searched per scan
+  seedSetting('trend_jitter_minutes', '25');  // schedule jitter window in minutes (anti-detection)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 
   // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).

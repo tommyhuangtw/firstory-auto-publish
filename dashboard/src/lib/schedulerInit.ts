@@ -262,11 +262,20 @@ async function trendCatchUp(): Promise<void> {
   }
 }
 
-/** Scheduled (cron) trend scan — small jitter so it doesn't fire exactly on the minute,
- *  but kept short (≤2 min) so a freshly-woken Mac runs it before idle-sleep kicks back in. */
+/** Scheduled (cron) trend scan — randomised delay (jitter) so it doesn't fire on a fixed
+ *  minute every day (a regular pattern is a bot tell). Window = `trend_jitter_minutes`
+ *  (default 25). If the Mac idle-sleeps during a long jitter, the 30-min slot catch-up
+ *  backfills that slot, so a wide jitter is safe. */
 async function runTrendScan(): Promise<void> {
-  const jitterMs = Math.floor(Math.random() * 120_000);
-  log.info({ jitterSec: Math.round(jitterMs / 1000) }, 'Social trend scan scheduled — waiting jitter');
+  let maxMin = 25;
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_jitter_minutes') as
+      { value: string } | undefined;
+    const n = row ? parseInt(row.value, 10) : NaN;
+    if (Number.isFinite(n) && n >= 0 && n <= 120) maxMin = n;
+  } catch { /* DB not ready — use default */ }
+  const jitterMs = Math.floor(Math.random() * maxMin * 60_000);
+  log.info({ jitterSec: Math.round(jitterMs / 1000), maxMin }, 'Social trend scan scheduled — waiting jitter');
   await new Promise((r) => setTimeout(r, jitterMs));
   await doTrendScan();
 }

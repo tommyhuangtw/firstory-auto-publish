@@ -182,6 +182,29 @@ export function getCuratedSeeds(): string[] {
   return [];
 }
 
+/**
+ * Rotate seed topics so each scan only searches a SUBSET (window = `trend_topics_per_scan`,
+ * default 5), cycling through all of them across runs. Halves the per-scan search footprint
+ * — fewer back-to-back searches looks less scraper-like to Meta. The rotation pointer is
+ * persisted in `trend_topic_rotation_offset` and advanced each scan.
+ */
+function rotateSeeds(all: string[]): string[] {
+  if (all.length === 0) return [];
+  const db = getDb();
+  const get = (k: string, d: string) =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined)?.value ?? d;
+  const perScan = Math.max(1, parseInt(get('trend_topics_per_scan', '5'), 10));
+  if (all.length <= perScan) return all;
+  const offset = ((parseInt(get('trend_topic_rotation_offset', '0'), 10) % all.length) + all.length) % all.length;
+  const picked: string[] = [];
+  for (let i = 0; i < perScan; i++) picked.push(all[(offset + i) % all.length]);
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('trend_topic_rotation_offset', ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(String((offset + perScan) % all.length));
+  return picked;
+}
+
 /** Extract whatever posts are currently rendered in the DOM (For You feed or search). */
 async function extractPostsOnPage(page: import('playwright').Page, max: number): Promise<RawThreadPost[]> {
   const now = Date.now();
@@ -310,8 +333,9 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<RawTh
     // 1) For You feed — freshest, algorithm-pushed signal.
     for (const p of await scrapeForYouFeed(page, opts.maxPosts ?? 30)) add(p, '為你推薦');
 
-    // 2) Targeted seed topics (recency-filtered downstream).
-    const seeds = getCuratedSeeds();
+    // 2) Targeted seed topics — only a rotating subset per scan (anti-detection).
+    const seeds = rotateSeeds(getCuratedSeeds());
+    log.info({ topics: seeds }, 'Seed topics this scan (rotating subset)');
     for (let i = 0; i < seeds.length; i++) {
       try {
         for (const p of await scrapeTopicPosts(page, seeds[i], 12, 'recent')) add(p, seeds[i]);
