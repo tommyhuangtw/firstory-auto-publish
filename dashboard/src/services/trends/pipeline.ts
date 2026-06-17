@@ -11,6 +11,7 @@ import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { runScrape } from './crawler';
 import { engagementVelocity, isAIRelevant } from './scorer';
+import { embedTexts } from './embeddings';
 import { sendTrendAlert } from './digest';
 import type { TrendScanResult, RawThreadPost } from './types';
 
@@ -59,18 +60,22 @@ export async function runTrendScan(opts: { maxPosts?: number } = {}): Promise<Tr
     .map((p) => ({ p, v: engagementVelocity(p), rel: isAIRelevant(p.text, p.source) }))
     .sort((a, b) => (b.rel ? 1 : 0) - (a.rel ? 1 : 0) || b.v - a.v);
 
+  // Embed all posts in one batch (for the 👍 interest-similarity loop); null-safe.
+  const vecs = await embedTexts(ranked.map((r) => r.p.text));
+
   // Record every fresh post — this IS the deliverable (hot posts to reply to / draft from).
   const insertPost = db.prepare(`
-    INSERT INTO trend_posts (topic_id, topic, source, author, text, like_count, reply_count, velocity, posted_at, permalink, relevant)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trend_posts (topic_id, topic, source, author, text, like_count, reply_count, velocity, posted_at, permalink, relevant, embedding)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  for (const { p, v, rel } of ranked) {
+  ranked.forEach(({ p, v, rel }, i) => {
     insertPost.run(
       null, null, p.source ?? null, p.author ?? null, p.text, p.likeCount, p.replyCount,
       Math.round(v), p.timestamp ?? null, p.permalink ?? null, rel ? 1 : 0,
+      vecs[i] ? JSON.stringify(vecs[i]) : null,
     );
     result.postsRecorded++;
-  }
+  });
 
   log.info(
     { scraped: feed.length, recent: recent.length, fresh: fresh.length, recorded: result.postsRecorded },

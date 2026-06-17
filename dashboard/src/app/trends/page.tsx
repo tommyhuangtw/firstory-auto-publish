@@ -13,6 +13,8 @@ interface HotPost {
   posted_at?: string;
   permalink?: string;
   relevant?: number;
+  interested?: number;
+  interest_score?: number | null;
 }
 
 export default function TrendsPage() {
@@ -25,15 +27,41 @@ export default function TrendsPage() {
   const [genResult, setGenResult] = useState<Record<number, { topic: string; text: string }>>({});
   const [copied, setCopied] = useState<number | null>(null);
   const [hoverId, setHoverId] = useState<number | null>(null);
+  const [likedCount, setLikedCount] = useState(0);
+  const [profileSize, setProfileSize] = useState(0);
+  const [mineOnly, setMineOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch('/api/trends/posts?days=2&limit=80');
+    const qs = mineOnly ? '&sort=interest&minScore=0.3' : '';
+    const res = await fetch(`/api/trends/posts?days=2&limit=80${qs}`);
     const data = await res.json();
     setPosts(data.posts || []);
+    setLikedCount(data.likedCount ?? 0);
+    setProfileSize(data.profileSize ?? 0);
     setLoading(false);
-  }, []);
+  }, [mineOnly]);
   useEffect(() => { void load(); }, [load]);
+
+  const toggleInterested = async (postId: number, current: boolean) => {
+    // optimistic
+    setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, interested: current ? 0 : 1 } : p)));
+    const res = await fetch(`/api/trends/posts/${postId}/interested`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interested: !current }),
+    });
+    const data = await res.json();
+    if (typeof data.likedCount === 'number') setLikedCount(data.likedCount);
+  };
+
+  const backfillEmbeddings = async () => {
+    setBusy('embed');
+    const res = await fetch('/api/trends/posts/embed-missing', { method: 'POST' });
+    const data = await res.json();
+    setBusy(null);
+    alert(data.error ? `失敗：${data.error}` : `已補 embedding ${data.embedded} 篇（剩 ${data.remaining}）`);
+    void load();
+  };
 
   const scan = async () => {
     setBusy('scan');
@@ -97,9 +125,22 @@ export default function TrendsPage() {
           </button>
         </div>
       </div>
-      <p className="text-xs text-zinc-500 mb-5">
-        爬 Threads「為你推薦」+ 你的同溫層話題的近期熱點（AI 優先）。每則可直接點去回覆衝流量；覺得有發揮空間的，按「✍️ 讓 AI 寫成貼文」（可選填你的看法）就用你的風格生成草稿、當場複製。
+      <p className="text-xs text-zinc-500 mb-3">
+        爬 Threads「為你推薦」+ 你的同溫層話題的近期熱點。按 👍 標「想留」，系統會學你的口味、把語意類似的貼文排前面（累積到 15 篇後自動切換）。每則可直接點去回覆，或按「✍️ 讓 AI 寫成貼文」生成草稿。
       </p>
+
+      <div className="flex items-center gap-3 mb-5 text-xs flex-wrap">
+        <span className="text-zinc-400">已標 <span className="text-brand font-semibold">{likedCount}</span> 篇想留{profileSize < 15 && likedCount > 0 ? `（再 ${15 - likedCount} 篇就自動依口味排序）` : ''}</span>
+        <button onClick={() => setMineOnly((v) => !v)} disabled={profileSize === 0}
+          title={profileSize === 0 ? '先 👍 幾篇' : ''}
+          className={`px-2.5 py-1 rounded-lg ${mineOnly ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'} disabled:opacity-40`}>
+          {mineOnly ? '✓ 只看符合我口味' : '只看符合我口味'}
+        </button>
+        <button onClick={backfillEmbeddings} disabled={busy === 'embed'}
+          className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50" title="把舊貼文補上向量，才能算口味相似度">
+          {busy === 'embed' ? '補向量中…' : '補 embedding'}
+        </button>
+      </div>
 
       {loading ? (
         <p className="text-zinc-500 text-sm">載入中…</p>
@@ -114,6 +155,7 @@ export default function TrendsPage() {
               <div className="flex items-center gap-2 mb-2 min-w-0">
                 {p.author && <span className="font-semibold text-zinc-100 truncate">@{p.author}</span>}
                 {p.relevant ? <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">AI/科技</span> : null}
+                {typeof p.interest_score === 'number' && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300" title="跟你 👍 的貼文語意相似度">符合 {Math.round(p.interest_score * 100)}%</span>}
                 {p.source && <span className="shrink-0 text-xs text-zinc-500">{p.source}</span>}
                 {p.posted_at && <span className="shrink-0 ml-auto text-xs text-zinc-500">{new Date(p.posted_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
               </div>
@@ -139,6 +181,10 @@ export default function TrendsPage() {
                 )}
                 <button onClick={() => setFormOpen((s) => ({ ...s, [p.id]: !s[p.id] }))}
                   className="text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25">✍️ 讓 AI 寫成貼文</button>
+                <button onClick={() => toggleInterested(p.id, !!p.interested)}
+                  className={`text-xs px-3 py-1.5 rounded-lg ml-auto ${p.interested ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                  {p.interested ? '👍 已留' : '👍 想留'}
+                </button>
               </div>
 
               {formOpen[p.id] && (

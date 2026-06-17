@@ -289,11 +289,16 @@ export function getDb(): Database.Database {
       posted_at   TEXT,
       permalink   TEXT,
       relevant    INTEGER DEFAULT 0,
+      embedding   TEXT,
+      interested  INTEGER DEFAULT 0,
       scraped_at  TEXT    DEFAULT (datetime('now'))
     )
   `);
   safeAlter('ALTER TABLE trend_posts ADD COLUMN source TEXT');
   safeAlter('ALTER TABLE trend_posts ADD COLUMN relevant INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN embedding TEXT');           // OpenAI vector (JSON)
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN interested INTEGER DEFAULT 0'); // 👍 想留
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_interested ON trend_posts(interested)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_topic ON trend_posts(topic_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_permalink ON trend_posts(permalink)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_scraped ON trend_posts(scraped_at)');
