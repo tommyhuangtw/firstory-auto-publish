@@ -343,8 +343,9 @@ Apple Podcast / Spotify / KKBOX
 
   // Social trend bot defaults
   seedSetting('trend_seed_keywords', JSON.stringify([
-    'AI Agent', 'vibe coding', 'AI工具', 'AI 應用', '科技業', '台灣政治', '台灣新聞', '英國',
-  ]));                                       // targeted topics to also search (Tommy's 同溫層)
+    'AI 應用', 'AI 導入', 'vibe coding', 'Claude Code', 'AI Agent', 'AI 工具',
+    '職場', '外商求職', '遠端工作', '科技業', '英國',
+  ]));                                       // targeted topics to also search — derived from Tommy's 👍 (AI 實作 + 職涯/求職)
   seedSetting('trend_recency_days', '2');    // drop posts older than this (kills stale evergreen)
   seedSetting('trend_draft_count', '5');     // how many top posts to generate 蹭點 drafts for
   seedSetting('trend_min_engagement', '80');    // keep posts with 讚+留言 ≥ this (flat, AI too)
