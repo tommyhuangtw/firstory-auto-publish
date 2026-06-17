@@ -119,10 +119,7 @@ export default function LabelPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-2xl mx-auto pb-24">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <h1 className="text-xl font-bold text-brand">標註口味</h1>
-        <a href="/trends" className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">← 回熱點</a>
-      </div>
+      <h1 className="text-xl font-bold text-brand mb-2">口味標註</h1>
       <p className="text-xs text-zinc-500 mb-4">
         從舊資料庫匯入的高互動貼文中，快速標「想留 / 不要」。不用標完 —— 隨時可停，進度會存，下次回來接著標。
         累積到 25 篇後會自動改成「挑模稜兩可的優先」，每一票最有效。鍵盤：<span className="text-zinc-300">← 不要</span>、<span className="text-zinc-300">→ 想留</span>、<span className="text-zinc-300">↓ 跳過</span>。
