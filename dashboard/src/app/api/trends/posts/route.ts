@@ -16,14 +16,25 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '200', 10);
   const sort = searchParams.get('sort');
   const minScore = parseFloat(searchParams.get('minScore') || '0');
+  const includeDisliked = searchParams.get('includeDisliked') === '1';
   const INTEREST_THRESHOLD = 15; // # of 👍 before auto-switching to interest-ranking
 
-  // Build the interest profile from 👍 posts' embeddings.
-  const likedRows = db.prepare(
-    'SELECT embedding FROM trend_posts WHERE interested = 1 AND embedding IS NOT NULL',
-  ).all() as Array<{ embedding: string }>;
-  const likedVecs = likedRows.map((r) => parseEmbedding(r.embedding)).filter((v): v is number[] => !!v);
-  const likedCount = (db.prepare('SELECT count(*) c FROM trend_posts WHERE interested = 1').get() as { c: number }).c;
+  // Build the interest profile from 👍 (positive) and 👎 (negative) posts' embeddings.
+  const profileRows = db.prepare(
+    'SELECT interested, embedding FROM trend_posts WHERE interested != 0 AND embedding IS NOT NULL',
+  ).all() as Array<{ interested: number; embedding: string }>;
+  const likedVecs: number[][] = [];
+  const dislikedVecs: number[][] = [];
+  for (const r of profileRows) {
+    const v = parseEmbedding(r.embedding);
+    if (!v) continue;
+    (r.interested === 1 ? likedVecs : dislikedVecs).push(v);
+  }
+  const counts = db.prepare(
+    "SELECT sum(interested = 1) liked, sum(interested = -1) disliked FROM trend_posts",
+  ).get() as { liked: number | null; disliked: number | null };
+  const likedCount = counts.liked || 0;
+  const dislikedCount = counts.disliked || 0;
 
   let query = `
     SELECT p.id, p.topic, p.source, p.author, p.text, p.like_count, p.reply_count, p.velocity,
@@ -34,28 +45,32 @@ export async function GET(request: NextRequest) {
   `;
   const qp: unknown[] = [`-${days} days`];
   if (topicId) { query += ' AND p.topic_id = ?'; qp.push(parseInt(topicId, 10)); }
+  if (!includeDisliked) query += ' AND p.interested != -1'; // hide 👎 不要 posts by default
   query += ' ORDER BY p.relevant DESC, p.velocity DESC, p.scraped_at DESC';
 
   const rows = db.prepare(query).all(...qp) as Array<Record<string, unknown> & { embedding: string | null }>;
 
-  // Score each post against the 👍 profile, then strip the (large) embedding from the response.
+  // Score each post against the 👍/👎 profile, then strip the (large) embedding from the response.
+  const hasProfile = likedVecs.length > 0 || dislikedVecs.length > 0;
   let posts = rows.map((r) => {
     const vec = parseEmbedding(r.embedding);
-    const interest_score = vec && likedVecs.length ? interestScore(vec, likedVecs) : null;
+    const interest_score = vec && hasProfile ? interestScore(vec, likedVecs, dislikedVecs) : null;
     delete (r as { embedding?: string | null }).embedding;
     return { ...r, interest_score };
   });
 
-  if (likedVecs.length && minScore > 0) {
-    posts = posts.filter((p) => (p.interest_score ?? 0) >= minScore);
+  if (hasProfile && minScore > 0) {
+    posts = posts.filter((p) => (p.interest_score ?? -1) >= minScore);
   }
 
   const interestSort = sort === 'interest' || likedVecs.length >= INTEREST_THRESHOLD;
-  if (interestSort && likedVecs.length) {
+  if (interestSort && hasProfile) {
     posts.sort((a, b) => (b.interest_score ?? -1) - (a.interest_score ?? -1));
   }
 
   posts = posts.slice(0, limit);
   const total = (db.prepare('SELECT count(*) AS c FROM trend_posts').get() as { c: number }).c;
-  return NextResponse.json({ posts, total, likedCount, profileSize: likedVecs.length, interestSort });
+  return NextResponse.json({
+    posts, total, likedCount, dislikedCount, profileSize: likedVecs.length, interestSort,
+  });
 }

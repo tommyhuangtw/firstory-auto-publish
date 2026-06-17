@@ -28,30 +28,42 @@ export default function TrendsPage() {
   const [copied, setCopied] = useState<number | null>(null);
   const [hoverId, setHoverId] = useState<number | null>(null);
   const [likedCount, setLikedCount] = useState(0);
+  const [dislikedCount, setDislikedCount] = useState(0);
   const [profileSize, setProfileSize] = useState(0);
   const [mineOnly, setMineOnly] = useState(false);
+  const [showDisliked, setShowDisliked] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const qs = mineOnly ? '&sort=interest&minScore=0.3' : '';
-    const res = await fetch(`/api/trends/posts?days=2&limit=80${qs}`);
+    const params = new URLSearchParams({ days: '2', limit: '80' });
+    if (mineOnly) { params.set('sort', 'interest'); params.set('minScore', '0.3'); }
+    if (showDisliked) params.set('includeDisliked', '1');
+    const res = await fetch(`/api/trends/posts?${params}`);
     const data = await res.json();
     setPosts(data.posts || []);
     setLikedCount(data.likedCount ?? 0);
+    setDislikedCount(data.dislikedCount ?? 0);
     setProfileSize(data.profileSize ?? 0);
     setLoading(false);
-  }, [mineOnly]);
+  }, [mineOnly, showDisliked]);
   useEffect(() => { void load(); }, [load]);
 
-  const toggleInterested = async (postId: number, current: boolean) => {
-    // optimistic
-    setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, interested: current ? 0 : 1 } : p)));
+  // target: 1 = 👍 想留, -1 = 👎 不要. Clicking the active one clears it (0).
+  const toggleInterest = async (postId: number, target: 1 | -1) => {
+    const current = posts.find((p) => p.id === postId)?.interested ?? 0;
+    const next = current === target ? 0 : target;
+    // optimistic: update the mark; hide a freshly 👎'd post unless we're showing excluded ones
+    setPosts((ps) => {
+      const updated = ps.map((p) => (p.id === postId ? { ...p, interested: next } : p));
+      return next === -1 && !showDisliked ? updated.filter((p) => p.id !== postId) : updated;
+    });
     const res = await fetch(`/api/trends/posts/${postId}/interested`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ interested: !current }),
+      body: JSON.stringify({ value: next }),
     });
     const data = await res.json();
     if (typeof data.likedCount === 'number') setLikedCount(data.likedCount);
+    if (typeof data.dislikedCount === 'number') setDislikedCount(data.dislikedCount);
   };
 
   const backfillEmbeddings = async () => {
@@ -126,7 +138,7 @@ export default function TrendsPage() {
         </div>
       </div>
       <p className="text-xs text-zinc-500 mb-3">
-        爬 Threads「為你推薦」+ 你的同溫層話題的近期熱點。按 👍 標「想留」，系統會學你的口味、把語意類似的貼文排前面（累積到 15 篇後自動切換）。每則可直接點去回覆，或按「✍️ 讓 AI 寫成貼文」生成草稿。
+        爬 Threads「為你推薦」+ 你的同溫層話題的近期熱點。按 👍 標「想留」、👎 標「不要」，系統會學你的口味、把語意類似的貼文排前面、把你不要的壓下去（累積到 15 篇 👍 後自動切換）。每則可直接點去回覆，或按「✍️ 讓 AI 寫成貼文」生成草稿。
       </p>
 
       <div className="flex items-center gap-3 mb-5 text-xs flex-wrap">
@@ -136,6 +148,12 @@ export default function TrendsPage() {
           className={`px-2.5 py-1 rounded-lg ${mineOnly ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'} disabled:opacity-40`}>
           {mineOnly ? '✓ 只看符合我口味' : '只看符合我口味'}
         </button>
+        {dislikedCount > 0 && (
+          <button onClick={() => setShowDisliked((v) => !v)}
+            className={`px-2.5 py-1 rounded-lg ${showDisliked ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+            {showDisliked ? '✓ 顯示不要的' : `顯示不要的 (${dislikedCount})`}
+          </button>
+        )}
         <button onClick={backfillEmbeddings} disabled={busy === 'embed'}
           className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50" title="把舊貼文補上向量，才能算口味相似度">
           {busy === 'embed' ? '補向量中…' : '補 embedding'}
@@ -155,7 +173,7 @@ export default function TrendsPage() {
               <div className="flex items-center gap-2 mb-2 min-w-0">
                 {p.author && <span className="font-semibold text-zinc-100 truncate">@{p.author}</span>}
                 {p.relevant ? <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">AI/科技</span> : null}
-                {typeof p.interest_score === 'number' && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300" title="跟你 👍 的貼文語意相似度">符合 {Math.round(p.interest_score * 100)}%</span>}
+                {typeof p.interest_score === 'number' && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300" title="跟你 👍 的貼文相似、扣掉跟 👎 的相似後的口味分數">符合 {Math.max(0, Math.round(p.interest_score * 100))}%</span>}
                 {p.source && <span className="shrink-0 text-xs text-zinc-500">{p.source}</span>}
                 {p.posted_at && <span className="shrink-0 ml-auto text-xs text-zinc-500">{new Date(p.posted_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
               </div>
@@ -181,10 +199,16 @@ export default function TrendsPage() {
                 )}
                 <button onClick={() => setFormOpen((s) => ({ ...s, [p.id]: !s[p.id] }))}
                   className="text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25">✍️ 讓 AI 寫成貼文</button>
-                <button onClick={() => toggleInterested(p.id, !!p.interested)}
-                  className={`text-xs px-3 py-1.5 rounded-lg ml-auto ${p.interested ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
-                  {p.interested ? '👍 已留' : '👍 想留'}
-                </button>
+                <div className="ml-auto flex items-center gap-2">
+                  <button onClick={() => toggleInterest(p.id, -1)} title="不想看到這類，往後壓低"
+                    className={`text-xs px-3 py-1.5 rounded-lg ${p.interested === -1 ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                    {p.interested === -1 ? '👎 已排除' : '👎 不要'}
+                  </button>
+                  <button onClick={() => toggleInterest(p.id, 1)} title="想多看這類，往前排"
+                    className={`text-xs px-3 py-1.5 rounded-lg ${p.interested === 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                    {p.interested === 1 ? '👍 已留' : '👍 想留'}
+                  </button>
+                </div>
               </div>
 
               {formOpen[p.id] && (

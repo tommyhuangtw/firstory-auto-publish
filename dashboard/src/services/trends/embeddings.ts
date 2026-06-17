@@ -51,12 +51,27 @@ export function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-/** Interest score 0..1 = mean of the top-k cosine sims to the 👍 set (k-NN, one-class). */
-export function interestScore(vec: number[], likedVecs: number[][], k = 3): number {
-  if (!likedVecs.length || !vec.length) return 0;
-  const sims = likedVecs.map((lv) => cosine(vec, lv)).sort((a, b) => b - a);
+/** Mean of the top-k cosine sims of `vec` to a reference set (0 if set empty). */
+function topKMean(vec: number[], set: number[][], k: number): number {
+  if (!set.length || !vec.length) return 0;
+  const sims = set.map((s) => cosine(vec, s)).sort((a, b) => b - a);
   const top = sims.slice(0, Math.min(k, sims.length));
   return top.reduce((s, x) => s + x, 0) / top.length;
+}
+
+/**
+ * Contrastive interest score (Rocchio-style relevance feedback):
+ *   score = sim(👍) − lambda · sim(👎)
+ * Each term is the top-k mean cosine to that label's embeddings. A post near the
+ * 👎 set is pushed down even if it's also somewhat near 👍. Can be negative.
+ * Positive-only (no 👎) reduces to the original one-class k-NN score.
+ */
+export function interestScore(
+  vec: number[], likedVecs: number[][], dislikedVecs: number[][] = [], k = 3, lambda = 0.5,
+): number {
+  const pos = topKMean(vec, likedVecs, k);
+  const neg = topKMean(vec, dislikedVecs, k);
+  return pos - lambda * neg;
 }
 
 /** Parse a stored embedding (JSON string) back to a vector, or null. */
