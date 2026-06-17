@@ -30,13 +30,15 @@ export default function TrendsPage() {
   const [likedCount, setLikedCount] = useState(0);
   const [dislikedCount, setDislikedCount] = useState(0);
   const [profileSize, setProfileSize] = useState(0);
-  const [mineOnly, setMineOnly] = useState(false);
+  const [filtered, setFiltered] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [showDisliked, setShowDisliked] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Default = hard filter (only posts matching your taste). showAll lifts it.
     const params = new URLSearchParams({ days: '2', limit: '80' });
-    if (mineOnly) { params.set('sort', 'interest'); params.set('minScore', '0.3'); }
+    if (showAll) params.set('all', '1');
     if (showDisliked) params.set('includeDisliked', '1');
     const res = await fetch(`/api/trends/posts?${params}`);
     const data = await res.json();
@@ -44,8 +46,9 @@ export default function TrendsPage() {
     setLikedCount(data.likedCount ?? 0);
     setDislikedCount(data.dislikedCount ?? 0);
     setProfileSize(data.profileSize ?? 0);
+    setFiltered(!!data.filtered);
     setLoading(false);
-  }, [mineOnly, showDisliked]);
+  }, [showAll, showDisliked]);
   useEffect(() => { void load(); }, [load]);
 
   // target: 1 = 👍 想留, -1 = 👎 不要. Clicking the active one clears it (0).
@@ -127,6 +130,7 @@ export default function TrendsPage() {
             {busy === 'scan' ? '掃描中…' : '立即掃描'}
           </button>
           <button onClick={() => load()} className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">重新整理</button>
+          <a href="/trends/label" className="px-3 py-1.5 text-sm rounded-lg bg-purple-500/15 text-purple-300 hover:bg-purple-500/25">✍️ 標註口味</a>
           <button onClick={pushTelegram} disabled={busy === 'tg'}
             className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
             {busy === 'tg' ? '推播中…' : '推 Telegram'}
@@ -142,12 +146,13 @@ export default function TrendsPage() {
       </p>
 
       <div className="flex items-center gap-3 mb-5 text-xs flex-wrap">
-        <span className="text-zinc-400">已標 <span className="text-brand font-semibold">{likedCount}</span> 篇想留{profileSize < 15 && likedCount > 0 ? `（再 ${15 - likedCount} 篇就自動依口味排序）` : ''}</span>
-        <button onClick={() => setMineOnly((v) => !v)} disabled={profileSize === 0}
-          title={profileSize === 0 ? '先 👍 幾篇' : ''}
-          className={`px-2.5 py-1 rounded-lg ${mineOnly ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'} disabled:opacity-40`}>
-          {mineOnly ? '✓ 只看符合我口味' : '只看符合我口味'}
-        </button>
+        <span className="text-zinc-400">口味檔案 <span className="text-emerald-400 font-semibold">👍{likedCount}</span> <span className="text-rose-400 font-semibold">👎{dislikedCount}</span>{filtered ? ' ·已依口味過濾' : profileSize === 0 ? ' ·尚無，先去標註' : ''}</span>
+        {profileSize > 0 && (
+          <button onClick={() => setShowAll((v) => !v)}
+            className={`px-2.5 py-1 rounded-lg ${showAll ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+            {showAll ? '✓ 看全部（含不符合）' : '看全部'}
+          </button>
+        )}
         {dislikedCount > 0 && (
           <button onClick={() => setShowDisliked((v) => !v)}
             className={`px-2.5 py-1 rounded-lg ${showDisliked ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
@@ -163,7 +168,7 @@ export default function TrendsPage() {
       {loading ? (
         <p className="text-zinc-500 text-sm">載入中…</p>
       ) : posts.length === 0 ? (
-        <p className="text-zinc-500 text-sm">還沒有貼文。按「立即掃描」抓一批近期高熱度貼文。</p>
+        <p className="text-zinc-500 text-sm">{filtered ? '近期沒有符合你口味的貼文。按「看全部」看未過濾的，或「立即掃描」抓新的一批。' : '還沒有貼文。按「立即掃描」抓一批近期高熱度貼文。'}</p>
       ) : (
         <div className="space-y-3">
           {posts.map((p) => (

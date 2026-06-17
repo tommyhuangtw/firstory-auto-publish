@@ -350,6 +350,7 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_min_engagement', '80');    // general posts: keep 讚+留言 ≥ this
   seedSetting('trend_min_engagement_ai', '30');  // AI posts: lower floor so more AI surfaces
   seedSetting('trend_scrape_times', '10:00,21:00'); // 2x/day auto-scan times (HH:MM, comma-separated)
+  seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 
   // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).
   // Inlined here (not imported) to avoid a circular import with the registry service.

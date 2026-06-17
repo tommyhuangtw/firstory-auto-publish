@@ -3,10 +3,12 @@ import { getDb } from '@/db';
 import { interestScore, parseEmbedding } from '@/services/trends/embeddings';
 
 /**
- * List scraped posts. Each post gets an `interest_score` (0..1) = semantic similarity
- * to the set of 👍 想留 posts. Two-stage: once enough 👍 accumulate (or ?sort=interest),
- * posts are ranked by interest; otherwise by AI-relevance + velocity. ?minScore filters.
- * Other filters: ?topic_id, ?days (default 7), ?limit (default 200).
+ * List scraped posts. Each post gets an `interest_score` = contrastive similarity to the
+ * 👍/👎 profile (see embeddings.ts). When a profile exists, the default is a HARD FILTER:
+ * only posts with score ≥ `trend_min_interest` are returned, ranked by interest — i.e.
+ * "only show what I'm interested in". ?all=1 disables the filter (see everything);
+ * ?minScore overrides the threshold. Unscored posts (no embedding yet) fail OPEN — shown,
+ * not hidden, since we can't judge them. Other filters: ?topic_id, ?days, ?limit, ?includeDisliked.
  */
 export async function GET(request: NextRequest) {
   const db = getDb();
@@ -15,9 +17,12 @@ export async function GET(request: NextRequest) {
   const days = parseInt(searchParams.get('days') || '7', 10);
   const limit = parseInt(searchParams.get('limit') || '200', 10);
   const sort = searchParams.get('sort');
-  const minScore = parseFloat(searchParams.get('minScore') || '0');
+  const showAll = searchParams.get('all') === '1';
   const includeDisliked = searchParams.get('includeDisliked') === '1';
   const INTEREST_THRESHOLD = 15; // # of 👍 before auto-switching to interest-ranking
+  const threshold = parseFloat(
+    (db.prepare("SELECT value FROM settings WHERE key = 'trend_min_interest'").get() as { value: string } | undefined)?.value || '0.3',
+  );
 
   // Build the interest profile from 👍 (positive) and 👎 (negative) posts' embeddings.
   const profileRows = db.prepare(
@@ -42,6 +47,7 @@ export async function GET(request: NextRequest) {
            t.heat_score, t.status AS topic_status
     FROM trend_posts p LEFT JOIN trend_topics t ON t.id = p.topic_id
     WHERE p.scraped_at > datetime('now', ?)
+      AND (p.source IS NULL OR p.source != 'seed_csv')
   `;
   const qp: unknown[] = [`-${days} days`];
   if (topicId) { query += ' AND p.topic_id = ?'; qp.push(parseInt(topicId, 10)); }
@@ -59,18 +65,26 @@ export async function GET(request: NextRequest) {
     return { ...r, interest_score };
   });
 
-  if (hasProfile && minScore > 0) {
-    posts = posts.filter((p) => (p.interest_score ?? -1) >= minScore);
+  // Effective threshold: explicit ?minScore wins; else the configured hard filter (unless ?all=1).
+  const explicitMin = searchParams.has('minScore') ? parseFloat(searchParams.get('minScore') || '0') : null;
+  const minScore = explicitMin ?? (showAll ? 0 : threshold);
+  const filtered = hasProfile && minScore > 0;
+  if (filtered) {
+    // Fail open: keep posts we couldn't score (null) so missing embeddings never hide content.
+    posts = posts.filter((p) => p.interest_score == null || p.interest_score >= minScore);
   }
 
-  const interestSort = sort === 'interest' || likedVecs.length >= INTEREST_THRESHOLD;
+  const interestSort = sort === 'interest' || filtered || likedVecs.length >= INTEREST_THRESHOLD;
   if (interestSort && hasProfile) {
     posts.sort((a, b) => (b.interest_score ?? -1) - (a.interest_score ?? -1));
   }
 
   posts = posts.slice(0, limit);
-  const total = (db.prepare('SELECT count(*) AS c FROM trend_posts').get() as { c: number }).c;
+  const total = (db.prepare(
+    "SELECT count(*) c FROM trend_posts WHERE scraped_at > datetime('now', ?) AND interested != -1 AND (source IS NULL OR source != 'seed_csv')",
+  ).get(`-${days} days`) as { c: number }).c;
   return NextResponse.json({
-    posts, total, likedCount, dislikedCount, profileSize: likedVecs.length, interestSort,
+    posts, total, likedCount, dislikedCount, profileSize: likedVecs.length,
+    interestSort, filtered, minInterest: minScore,
   });
 }
