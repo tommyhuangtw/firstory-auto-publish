@@ -24,6 +24,7 @@ export default function TrendsPage() {
   const [genBusy, setGenBusy] = useState<number | null>(null);
   const [genResult, setGenResult] = useState<Record<number, { topic: string; text: string }>>({});
   const [copied, setCopied] = useState<number | null>(null);
+  const [hoverId, setHoverId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,14 +108,19 @@ export default function TrendsPage() {
       ) : (
         <div className="space-y-3">
           {posts.map((p) => (
-            <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <div key={p.id}
+              onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
+              className={`rounded-xl border bg-zinc-900/40 p-4 transition-colors ${hoverId === p.id ? 'border-orange-500/40 bg-zinc-900/70' : 'border-zinc-800'}`}>
               <div className="flex items-center gap-2 mb-2 min-w-0">
                 {p.author && <span className="font-semibold text-zinc-100 truncate">@{p.author}</span>}
                 {p.relevant ? <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">AI/科技</span> : null}
                 {p.source && <span className="shrink-0 text-xs text-zinc-500">{p.source}</span>}
                 {p.posted_at && <span className="shrink-0 ml-auto text-xs text-zinc-500">{new Date(p.posted_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
               </div>
-              <p className="text-sm text-zinc-200 leading-relaxed line-clamp-3 hover:line-clamp-none transition-all" title="hover 看全文">{p.text}</p>
+              <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap"
+                style={hoverId === p.id ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {p.text}
+              </p>
               <div className="flex items-center gap-4 mt-3">
                 <span className="flex items-center gap-1.5 text-rose-400 text-sm font-semibold tabular-nums">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-10-9.3C.5 8.5 2 5 5.5 5 7.7 5 9 6.3 12 9c3-2.7 4.3-4 6.5-4C22 5 23.5 8.5 22 11.7 19.5 16.4 12 21 12 21z" /></svg>
