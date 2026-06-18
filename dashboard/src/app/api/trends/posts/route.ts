@@ -23,6 +23,11 @@ export async function GET(request: NextRequest) {
   const threshold = parseFloat(
     (db.prepare("SELECT value FROM settings WHERE key = 'trend_min_interest'").get() as { value: string } | undefined)?.value || '0.3',
   );
+  // Display floor — never show 讚+留言 < this, even for posts recorded under an older rule
+  // or 👍'd (they still anchor the profile, just don't surface). Mirrors the pipeline gate.
+  const minEng = parseInt(
+    (db.prepare("SELECT value FROM settings WHERE key = 'trend_min_engagement'").get() as { value: string } | undefined)?.value || '80', 10,
+  );
 
   // Build the interest profile from 👍 (positive) and 👎 (negative) posts' embeddings.
   const profileRows = db.prepare(
@@ -48,8 +53,9 @@ export async function GET(request: NextRequest) {
     FROM trend_posts p LEFT JOIN trend_topics t ON t.id = p.topic_id
     WHERE p.scraped_at > datetime('now', ?)
       AND (p.source IS NULL OR p.source != 'seed_csv')
+      AND (p.like_count + p.reply_count) >= ?
   `;
-  const qp: unknown[] = [`-${days} days`];
+  const qp: unknown[] = [`-${days} days`, minEng];
   if (topicId) { query += ' AND p.topic_id = ?'; qp.push(parseInt(topicId, 10)); }
   if (!includeDisliked) query += ' AND p.interested != -1'; // hide 👎 不要 posts by default
   query += ' ORDER BY p.relevant DESC, p.velocity DESC, p.scraped_at DESC';
@@ -81,8 +87,8 @@ export async function GET(request: NextRequest) {
 
   posts = posts.slice(0, limit);
   const total = (db.prepare(
-    "SELECT count(*) c FROM trend_posts WHERE scraped_at > datetime('now', ?) AND interested != -1 AND (source IS NULL OR source != 'seed_csv')",
-  ).get(`-${days} days`) as { c: number }).c;
+    "SELECT count(*) c FROM trend_posts WHERE scraped_at > datetime('now', ?) AND interested != -1 AND (source IS NULL OR source != 'seed_csv') AND (like_count + reply_count) >= ?",
+  ).get(`-${days} days`, minEng) as { c: number }).c;
   return NextResponse.json({
     posts, total, likedCount, dislikedCount, profileSize: likedVecs.length,
     interestSort, filtered, minInterest: minScore,
