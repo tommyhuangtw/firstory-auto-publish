@@ -80,10 +80,24 @@ export async function GET(request: NextRequest) {
     posts = posts.filter((p) => p.interest_score == null || p.interest_score >= minScore);
   }
 
-  const interestSort = sort === 'interest' || filtered || likedVecs.length >= INTEREST_THRESHOLD;
-  if (interestSort && hasProfile) {
+  // Sort is independent of the filter. Explicit ?sort wins (interest / newest / heat);
+  // otherwise default to interest when we have a profile, else newest.
+  const sortMode = sort === 'newest' || sort === 'heat' || sort === 'interest'
+    ? sort
+    : (hasProfile && (filtered || likedVecs.length >= INTEREST_THRESHOLD) ? 'interest' : 'newest');
+  const timeMs = (p: Record<string, unknown>) => {
+    const ms = Date.parse((p.posted_at as string) || (p.scraped_at as string) || '');
+    return isNaN(ms) ? 0 : ms;
+  };
+  const heat = (p: Record<string, unknown>) => Number(p.velocity) || 0;
+  if (sortMode === 'interest' && hasProfile) {
     posts.sort((a, b) => (b.interest_score ?? -1) - (a.interest_score ?? -1));
+  } else if (sortMode === 'heat') {
+    posts.sort((a, b) => heat(b) - heat(a));
+  } else {
+    posts.sort((a, b) => timeMs(b) - timeMs(a)); // newest
   }
+  const interestSort = sortMode === 'interest';
 
   posts = posts.slice(0, limit);
   const total = (db.prepare(
@@ -91,6 +105,6 @@ export async function GET(request: NextRequest) {
   ).get(`-${days} days`, minEng) as { c: number }).c;
   return NextResponse.json({
     posts, total, likedCount, dislikedCount, profileSize: likedVecs.length,
-    interestSort, filtered, minInterest: minScore,
+    interestSort, sortMode, filtered, minInterest: minScore,
   });
 }

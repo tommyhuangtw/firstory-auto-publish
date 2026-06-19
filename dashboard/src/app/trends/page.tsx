@@ -33,11 +33,12 @@ export default function TrendsPage() {
   const [filtered, setFiltered] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [showDisliked, setShowDisliked] = useState(false);
+  const [sortMode, setSortMode] = useState<'interest' | 'newest' | 'heat'>('interest');
 
   const load = useCallback(async () => {
     setLoading(true);
-    // Default = hard filter (only posts matching your taste). showAll lifts it.
-    const params = new URLSearchParams({ days: '2', limit: '80' });
+    // Default = hard filter (only posts matching your taste). showAll lifts it. Always ≤2 days.
+    const params = new URLSearchParams({ days: '2', limit: '80', sort: sortMode });
     if (showAll) params.set('all', '1');
     if (showDisliked) params.set('includeDisliked', '1');
     const res = await fetch(`/api/trends/posts?${params}`);
@@ -48,8 +49,13 @@ export default function TrendsPage() {
     setProfileSize(data.profileSize ?? 0);
     setFiltered(!!data.filtered);
     setLoading(false);
-  }, [showAll, showDisliked]);
+  }, [showAll, showDisliked, sortMode]);
   useEffect(() => { void load(); }, [load]);
+
+  // Sensible default sort per mode: taste view → 符合度, 看全部 → 最新 (still overridable).
+  const toggleShowAll = () => {
+    setShowAll((v) => { const next = !v; setSortMode(next ? 'newest' : 'interest'); return next; });
+  };
 
   // target: 1 = 👍 想留, -1 = 👎 不要. Clicking the active one clears it (0).
   const toggleInterest = async (postId: number, target: 1 | -1) => {
@@ -148,11 +154,21 @@ export default function TrendsPage() {
       <div className="flex items-center gap-3 mb-5 text-xs flex-wrap">
         <span className="text-zinc-400">口味檔案 <span className="text-emerald-400 font-semibold">👍{likedCount}</span> <span className="text-rose-400 font-semibold">👎{dislikedCount}</span>{filtered ? ' ·已依口味過濾' : profileSize === 0 ? ' ·尚無，先去標註' : ''}</span>
         {profileSize > 0 && (
-          <button onClick={() => setShowAll((v) => !v)}
+          <button onClick={toggleShowAll}
             className={`px-2.5 py-1 rounded-lg ${showAll ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
             {showAll ? '✓ 看全部（含不符合）' : '看全部'}
           </button>
         )}
+        <span className="inline-flex items-center rounded-lg bg-zinc-800/60 p-0.5">
+          <span className="text-zinc-500 px-1.5">排序</span>
+          {([['interest', '符合度'], ['newest', '最新'], ['heat', '熱度']] as const).map(([m, label]) => (
+            <button key={m} onClick={() => setSortMode(m)}
+              disabled={m === 'interest' && profileSize === 0}
+              className={`px-2 py-1 rounded-md ${sortMode === m ? 'bg-brand/20 text-brand' : 'text-zinc-400 hover:text-zinc-200'} disabled:opacity-30`}>
+              {label}
+            </button>
+          ))}
+        </span>
         {dislikedCount > 0 && (
           <button onClick={() => setShowDisliked((v) => !v)}
             className={`px-2.5 py-1 rounded-lg ${showDisliked ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
