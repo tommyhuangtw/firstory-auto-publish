@@ -15,6 +15,7 @@ import {
   hasVersionUpdateClaim,
 } from '@/services/llm/versionGuard';
 import { verifyVersionClaims } from '@/services/modelVersionRegistry';
+import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
 import type { PipelineState, SourceLink } from '../state';
 
 const log = createChildLogger('pipeline:meta');
@@ -77,7 +78,7 @@ export async function generateMeta(state: PipelineState): Promise<Partial<Pipeli
     : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
-    : buildDescriptionPrompt(summary));
+    : buildDescriptionPrompt(summary)) + AI_STYLE_BLACKLIST;
 
   const [titlesResult, descResult, tagsResult] = await Promise.all([
     llm.generateJSON<{ titles: string[]; bestIndex: number; bestTitle: string }>(
@@ -781,7 +782,7 @@ export async function regenerateDescription(
     : isSysdesign ? buildSysdesignDescriptionPrompt(summary)
     : isRobot ? buildRobotDescriptionPrompt(summary)
     : isWeekly ? buildWeeklyDescriptionPrompt(summary)
-    : buildDescriptionPrompt(summary));
+    : buildDescriptionPrompt(summary)) + AI_STYLE_BLACKLIST;
 
   const descResult = await llm.generateJSON<{ description: string }>(
     descPrompt,

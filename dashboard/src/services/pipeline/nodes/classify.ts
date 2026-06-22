@@ -28,7 +28,7 @@ const MAX_DURATION_SEC_WEEKLY = 2400; // Weekly: max 40 min (n8n)
 // via the classifySysdesign path). Fewer than TOP_N survivors is acceptable.
 const MIN_VIEWS_BY_SEGMENT: Record<string, number> = {
   daily: 15000,
-  robot: 18000,
+  robot: 15000,
   weekly: 25000,
 };
 const MIN_VIEWS_DEFAULT = 5000;

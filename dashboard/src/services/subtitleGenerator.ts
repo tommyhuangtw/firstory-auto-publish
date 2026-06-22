@@ -93,6 +93,40 @@ export async function transcribeAudio(
     inputPath = trimmedPath;
   }
 
+  // ── Auto-compress if file exceeds Whisper's 25MB limit ──
+  const MAX_WHISPER_SIZE = 26_000_000; // safety margin below 26,214,400
+  const stat = fs.statSync(inputPath);
+  if (stat.size > MAX_WHISPER_SIZE) {
+    const { execSync } = await import('child_process');
+    const compressedPath = inputPath.replace(/\.mp3$/, '_compressed.mp3');
+    log.info(
+      { originalSize: stat.size, target: compressedPath },
+      'Audio exceeds 25MB Whisper limit, compressing to lower bitrate'
+    );
+    // Step down iteratively: try 64k first, then 32k if still too large
+    const bitrates = ['64k', '32k'];
+    let success = false;
+    for (const bitrate of bitrates) {
+      execSync(
+        `ffmpeg -y -nostdin -i "${inputPath}" -b:a ${bitrate} -ac 1 "${compressedPath}"`,
+        { stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }
+      );
+      const compressedSize = fs.statSync(compressedPath).size;
+      if (compressedSize <= MAX_WHISPER_SIZE) {
+        log.info({ bitrate, compressedSize }, 'Compression successful');
+        success = true;
+        break;
+      }
+      log.warn({ bitrate, compressedSize }, 'Still over limit, trying lower bitrate');
+    }
+    if (success) {
+      inputPath = compressedPath;
+    } else {
+      log.error('Could not compress audio below 25MB even at 32k — proceeding with compressed file');
+      inputPath = compressedPath;
+    }
+  }
+
   const fileBuffer = fs.readFileSync(inputPath);
   const fileBlob = new Blob([fileBuffer], { type: 'audio/mpeg' });
   const form = new FormData();

@@ -7,6 +7,11 @@ interface PromoPost {
   body: string;
 }
 
+interface Choice {
+  question: string;
+  options: string[];
+}
+
 interface Props {
   episodeId: number;
   canEdit: boolean;
@@ -14,18 +19,117 @@ interface Props {
 
 const THREADS_LIMIT = 450;
 
-type Step = 'idle' | 'loading-questions' | 'answering' | 'loading-post' | 'done';
+type Step =
+  | 'idle'
+  | 'loading-questions'
+  | 'loading-choices'
+  | 'answering'
+  | 'choosing'
+  | 'loading-post'
+  | 'done';
+
+// per-question selection: option index, 'other' (free text), or null (unanswered)
+type Selection = number | 'other' | null;
 
 export default function SocialPromoSection({ episodeId, canEdit }: Props) {
   const [step, setStep] = useState<Step>('idle');
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [choices, setChoices] = useState<Choice[]>([]);
+  const [selections, setSelections] = useState<Selection[]>([]);
+  const [otherTexts, setOtherTexts] = useState<string[]>([]);
   const [post, setPost] = useState<PromoPost | null>(null);
   const [editedBody, setEditedBody] = useState('');
   const [expanded, setExpanded] = useState(true);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
+  // ── Core: generate post from a list of answer strings ──
+  const generateWithAnswers = useCallback(async (answerList: string[], fallbackStep: Step) => {
+    setStep('loading-post');
+    setMessage('');
+    try {
+      const res = await fetch(`/api/episodes/${episodeId}/generate-promo-posts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'generate', answers: answerList }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPost(data.post);
+      setEditedBody(data.post.body);
+      setStep('done');
+    } catch (err) {
+      setMessage(`Error: ${(err as Error).message}`);
+      setStep(fallbackStep);
+    }
+  }, [episodeId]);
+
+  // ── Path 1: direct generation, no questions ──
+  const handleGenerateDirect = useCallback(() => {
+    generateWithAnswers([], 'idle');
+  }, [generateWithAnswers]);
+
+  // ── Path 2: multiple-choice ──
+  const handleStartChoices = useCallback(async () => {
+    setStep('loading-choices');
+    setMessage('');
+    setChoices([]);
+    setSelections([]);
+    setOtherTexts([]);
+    setPost(null);
+    try {
+      const res = await fetch(`/api/episodes/${episodeId}/generate-promo-posts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'choices' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setChoices(data.choices);
+      setSelections(data.choices.map(() => null));
+      setOtherTexts(data.choices.map(() => ''));
+      setStep('choosing');
+    } catch (err) {
+      setMessage(`Error: ${(err as Error).message}`);
+      setStep('idle');
+    }
+  }, [episodeId]);
+
+  const handleSelect = useCallback((qIdx: number, sel: Selection) => {
+    setSelections(prev => {
+      const next = [...prev];
+      next[qIdx] = sel;
+      return next;
+    });
+  }, []);
+
+  const handleOtherTextChange = useCallback((qIdx: number, value: string) => {
+    setOtherTexts(prev => {
+      const next = [...prev];
+      next[qIdx] = value;
+      return next;
+    });
+  }, []);
+
+  const handleGenerateFromChoices = useCallback(() => {
+    const answerList = choices
+      .map((c, i) => {
+        const sel = selections[i];
+        if (sel === 'other') {
+          const t = otherTexts[i]?.trim();
+          return t ? `${c.question}：${t}` : '';
+        }
+        if (typeof sel === 'number') {
+          return `${c.question}：${c.options[sel]}`;
+        }
+        return '';
+      })
+      .filter(Boolean);
+    generateWithAnswers(answerList, 'choosing');
+  }, [choices, selections, otherTexts, generateWithAnswers]);
+
+  // ── Path 3: free-text Q&A (original flow) ──
   const handleStartQuestions = useCallback(async () => {
     setStep('loading-questions');
     setMessage('');
@@ -49,25 +153,17 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
     }
   }, [episodeId]);
 
-  const handleGenerate = useCallback(async () => {
-    setStep('loading-post');
-    setMessage('');
-    try {
-      const res = await fetch(`/api/episodes/${episodeId}/generate-promo-posts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'generate', answers }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setPost(data.post);
-      setEditedBody(data.post.body);
-      setStep('done');
-    } catch (err) {
-      setMessage(`Error: ${(err as Error).message}`);
-      setStep('answering');
-    }
-  }, [episodeId, answers]);
+  const handleAnswerChange = useCallback((idx: number, value: string) => {
+    setAnswers(prev => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  }, []);
+
+  const handleGenerateFromAnswers = useCallback(() => {
+    generateWithAnswers(answers.filter(a => a.trim().length > 0), 'answering');
+  }, [answers, generateWithAnswers]);
 
   const handleCopy = useCallback(async (text: string, field: string) => {
     try {
@@ -79,26 +175,27 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
     }
   }, []);
 
-  const handleAnswerChange = useCallback((idx: number, value: string) => {
-    setAnswers(prev => {
-      const next = [...prev];
-      next[idx] = value;
-      return next;
-    });
-  }, []);
-
   const handleReset = useCallback(() => {
     setStep('idle');
     setQuestions([]);
     setAnswers([]);
+    setChoices([]);
+    setSelections([]);
+    setOtherTexts([]);
     setPost(null);
     setEditedBody('');
     setMessage('');
   }, []);
 
-  const isLoading = step === 'loading-questions' || step === 'loading-post';
+  const isLoading = step === 'loading-questions' || step === 'loading-choices' || step === 'loading-post';
   const hasAnyAnswer = answers.some(a => a.trim().length > 0);
+  const hasAnySelection = selections.some((s, i) => s !== null && (s !== 'other' || otherTexts[i]?.trim().length > 0));
   const isOverLimit = editedBody.length > THREADS_LIMIT;
+
+  const loadingText =
+    step === 'loading-choices' ? 'AI 正在讀這集內容，準備幾個選擇題...'
+    : step === 'loading-questions' ? 'AI 正在讀這集內容，準備問你問題...'
+    : 'AI 正在撰寫貼文...';
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
@@ -127,8 +224,8 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
         <div className="px-4 pb-4 space-y-3 border-t border-zinc-800">
 
           {/* ── Idle state ── */}
-          {step === 'idle' && !message && (
-            <p className="text-sm text-zinc-500 pt-2">AI 會先問你幾個問題，再根據你的回答寫出一則有你觀點的 Threads 貼文</p>
+          {step === 'idle' && (
+            <p className="text-sm text-zinc-500 pt-2">一鍵直接生成 Threads 貼文，或用選擇題 / 自己打字加入你的觀點</p>
           )}
 
           {/* ── Loading state ── */}
@@ -140,14 +237,62 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
                   <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce [animation-delay:150ms]" />
                   <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce [animation-delay:300ms]" />
                 </div>
-                <p className="text-sm text-zinc-400">
-                  {step === 'loading-questions' ? 'AI 正在讀這集內容，準備問你問題...' : 'AI 正在根據你的回答撰寫貼文...'}
-                </p>
+                <p className="text-sm text-zinc-400">{loadingText}</p>
               </div>
             </div>
           )}
 
-          {/* ── Step 1: Answer questions ── */}
+          {/* ── Multiple-choice ── */}
+          {step === 'choosing' && (
+            <div className="pt-2 space-y-4">
+              <p className="text-xs text-zinc-400">選出最接近你的答案，AI 會把你的觀點融入貼文。沒選的題目會自動略過。</p>
+              {choices.map((c, qIdx) => (
+                <div key={qIdx} className="space-y-2">
+                  <label className="text-xs text-zinc-300 font-medium">Q{qIdx + 1}. {c.question}</label>
+                  <div className="flex flex-col gap-1.5">
+                    {c.options.map((opt, oIdx) => {
+                      const active = selections[qIdx] === oIdx;
+                      return (
+                        <button
+                          key={oIdx}
+                          onClick={() => handleSelect(qIdx, active ? null : oIdx)}
+                          className={`text-left px-3 py-2 rounded-lg text-xs border transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-orange-500/15 border-orange-500/50 text-orange-200'
+                              : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600'
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                    {/* 其他 */}
+                    <button
+                      onClick={() => handleSelect(qIdx, selections[qIdx] === 'other' ? null : 'other')}
+                      className={`text-left px-3 py-2 rounded-lg text-xs border transition-colors cursor-pointer ${
+                        selections[qIdx] === 'other'
+                          ? 'bg-orange-500/15 border-orange-500/50 text-orange-200'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
+                      }`}
+                    >
+                      其他（自己寫）
+                    </button>
+                    {selections[qIdx] === 'other' && (
+                      <textarea
+                        value={otherTexts[qIdx] || ''}
+                        onChange={(e) => handleOtherTextChange(qIdx, e.target.value)}
+                        rows={2}
+                        placeholder="你的回答..."
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-xs text-zinc-300 resize-y focus:outline-none focus:border-orange-500/50 placeholder:text-zinc-600"
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Free-text Q&A ── */}
           {step === 'answering' && (
             <div className="pt-2 space-y-4">
               <p className="text-xs text-zinc-400">回答以下問題，AI 會把你的觀點融入貼文中。可以跳過不想回答的題目。</p>
@@ -166,10 +311,9 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
             </div>
           )}
 
-          {/* ── Step 2: Show generated post ── */}
+          {/* ── Show generated post ── */}
           {step === 'done' && post && (
             <div className="pt-2 space-y-4">
-              {/* Main post */}
               <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-700/50 text-zinc-400 border border-zinc-600/30">
@@ -196,25 +340,55 @@ export default function SocialPromoSection({ episodeId, canEdit }: Props) {
                   />
                 </div>
               </div>
-
             </div>
           )}
 
           {/* ── Action buttons ── */}
           {canEdit && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               {step === 'idle' && (
-                <button
-                  onClick={handleStartQuestions}
-                  className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-sm font-medium transition-all cursor-pointer"
-                >
-                  開始寫行銷貼文
-                </button>
+                <>
+                  <button
+                    onClick={handleGenerateDirect}
+                    className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-sm font-medium transition-all cursor-pointer"
+                  >
+                    直接生成貼文
+                  </button>
+                  <button
+                    onClick={handleStartChoices}
+                    className="px-4 py-2.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:border-zinc-600 text-sm font-medium transition-colors cursor-pointer"
+                  >
+                    用選擇題加入觀點
+                  </button>
+                  <button
+                    onClick={handleStartQuestions}
+                    className="px-3 py-2.5 text-zinc-500 hover:text-zinc-300 text-sm transition-colors cursor-pointer"
+                  >
+                    自己打字回答
+                  </button>
+                </>
+              )}
+              {step === 'choosing' && (
+                <>
+                  <button
+                    onClick={handleGenerateFromChoices}
+                    disabled={!hasAnySelection}
+                    className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 disabled:opacity-50 text-white text-sm font-medium transition-all cursor-pointer"
+                  >
+                    生成貼文
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-2.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-sm transition-colors cursor-pointer"
+                  >
+                    取消
+                  </button>
+                </>
               )}
               {step === 'answering' && (
                 <>
                   <button
-                    onClick={handleGenerate}
+                    onClick={handleGenerateFromAnswers}
                     disabled={!hasAnyAnswer}
                     className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 disabled:opacity-50 text-white text-sm font-medium transition-all cursor-pointer"
                   >

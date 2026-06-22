@@ -9,6 +9,7 @@
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { getDb } from '@/db';
+import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
 import type { PipelineState, QualityScore, QualityIteration } from '../state';
 
 const log = createChildLogger('pipeline:quality');
@@ -37,7 +38,9 @@ export function getWordCountTarget(segmentType: string, episodeLength?: number |
     if (match) return [parseInt(match[1]), parseInt(match[2])];
   }
   const defaults: Record<string, [number, number]> = {
-    daily: [4500, 5000],
+    // daily: density-adaptive band — thin topics ~10-13 min (4000), rich topics ~20-22 min (8000),
+    // hard ceiling ~23 min. Scoring/rewrite only push back when outside this wide band.
+    daily: [4000, 8000],
     weekly: [5000, 5500],
     robot: [5000, 6000],
     sysdesign: [7500, 9000],
@@ -145,7 +148,10 @@ const SCORING_SYSTEM_PROMPT = `你是一位經驗豐富、標準明確的 Podcas
 
 ### 🟢 總分約 90-95 分的腳本片段（接近完美，僅有極微小瑕疵）
 「你有沒有這種經驗？每次週末想找一部電影來看，打開 Netflix 結果滑了二十分鐘，最後還是選了看過三遍的老片。Perplexity 這個工具就是來解決這種選擇困難的。你直接跟它說『推薦我一部像乍夢的懸疑片，但不要太燒腦的』，它就會幫你從爛番茄、IMDb 各大平台比對評分，直接給你三個推薦，還附上每部片大概在演什麼。省掉你半小時的選片時間，直接躺平開看。」
-→ 優點：以生活場景開場引發共鳴、語氣完全像朋友聊天、有具體使用示範、全中文無不必要英文、台灣用語道地（「躺平開看」「滑了二十分鐘」「選擇困難」）。只有達到這種水準的腳本才配得上 90+ 的分數。`;
+→ 優點：以生活場景開場引發共鳴、語氣完全像朋友聊天、有具體使用示範、全中文無不必要英文、台灣用語道地（「躺平開看」「滑了二十分鐘」「選擇困難」）。只有達到這種水準的腳本才配得上 90+ 的分數。
+
+⚠️ 額外審查重點（計入「聊天感與語氣自然度」維度）：請對照下方「太 AI 不能用」黑名單，逐項檢查腳本是否踩到任何一條——禁用句式（尤其「不是…而是」「不是…，是…」）、過度縮減詞語、過度簡化導致句子突兀、明顯的翻譯腔、非台灣用語。只要出現就在 chat_feel 維度扣分，並在 comments 中引用原句、給出自然的台灣口語改寫範例。
+${AI_STYLE_BLACKLIST}`;
 
 // n8n exact system prompt for 4.腳本重寫Agent
 const REWRITE_SYSTEM_PROMPT = `你是一位專業的 Podcast 腳本優化專家，擅長將技術性或資訊性內容，轉換成輕鬆、有故事感、適合口語朗讀的 Podcast 腳本。
@@ -187,8 +193,9 @@ ver2: 如果你覺得今天的內容讓你有點收穫，那就幫我到 Apple P
 🛠 執行原則總結：
 - 針對評分指出的具體問題進行修正，保留原稿中表現好的部分
 - 遇到抽象概念→改用比喻／場景故事說明
-- 資訊過多→簡化＋舉例帶出重點
+- 資訊過多→精簡內容＋舉例帶出重點（注意：要砍的是重複和廢話「內容」，不是把句子壓短）
 - 詞語卡口或過書面→改用常見口語轉譯
+${AI_STYLE_BLACKLIST}
 
 📥 請依照以下 JSON 格式輸出結果：
 
@@ -201,7 +208,19 @@ export function getScoringPrompt(segmentType: string, episodeLength?: number | n
   const targetStr = `${targetMin}-${targetMax}`;
 
   if (segmentType === 'daily') {
-    return SCORING_SYSTEM_PROMPT.replace('__WORD_COUNT_TARGET__', targetStr);
+    return SCORING_SYSTEM_PROMPT
+      .replace(
+        `5. 字數控制（15 分）— 目標字數為 __WORD_COUNT_TARGET__ 字。
+   — 13-15 分：落在目標範圍內
+   — 9-12 分：偏差 500 字以內
+   — 5-8 分：偏差 500-1000 字
+   — 0-4 分：偏差超過 1000 字`,
+        `5. 篇幅與資訊密度（15 分）— 篇幅應該配合資訊密度，不是硬湊固定字數。合理範圍 ${targetStr} 字（約 11-22 分鐘）：資訊量大的主題可以長一點、講深一點；資訊量少時就精簡，不要注水。
+   — 13-15 分：篇幅與內容份量相稱，沒有廢話、重複或注水，每段都有實質資訊或具體例子
+   — 9-12 分：大致合理，但有少數冗段或重複
+   — 5-8 分：明顯注水、廢話多，或反過來過度壓縮導致細節不足
+   — 0-4 分：嚴重超出 ${targetMax} 字（超過約 23 分鐘），或大量重複灌水`)
+      .replace('__WORD_COUNT_TARGET__', targetStr);
   }
 
   const fixedOpening = segmentType === 'quickchat' ? QUICKCHAT_FIXED_OPENING

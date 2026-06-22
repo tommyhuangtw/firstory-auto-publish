@@ -105,5 +105,12 @@ dashboard/data/*.db-shm
 dashboard/node_modules/
 dashboard/scripts/test-*.ts
 dashboard/scripts/seed-memory.mjs
+# One-off episode operational scripts + scratch data (local only)
+dashboard/scripts/*fiona*
+dashboard/data/*fiona*
+dashboard/data/*.lock
+rewritten_script.*
+# tsc build output for the Hermes MCP server
+hermes/podcast-mcp/dist/
 # Seed CSV for trend interest-labeling (local only, imported into DB)
 public_posts_raw_rows_threadify.csv
