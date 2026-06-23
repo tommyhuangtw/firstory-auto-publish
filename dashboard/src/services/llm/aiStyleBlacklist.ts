@@ -2,7 +2,8 @@
  * Shared "太 AI 不能用" scope — banned words, banned grammar, and natural-voice
  * principles. Injected into every prompt that writes or reviews Chinese prose:
  * the script writer (translate.ts), the scorer/reviewer/rewriter (qualityScore.ts),
- * and the copywriters (generateMeta.ts description, notify.ts IG caption).
+ * the copywriters (generateMeta.ts description, notify.ts IG caption), and the
+ * Substack article writer (substackDraftService.ts).
  *
  * Goal: output must read like a native Taiwanese person actually talking — never
  * like a translation, never like an AI template, never over-simplified to the point
@@ -37,6 +38,22 @@ export const AI_STYLE_BLACKLIST = `
 - ❌「定心丸」→ 用「讓人安心」「讓人放心」
 - ❌「老實說」→ AI 嚴重過度使用此詞，禁止使用。可偶爾用「說真的」「坦白講」替代，但整篇最多出現一次。
 - ❌「坐不住」→ 用「等不及」「忍不住」「太興奮了」
+
+🚫 翻譯腔（直接從英文翻過來的句子／用法）特別禁止——這是這個專案最常見、最需要盯的毛病，分三類：
+
+(1) 英文比喻／慣用語「照字面直譯」→ 不要照英文翻，用台灣人真的會講的話：
+- ❌「像一條死水」「一灘死水」（stagnant / a flat line）→「前面幾年都很平、沒什麼動靜」「都沒什麼變化」
+- ❌「往下挖」「再挖深一點」（dig deeper）→「再講細一點」「深入一點看」「往下追下去」
+- ❌「把文化稀釋掉」「文化被稀釋」（dilute the culture）→「文化很容易就走樣」「團隊的氣氛很容易就被沖淡、慢慢不見」
+- ❌ 抽象的「很重／很輕」（heavy / lightweight，拿來形容流程、負擔、話題）→ 重：「很繁瑣」「負擔很大」「很累人」；輕：「很輕鬆」「很簡單」「沒什麼負擔」
+- ❌「很真實的痛點」「很真實的新痛點」（a real pain point）→「真正卡住大家的問題」「真的會讓人很頭痛的新問題」（盡量少用「痛點」這種術語腔）
+
+(2) 英文專有名詞／術語不要硬翻成生硬中文 → 台灣科技圈本來就直接講英文，保留英文原詞或用白話解釋：
+- ❌「結對寫程式」（pair programming）→ 直接講「pair programming」或「兩個人一起寫扣」
+- ❌「平行遊玩」（parallel play）→ 直接講「parallel play」，或白話「各做各的、但在同一個空間」
+- 原則：一個英文詞翻成中文後，如果台灣人要愣一下才懂、或根本沒人這樣講，就直接保留英文原詞。
+
+(3) 英文句構直接搬過來 → 忘掉英文的語序和邏輯連接詞，用中文腦袋重講一遍（見下方母語者重寫原則）。
 
 🇹🇼 台灣在地用詞（用台灣人真的會用的講法）：
 - ❌「嬤嬤」→ 台灣講「阿嬤」；祖父母用「阿公」「阿嬤」，外祖父母用「外公」「外婆」
