@@ -75,15 +75,37 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
   }
 
   // Copy the RENDERED body as rich HTML so Substack's ProseMirror editor keeps
-  // headings/bold/lists/links. Falls back to plain Markdown text if the
-  // async Clipboard API is unavailable.
+  // headings/bold/lists/links/images. Primary path selects the rendered preview
+  // DOM and uses the browser's native copy (identical to manually selecting the
+  // preview and pressing ⌘C) — the most reliable way to carry real HTML into
+  // Substack's editor. Falls back to the async Clipboard API, then plain text.
   async function copyRichHtml() {
-    if (!draft) return;
-    const html = previewRef.current?.innerHTML ?? '';
+    const el = previewRef.current;
+    if (!draft || !el) return;
+
+    // Primary: native selection copy of the rendered DOM.
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      const ok = document.execCommand('copy');
+      sel?.removeAllRanges();
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        return;
+      }
+    } catch {
+      /* fall through to clipboard API */
+    }
+
+    // Fallback: async Clipboard API with explicit text/html.
     try {
       await navigator.clipboard.write([
         new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/html': new Blob([el.innerHTML], { type: 'text/html' }),
           'text/plain': new Blob([draft.bodyMarkdown], { type: 'text/plain' }),
         }),
       ]);
@@ -91,8 +113,7 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
       setTimeout(() => setCopied(false), 2000);
     } catch {
       await navigator.clipboard.writeText(draft.bodyMarkdown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setError('已複製純文字（此瀏覽器不支援格式複製，標題可能不會套用）');
     }
   }
 
