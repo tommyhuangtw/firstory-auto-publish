@@ -20,6 +20,8 @@ import FbCaptionSection from './FbCaptionSection';
 import ThreadsCaptionSection from './ThreadsCaptionSection';
 import SocialPromoSection from './SocialPromoSection';
 import YouTubeThumbnailSection from './YouTubeThumbnailSection';
+import SubstackDraftSection from './SubstackDraftSection';
+import { getDraftByEpisode } from '@/services/substackDraftService';
 
 export const dynamic = 'force-dynamic';
 
@@ -172,6 +174,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const coverCandidatesRaw = db.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(episodeId) as { cover_candidates: string | null } | undefined;
   const coverCandidates: { path: string; url: string; createdAt: string; source: string }[] = coverCandidatesRaw?.cover_candidates ? JSON.parse(coverCandidatesRaw.cover_candidates) : [];
 
+  // Substack draft (one-click "share to Substack")
+  const substackDraft = getDraftByEpisode(episodeId);
+
   // Recover ig_caption from pipeline snapshot if not in episodes table
   let igCaption = episode.ig_caption || '';
   if (!igCaption && pipelineRun) {
@@ -277,6 +282,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             hasOriginal={!!(db.prepare('SELECT original_audio_path FROM episodes WHERE id = ?').get(episodeId) as { original_audio_path: string | null } | undefined)?.original_audio_path}
           />
         </div>
+
+        {/* Substack draft */}
+        <SubstackDraftSection episodeId={episode.id} initialDraft={substackDraft} />
 
         {/* Sponsor Audio Selection */}
         <SponsorAudioSelector
