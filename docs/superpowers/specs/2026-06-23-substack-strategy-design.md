@@ -103,6 +103,15 @@ Tommy 已建立 Substack page（`@ailanrenbao`，目前空白），動機是 **S
   - **Canva Connect Autofill API**：原生 Canva，但需 **Canva Enterprise**（個人帳號門檻）；本環境已連 Canva 整合，亦可走「Claude 從 brand template 生封面」路徑，待驗證。
 - 不採用每次純 AI 生圖（風格易飄，與「質感一致的品牌」相違）。
 
+### 2.6 文章內插圖（Unsplash 編輯照片）
+
+- 文章「封面」之外，內文也插入 1–2 張有質感的編輯照片，提升閱讀體驗。
+- 來源：**Unsplash**（編輯照片、免費、最貼近 Substack 質感，不像 AI 生圖會風格漂移）。需 `UNSPLASH_ACCESS_KEY`（放 `dashboard/.env.local`）。
+- 流程：LLM 在 essay 適合的 section 之間標 `[[IMG: 英文關鍵字]]` → `unsplashService.findImage()` 取一張 landscape 照片 → 換成 markdown 圖片 + `Photo by … on Unsplash` 出處（含 UTM，符合 Unsplash API 條款 + 觸發 download 端點）。上限 2 張。
+- 容錯：沒 key／查無結果 → 標記直接移除，文章照常產出。
+- 與 copy-paste 相容：preview 渲染 `<img>`，複製 rich HTML 時一起進剪貼簿，貼進 Substack 由 ProseMirror 匯入。
+- Service: `dashboard/src/services/unsplashService.ts`。
+
 ---
 
 ## 3. 功能設計：一鍵產 Substack 草稿
