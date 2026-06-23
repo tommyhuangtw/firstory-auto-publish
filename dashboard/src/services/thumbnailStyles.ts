@@ -15,6 +15,7 @@ export interface ThumbnailStyleRow extends ThumbnailStyle {
   sampleHookTitle: string | null;
   generatedAt: string | null;
   createdAt: string;
+  usageCount: number; // # of YouTube-published episodes that used this style
 }
 
 // Single source of truth — the 12 original styles
@@ -107,6 +108,7 @@ interface DbStyleRow {
   sample_hook_title: string | null;
   generated_at: string | null;
   created_at: string;
+  usage_count: number | null;
 }
 
 function mapRow(r: DbStyleRow): ThumbnailStyleRow {
@@ -122,6 +124,7 @@ function mapRow(r: DbStyleRow): ThumbnailStyleRow {
     sampleHookTitle: r.sample_hook_title,
     generatedAt: r.generated_at,
     createdAt: r.created_at,
+    usageCount: r.usage_count ?? 0,
   };
 }
 
@@ -137,6 +140,63 @@ export function seedThumbnailStyles(): void {
   for (const s of SEED_STYLES) {
     insert.run(s.name, s.bg, s.text, s.layout, 'seed');
   }
+}
+
+/**
+ * Extract the style slug from a generated YouTube thumbnail filename.
+ * Pattern: ep{episodeId}_yt_{styleName}_{timestamp}.png
+ * Returns null for manual uploads ('upload'), reference-based ('ref'),
+ * composite fallbacks, or anything that doesn't match.
+ */
+function parseStyleFromThumbnailPath(thumbnailPath: string): string | null {
+  const base = (thumbnailPath.split('/').pop() || '').replace(/\.[a-z0-9]+$/i, '');
+  const m = base.match(/^ep\d+_yt_(.+)_\d+$/);
+  if (!m) return null;
+  const name = m[1];
+  if (name === 'upload' || name === 'ref') return null;
+  return name;
+}
+
+/**
+ * Recompute per-style usage from YouTube-published episodes and apply the
+ * auto-retire rule: a style used by >=2 published episodes is hard-deleted;
+ * otherwise its usage_count is updated for display.
+ *
+ * Recompute-based (not incremental) so it's idempotent — safe to call on every
+ * publish and at startup (which also serves as the one-time history backfill).
+ * Deleted styles whose names still appear in history simply no-op on delete.
+ */
+export function reconcileStyleUsage(): { counts: Record<string, number>; deleted: string[] } {
+  const db = getDb();
+  const episodes = db.prepare(
+    'SELECT yt_thumbnail_path FROM episodes WHERE youtube_url IS NOT NULL AND yt_thumbnail_path IS NOT NULL'
+  ).all() as { yt_thumbnail_path: string }[];
+
+  const counts = new Map<string, number>();
+  for (const e of episodes) {
+    const style = parseStyleFromThumbnailPath(e.yt_thumbnail_path);
+    if (style) counts.set(style, (counts.get(style) || 0) + 1);
+  }
+
+  const styles = db.prepare('SELECT id, name FROM thumbnail_styles').all() as { id: number; name: string }[];
+  const del = db.prepare('DELETE FROM thumbnail_styles WHERE id = ?');
+  const upd = db.prepare('UPDATE thumbnail_styles SET usage_count = ? WHERE id = ?');
+  const deleted: string[] = [];
+
+  const tx = db.transaction(() => {
+    for (const s of styles) {
+      const c = counts.get(s.name) || 0;
+      if (c >= 2) {
+        del.run(s.id);
+        deleted.push(s.name);
+      } else {
+        upd.run(c, s.id);
+      }
+    }
+  });
+  tx();
+
+  return { counts: Object.fromEntries(counts), deleted };
 }
 
 /** All styles with full metadata (for management UI) */

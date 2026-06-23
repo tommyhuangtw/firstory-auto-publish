@@ -329,6 +329,7 @@ CREATE TABLE IF NOT EXISTS thumbnail_styles (
   sample_image_url TEXT,                  -- audition sample serve URL
   sample_hook_title TEXT,                 -- hook title used for the sample
   generated_at TEXT,                      -- when AI generated this style
+  usage_count INTEGER DEFAULT 0,          -- # of YouTube-published episodes using this style (>=2 auto-retired)
   created_at TEXT DEFAULT (datetime('now'))
 );
 

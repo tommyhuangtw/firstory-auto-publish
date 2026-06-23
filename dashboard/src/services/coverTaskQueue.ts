@@ -20,6 +20,17 @@ export interface CoverTask {
   coverUrl?: string;
   createdAt: string;
   completedAt?: string;
+  /** undefined → auto-detect; 'none' → no holiday; a key → force that holiday. */
+  holidayOverride?: string;
+  /** Optional user context (news/topic) that augments the summary; skips holiday. */
+  contextText?: string;
+  contextImageUrl?: string;
+}
+
+export interface EnqueueOptions {
+  holidayOverride?: string;
+  contextText?: string;
+  contextImageUrl?: string;
 }
 
 // Map<episodeId, CoverTask[]>
@@ -28,12 +39,15 @@ const tasksByEpisode = new Map<number, CoverTask[]>();
 // Set of episodeIds currently processing
 const processing = new Set<number>();
 
-export function enqueueTask(episodeId: number): CoverTask {
+export function enqueueTask(episodeId: number, opts: EnqueueOptions = {}): CoverTask {
   const task: CoverTask = {
     taskId: crypto.randomUUID(),
     episodeId,
     status: 'pending',
     createdAt: new Date().toISOString(),
+    holidayOverride: opts.holidayOverride,
+    contextText: opts.contextText,
+    contextImageUrl: opts.contextImageUrl,
   };
 
   const tasks = tasksByEpisode.get(episodeId) || [];
@@ -103,7 +117,11 @@ async function processQueue(episodeId: number): Promise<void> {
           scriptSummary: episode.script_summary || '',
         } as PipelineState;
 
-        const result = await generateCover(minimalState);
+        const result = await generateCover(minimalState, {
+          holidayOverride: next.holidayOverride,
+          contextText: next.contextText,
+          contextImageUrl: next.contextImageUrl,
+        });
 
         // Set as active cover
         db.prepare('UPDATE episodes SET cover_path = ?, cover_url = ? WHERE id = ?')

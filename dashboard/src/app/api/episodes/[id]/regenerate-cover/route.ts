@@ -7,7 +7,7 @@ const log = createChildLogger('api:regenerate-cover');
 
 // POST: Enqueue a cover generation task (returns immediately)
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -23,8 +23,24 @@ export async function POST(
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
     }
 
-    const task = enqueueTask(episodeId);
-    log.info({ episodeId, taskId: task.taskId }, 'Cover generation task enqueued');
+    // Optional body:
+    //  - holiday: 'none' = force plain cover; a key = force that holiday; absent = auto-detect.
+    //  - contextText / contextImageUrl: user news/topic context (augments summary, skips holiday).
+    let holidayOverride: string | undefined;
+    let contextText: string | undefined;
+    let contextImageUrl: string | undefined;
+    try {
+      const body = await request.json();
+      if (typeof body?.holiday === 'string') holidayOverride = body.holiday;
+      if (typeof body?.contextText === 'string') contextText = body.contextText;
+      if (typeof body?.contextImageUrl === 'string') contextImageUrl = body.contextImageUrl;
+    } catch { /* no body / not JSON → auto-detect, no context */ }
+
+    const task = enqueueTask(episodeId, { holidayOverride, contextText, contextImageUrl });
+    log.info(
+      { episodeId, taskId: task.taskId, holidayOverride: holidayOverride ?? null, hasContext: !!(contextText || contextImageUrl) },
+      'Cover generation task enqueued',
+    );
 
     return NextResponse.json({
       taskId: task.taskId,

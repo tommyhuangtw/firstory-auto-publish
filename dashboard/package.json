@@ -19,6 +19,7 @@
     "better-sqlite3": "^12.9.0",
     "fs-extra": "^11.3.4",
     "googleapis": "^171.4.0",
+    "lunar-javascript": "^1.7.7",
     "next": "16.2.4",
     "node-cron": "^4.2.1",
     "pino": "^10.3.1",

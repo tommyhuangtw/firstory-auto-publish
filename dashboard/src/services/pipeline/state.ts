@@ -131,6 +131,7 @@ export interface PipelineState {
   // ── Stage 7: Cover Image ──
   coverPath: string;
   coverUrl: string;
+  igHoliday: string; // detected holiday key applied to the cover (empty = none)
 
   // ── Stage 8: TTS ──
   audioPath: string;
@@ -205,6 +206,7 @@ export function createInitialState(
     tags: [],
     coverPath: '',
     coverUrl: '',
+    igHoliday: '',
     audioPath: '',
     audioDurationSec: 0,
     srtPath: '',

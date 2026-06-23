@@ -32,6 +32,14 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
   const [showGallery, setShowGallery] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Context (news/topic) that augments the scenario; persists until changed/cleared.
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextText, setContextText] = useState('');
+  const [contextImageUrl, setContextImageUrl] = useState('');
+  const [ctxLoading, setCtxLoading] = useState(false);
+  const ctxFileRef = useRef<HTMLInputElement>(null);
+  const hasContext = !!(contextText.trim() || contextImageUrl);
+
   const hasCover = !!activeCoverPath;
   const activeIndex = candidates.findIndex(c => c.path === activeCoverPath);
 
@@ -68,15 +76,21 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
   }, [isGenerating, tasks.length, router]);
 
   const handleGenerate = useCallback(async () => {
-    // Only confirm on first manual regeneration when a cover already exists and no queue is active
-    if (hasCover && !isGenerating) {
-      if (!confirm('重新生成封面圖？這會呼叫 kie.ai 產生新圖片。')) return;
-    }
-
+    // No confirm — fires instantly so you can click repeatedly to queue many.
     setError('');
     try {
+      const useCtx = !!(contextText.trim() || contextImageUrl);
       const res = await fetch(`/api/episodes/${episodeId}/regenerate-cover`, {
         method: 'POST',
+        ...(useCtx
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contextText: contextText.trim() || undefined,
+                contextImageUrl: contextImageUrl || undefined,
+              }),
+            }
+          : {}),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -88,7 +102,36 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [episodeId, hasCover, isGenerating]);
+  }, [episodeId, contextText, contextImageUrl]);
+
+  async function handleContextImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCtxLoading(true);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await fetch(`/api/episodes/${episodeId}/context-image`, { method: 'POST', body: formData });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Context image upload failed');
+      }
+      const data = await res.json();
+      setContextImageUrl(data.url);
+      setContextOpen(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCtxLoading(false);
+      if (ctxFileRef.current) ctxFileRef.current.value = '';
+    }
+  }
+
+  function clearContext() {
+    setContextText('');
+    setContextImageUrl('');
+  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -144,6 +187,56 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
     ? `再加一張 (${activeTasks.length})`
     : hasCover ? '重新生成' : '生成封面';
 
+  // Context panel — paste news/topic text and/or attach a screenshot. Persists
+  // across re-generate clicks until cleared. Rendered in both layout branches.
+  const contextPanel = (
+    <div className="w-full sm:w-40">
+      <button
+        onClick={() => setContextOpen(o => !o)}
+        className={`w-full text-[11px] px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
+          hasContext
+            ? 'bg-brand/15 text-brand border-brand/30'
+            : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
+        }`}
+      >
+        {hasContext ? `✓ 已附情境${contextImageUrl ? ' 🖼' : ''}` : '＋ 加情境/新聞'}
+      </button>
+      {contextOpen && (
+        <div className="mt-1.5 flex flex-col gap-1.5 p-2 rounded-lg bg-zinc-900/60 border border-zinc-700">
+          <textarea
+            value={contextText}
+            onChange={e => setContextText(e.target.value)}
+            placeholder="貼上新聞 / 時事 / 想要的梗…"
+            rows={3}
+            className="w-full text-[11px] rounded-md bg-zinc-950 border border-zinc-700 px-2 py-1 text-zinc-200 placeholder:text-zinc-500 resize-y"
+          />
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => ctxFileRef.current?.click()}
+              disabled={ctxLoading}
+              className="text-[11px] px-2 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {ctxLoading ? '上傳中…' : '附截圖'}
+            </button>
+            {contextImageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={contextImageUrl} alt="context" className="w-7 h-7 rounded object-cover border border-zinc-600" />
+            )}
+            {hasContext && (
+              <button
+                onClick={clearContext}
+                className="text-[11px] px-2 py-1 rounded-md text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer ml-auto"
+              >
+                清除
+              </button>
+            )}
+          </div>
+          <input ref={ctxFileRef} type="file" accept="image/*" onChange={handleContextImage} className="hidden" />
+        </div>
+      )}
+    </div>
+  );
+
   // No cover state
   if (!hasCover) {
     return (
@@ -171,6 +264,7 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
           </button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+        {contextPanel}
         {isGenerating && (
           <div className="flex items-center gap-1.5 text-xs text-amber-400">
             <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -220,6 +314,8 @@ export default function RegenerateCoverButton({ episodeId, coverPath, candidates
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+
+      {contextPanel}
 
       {/* Queue status */}
       {isGenerating && (

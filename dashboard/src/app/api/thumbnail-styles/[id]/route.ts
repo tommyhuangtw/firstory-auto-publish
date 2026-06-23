@@ -54,16 +54,14 @@ export async function DELETE(
     }
 
     const db = getDb();
-    const style = db.prepare('SELECT id, source FROM thumbnail_styles WHERE id = ?').get(styleId) as { id: number; source: string } | undefined;
+    const style = db.prepare('SELECT id FROM thumbnail_styles WHERE id = ?').get(styleId) as { id: number } | undefined;
 
     if (!style) {
       return NextResponse.json({ error: 'Style not found' }, { status: 404 });
     }
 
-    if (style.source === 'seed') {
-      return NextResponse.json({ error: 'Cannot delete built-in seed styles' }, { status: 400 });
-    }
-
+    // Seed styles can be dropped too. Deletion persists because re-seeding only
+    // fires when the table is completely empty (see seedThumbnailStyles).
     db.prepare('DELETE FROM thumbnail_styles WHERE id = ?').run(styleId);
     return NextResponse.json({ success: true });
   } catch (error) {

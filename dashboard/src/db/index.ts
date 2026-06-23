@@ -42,6 +42,8 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN youtube_description TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN ig_caption TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN script_summary TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN ig_holiday TEXT');
+  safeAlter('ALTER TABLE thumbnail_styles ADD COLUMN usage_count INTEGER DEFAULT 0');
   safeAlter('ALTER TABLE shorts ADD COLUMN avatar_filename TEXT');
   safeAlter('ALTER TABLE pipeline_runs ADD COLUMN episode_id INTEGER');
   safeAlter('ALTER TABLE llm_calls ADD COLUMN episode_id INTEGER');
@@ -331,10 +333,11 @@ export function getDb(): Database.Database {
     seedFamilies();
   } catch { /* toolFamilies not available during build */ }
 
-  // Seed thumbnail styles
+  // Seed thumbnail styles + backfill usage from YouTube-published history
   try {
-    const { seedThumbnailStyles } = require('@/services/thumbnailStyles');
+    const { seedThumbnailStyles, reconcileStyleUsage } = require('@/services/thumbnailStyles');
     seedThumbnailStyles();
+    reconcileStyleUsage(); // idempotent: backfills counts + auto-retires styles used >=2x
   } catch { /* thumbnailStyles not available during build */ }
 
   // Seed default settings

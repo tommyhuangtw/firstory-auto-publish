@@ -19,9 +19,16 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'perplexity/sonar': { input: 1.00, output: 1.00 },
 };
 
+/** A single content part for multimodal (vision) messages. */
+export type LLMContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  // string for text-only; array of parts for multimodal (e.g. text + image_url).
+  // OpenRouter accepts the OpenAI multimodal format verbatim, so callAPI needs no change.
+  content: string | LLMContentPart[];
 }
 
 interface LLMOptions {

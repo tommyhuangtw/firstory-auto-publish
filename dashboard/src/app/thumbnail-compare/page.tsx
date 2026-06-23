@@ -14,6 +14,7 @@ interface StyleItem {
   sampleHookTitle: string | null;
   generatedAt: string | null;
   createdAt: string;
+  usageCount: number;
 }
 
 export default function ThumbnailComparePage() {
@@ -255,7 +256,7 @@ export default function ThumbnailComparePage() {
               </select>
               <button
                 onClick={() => generateNewStyles(styleGenCount, true)}
-                disabled={generatingStyles || isAuditionBusy}
+                disabled={generatingStyles}
                 className="px-4 py-1.5 text-sm bg-brand text-zinc-900 font-semibold rounded-lg hover:bg-brand/90 disabled:opacity-50 transition-colors whitespace-nowrap"
               >
                 {generatingStyles ? 'AI 生成風格中...' : '生成 + 預覽'}
@@ -383,6 +384,12 @@ function StyleCard({
         }`}>
           {style.source === 'seed' ? '內建' : 'AI 生成'}
         </span>
+        {/* Usage badge — shows YouTube-published usage; styles hit 2x are auto-retired (removed) */}
+        {style.usageCount > 0 && (
+          <span className="absolute top-2 right-2 px-1.5 py-0.5 text-[10px] rounded pointer-events-none bg-amber-900/70 text-amber-200">
+            已用 {style.usageCount} 次
+          </span>
+        )}
       </div>
 
       {/* Info & controls */}

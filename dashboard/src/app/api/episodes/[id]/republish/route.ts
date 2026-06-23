@@ -72,6 +72,7 @@ export async function POST(
       tags: JSON.parse((episode.tags as string) || '[]'),
       coverPath: (episode.cover_path as string) || '',
       coverUrl: '',
+      igHoliday: '',
       audioPath: (episode.audio_path as string) || '',
       audioDurationSec: 0,
       driveAudioUrl: '',

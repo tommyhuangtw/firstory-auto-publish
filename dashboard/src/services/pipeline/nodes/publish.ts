@@ -121,6 +121,18 @@ export async function publish(state: PipelineState): Promise<Partial<PipelineSta
 
   results.publishErrors = publishErrors;
 
+  // Track thumbnail-style usage: recompute from published history and auto-retire
+  // any style now used by >=2 episodes. Recompute-based, so it's safe even on republish.
+  if (results.youtubeUrl) {
+    try {
+      const { reconcileStyleUsage } = await import('@/services/thumbnailStyles');
+      const { deleted } = reconcileStyleUsage();
+      if (deleted.length) log.info({ deleted }, 'Auto-retired thumbnail styles used >=2x');
+    } catch (err) {
+      log.warn({ error: (err as Error).message }, 'Thumbnail style usage reconcile failed');
+    }
+  }
+
   // Notify: episode published or partial failure
   if (publishErrors.length > 0) {
     emitEvent({

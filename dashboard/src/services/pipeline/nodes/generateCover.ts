@@ -12,14 +12,41 @@ import { generateCoverImage, downloadImage } from '@/services/imageService';
 import { uploadToCloudinary } from '@/services/cloudinary';
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
+import {
+  detectHoliday,
+  getHolidayByKey,
+  buildScenarioHolidayDirective,
+  buildImageHolidayDirective,
+  type HolidayMatch,
+} from '@/services/holidayContext';
 import path from 'path';
 import type { PipelineState } from '../state';
+
+/**
+ * Options for cover generation.
+ * holidayOverride: undefined → auto-detect by publish date; 'none' → force plain
+ * (no holiday); a holiday key → force that holiday.
+ * contextText / contextImageUrl: optional user-supplied context (news/topic) that
+ * augments the episode summary for the scenario. When either is present, holiday
+ * theming is skipped (context wins).
+ */
+export interface CoverOptions {
+  holidayOverride?: string;
+  contextText?: string;
+  contextImageUrl?: string;
+}
+
+interface ContextInput {
+  text: string;        // combined user text + vision-extracted summary
+  referenceImageUrl?: string; // set only when the screenshot should also be a visual reference
+}
 
 const log = createChildLogger('pipeline:cover');
 
 const OUTPUT_DIR = path.join(process.cwd(), '..', 'temp', 'covers');
 const SCENARIO_MODEL = 'google/gemini-3.1-flash-lite-preview';
 const EXTRACTION_MODEL = 'google/gemini-3.1-flash-lite-preview';
+const VISION_MODEL = 'google/gemini-3.1-flash-lite-preview'; // vision-capable (verified); reads context screenshots
 
 // n8n 5 reference images for kie.ai
 const REFERENCE_IMAGES = [
@@ -30,28 +57,69 @@ const REFERENCE_IMAGES = [
   'https://res.cloudinary.com/dxurvdax4/image/upload/v1750843184/nwap9q7xy9oc7a7qjkw4.png',
 ];
 
-export async function generateCover(state: PipelineState): Promise<Partial<PipelineState>> {
+export async function generateCover(state: PipelineState, opts: CoverOptions = {}): Promise<Partial<PipelineState>> {
   log.info({ episodeId: state.episodeId }, 'Generating cover image');
 
   if (!process.env.KIE_AI_API_KEY && !process.env.FAL_KEY) {
     log.warn('No image generation key set (KIE_AI_API_KEY or FAL_KEY), skipping cover generation');
-    return { coverPath: '', coverUrl: '', igScenario: '', status: 'tts' };
+    return { coverPath: '', coverUrl: '', igScenario: '', igHoliday: '', status: 'tts' };
   }
+
+  // Resolve user-supplied context (news/topic). When present, it augments the
+  // episode summary and holiday theming is skipped (context wins).
+  const hasContext = !!(opts.contextText?.trim() || opts.contextImageUrl);
+  let context: ContextInput | null = null;
+  if (hasContext) {
+    try {
+      context = await buildContextInput(opts, state.episodeId);
+      log.info({ hasImage: !!opts.contextImageUrl, asReference: !!context.referenceImageUrl }, 'User context resolved');
+    } catch (error) {
+      log.warn({ error: (error as Error).message }, 'Context resolution failed, proceeding with text context only');
+      context = { text: opts.contextText?.trim() || '' };
+    }
+  }
+
+  // Resolve holiday context: skipped entirely when the user supplied context.
+  let holiday: HolidayMatch | null = null;
+  if (!hasContext) {
+    try {
+      if (opts.holidayOverride === 'none') {
+        holiday = null;
+      } else if (opts.holidayOverride) {
+        holiday = getHolidayByKey(opts.holidayOverride);
+        if (!holiday) log.warn({ holidayOverride: opts.holidayOverride }, 'Unknown holiday override key, ignoring');
+      } else {
+        holiday = detectHoliday();
+      }
+    } catch (error) {
+      // Never let holiday detection break cover generation.
+      log.warn({ error: (error as Error).message }, 'Holiday detection failed, proceeding without holiday theme');
+      holiday = null;
+    }
+  }
+  if (holiday) log.info({ holiday: holiday.key, tier: holiday.tier }, 'Holiday theme applied to cover');
+  // Context-driven covers clear any prior holiday tag.
+  const holidayKey = holiday?.key ?? '';
 
   // Step 1: IG Scenario Agent — generate scene description
   let scenario = '';
   try {
-    scenario = await generateScenario(state);
+    scenario = await generateScenario(state, holiday, context);
     log.info({ scenario: scenario.slice(0, 100) }, 'Scenario generated');
   } catch (error) {
     log.error({ error: (error as Error).message }, 'Scenario generation failed');
-    return { coverPath: '', coverUrl: '', igScenario: '', coverError: (error as Error).message, status: 'tts' };
+    return { coverPath: '', coverUrl: '', igScenario: '', igHoliday: holidayKey, coverError: (error as Error).message, status: 'tts' };
   }
 
   // Step 2: Build image prompt
   const isRobot = state.segmentType === 'robot';
   const isSysdesign = state.segmentType === 'sysdesign';
-  const imagePrompt = buildImagePrompt(scenario, isRobot, isSysdesign);
+  const imagePrompt = buildImagePrompt(scenario, isRobot, isSysdesign, holiday);
+
+  // When the user's screenshot should be echoed visually, prepend it (highest weight).
+  const referenceImages = context?.referenceImageUrl
+    ? [context.referenceImageUrl, ...REFERENCE_IMAGES]
+    : REFERENCE_IMAGES;
 
   // Step 3: kie.ai image generation with retry (max 3 attempts, 15s apart)
   const MAX_ATTEMPTS = 3;
@@ -65,7 +133,7 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
         model: 'gpt-image-2-image-to-image',
         aspectRatio: '1:1',
         resolution: '1K',
-        referenceImages: REFERENCE_IMAGES,
+        referenceImages,
       });
 
       // Log cost
@@ -105,13 +173,13 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
         const row = db2.prepare('SELECT cover_candidates FROM episodes WHERE id = ?').get(state.episodeId) as { cover_candidates: string | null } | undefined;
         const candidates: { path: string; url: string; createdAt: string; source: string }[] = row?.cover_candidates ? JSON.parse(row.cover_candidates) : [];
         candidates.push({ path: localPath, url: publicUrl, createdAt: new Date().toISOString(), source: 'generated' });
-        db2.prepare('UPDATE episodes SET cover_candidates = ? WHERE id = ?').run(JSON.stringify(candidates), state.episodeId);
+        db2.prepare('UPDATE episodes SET cover_candidates = ?, ig_holiday = ? WHERE id = ?').run(JSON.stringify(candidates), holidayKey, state.episodeId);
       } catch (err) {
         log.warn({ error: (err as Error).message }, 'Failed to update cover_candidates');
       }
 
-      log.info({ coverPath: localPath, coverUrl: publicUrl, attempt }, 'Cover image ready');
-      return { coverPath: localPath, coverUrl: publicUrl, igScenario: scenario, coverError: '', status: 'tts' };
+      log.info({ coverPath: localPath, coverUrl: publicUrl, attempt, holiday: holidayKey || null }, 'Cover image ready');
+      return { coverPath: localPath, coverUrl: publicUrl, igScenario: scenario, igHoliday: holidayKey, coverError: '', status: 'tts' };
     } catch (error) {
       lastError = (error as Error).message;
       log.warn({ attempt, maxAttempts: MAX_ATTEMPTS, error: lastError }, 'Cover generation attempt failed');
@@ -123,7 +191,7 @@ export async function generateCover(state: PipelineState): Promise<Partial<Pipel
   }
 
   log.error({ error: lastError, attempts: MAX_ATTEMPTS }, 'Cover generation failed after all retries');
-  return { coverPath: '', coverUrl: '', igScenario: scenario, coverError: lastError, status: 'tts' };
+  return { coverPath: '', coverUrl: '', igScenario: scenario, igHoliday: holidayKey, coverError: lastError, status: 'tts' };
 }
 
 // Step 1: Extract scenario candidates from podcast script summary
@@ -183,8 +251,70 @@ ${scriptSummary}
   return [];
 }
 
+// Resolve user-supplied context into scenario text (+ optional visual reference).
+async function buildContextInput(opts: CoverOptions, episodeId: number): Promise<ContextInput> {
+  const userText = opts.contextText?.trim() || '';
+  if (!opts.contextImageUrl) {
+    return { text: userText };
+  }
+  // Vision LLM reads the screenshot and judges how it should be used.
+  const vision = await interpretContextImage(opts.contextImageUrl, userText, episodeId);
+  const combined = [userText, vision.summary].filter(Boolean).join('\n\n');
+  return {
+    text: combined,
+    referenceImageUrl: vision.useAsVisualReference ? opts.contextImageUrl : undefined,
+  };
+}
+
+// Vision call: read a context screenshot → summary + whether to echo it visually.
+async function interpretContextImage(
+  imageUrl: string,
+  userText: string,
+  episodeId: number,
+): Promise<{ summary: string; useAsVisualReference: boolean }> {
+  const llm = getLLMService();
+  const prompt = `你正在協助設計一張 Instagram 插畫封面。使用者附上一張截圖作為「靈感/情境素材」。
+請判讀這張截圖，並只輸出以下 JSON：
+{
+  "summary": "用 2～4 句繁體中文描述截圖的內容重點（新聞標題、人物、梗或畫面），作為插畫情境素材",
+  "useAsVisualReference": true 或 false
+}
+判斷 useAsVisualReference 的標準：
+- true：截圖本身是值得在插畫中「視覺重現或致敬」的畫面（梗圖、產品 UI、特定角色、特殊構圖）
+- false：截圖只是純文字新聞/文章，只需擷取其資訊作為情境素材${userText ? `\n\n使用者補充說明：${userText}` : ''}`;
+
+  const result = await llm.call({
+    stage: 'ig_context_vision',
+    episodeId,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ],
+    options: { preferredModel: VISION_MODEL, maxTokens: 512, temperature: 0.4 },
+  });
+
+  if (result.success && result.content) {
+    try {
+      const match = result.content.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        return {
+          summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+          useAsVisualReference: parsed.useAsVisualReference === true,
+        };
+      }
+    } catch { /* fall through to default */ }
+  }
+  return { summary: '', useAsVisualReference: false };
+}
+
 // Step 2: Design visual scene from scenario candidates
-async function generateScenario(state: PipelineState): Promise<string> {
+async function generateScenario(state: PipelineState, holiday: HolidayMatch | null = null, context: ContextInput | null = null): Promise<string> {
   const llm = getLLMService();
   const isRobot = state.segmentType === 'robot';
   const isSysdesign = state.segmentType === 'sysdesign';
@@ -258,7 +388,7 @@ ${scenarioCandidates.length > 0
 
 ⏱ 長度限制：2～4 句，簡短扼要但畫面感強
 
-${topicSection}`;
+${topicSection}${holiday ? buildScenarioHolidayDirective(holiday) : ''}${context?.text ? buildScenarioContextDirective(context.text) : ''}`;
 
   const result = await llm.call({
     stage: 'ig_scenario',
@@ -274,8 +404,16 @@ ${topicSection}`;
   return result.content || '湯懶懶趴在沙發上，筆電螢幕亮著 AI 工具，手裡握著半杯珍奶，嘴角微微上揚地說：「讓 AI 加班就好，我負責躺。」';
 }
 
+// Directive injected when the user supplies news/topic context (augments the summary).
+function buildScenarioContextDirective(contextText: string): string {
+  return `\n\n📰 使用者提供的時事／情境素材（請務必整合進情境，並與 Podcast 標題/內容結合）：
+${contextText}
+
+請以這則素材作為這張圖的主軸，做出貼近「近期熱門話題或新聞」、且讓人會心一笑的梗，再自然帶到 Podcast 主題。素材與 Podcast 內容要並存呼應，不要只剩其中一邊。`;
+}
+
 // n8n exact image prompt template for kie.ai
-function buildImagePrompt(scenario: string, isRobot: boolean = false, isSysdesign: boolean = false): string {
+function buildImagePrompt(scenario: string, isRobot: boolean = false, isSysdesign: boolean = false, holiday: HolidayMatch | null = null): string {
   const styleNote = isSysdesign
     ? '可愛療癒貼圖風 + 廢感幽默 + 跟主題相關的生活化小道具'
     : isRobot
@@ -325,5 +463,5 @@ ${scenario}
 
 備註：可讓 AI 以小對話窗、螢幕通知、手機提示方式出現。請避免一次塞太多道具或角色，保持畫面聚焦。
 ⚠️ 重要：畫面裡文字絕對要使用台灣繁體中文，除非是公司or產品名稱或專有名詞用法
-⚠️ 重要：文字絕對不能太小以免生成亂碼雜訊`;
+⚠️ 重要：文字絕對不能太小以免生成亂碼雜訊${holiday ? buildImageHolidayDirective(holiday) : ''}`;
 }
