@@ -23,6 +23,9 @@ interface Props {
 // AI 懶人報 Substack — opens a fresh newsletter post composer.
 const SUBSTACK_NEW_POST_URL = 'https://ailanrenbao.substack.com/publish/post?type=newsletter';
 
+const inputClass =
+  'w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/50';
+
 export default function SubstackDraftSection({ episodeId, initialDraft }: Props) {
   const [draft, setDraft] = useState<Draft | null>(initialDraft);
   const [generating, setGenerating] = useState(false);
@@ -98,75 +101,87 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
   }
 
   return (
-    <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginTop: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Substack 草稿</h2>
-        <button onClick={generate} disabled={generating} style={{ padding: '6px 14px' }}>
+    <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-2.5">
+          <span className="text-base">📝</span>
+          <h3 className="text-sm font-medium text-zinc-300">Substack 草稿</h3>
+        </div>
+        <button
+          onClick={generate}
+          disabled={generating}
+          className="px-4 py-2 rounded-lg bg-brand hover:bg-brand-light disabled:opacity-50 text-white text-sm font-medium transition-colors cursor-pointer"
+        >
           {generating ? '產生中…' : draft ? '重新產生' : '產生 Substack 草稿'}
         </button>
       </div>
 
-      {error && <p style={{ color: '#dc2626', marginTop: 8 }}>{error}</p>}
+      {error && <p className="px-4 pb-3 text-[11px] text-red-400">{error}</p>}
 
       {draft && (
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>SEO 標題</div>
-            <input
-              value={draft.seoTitle}
-              onChange={(e) => field('seoTitle', e.target.value)}
-              style={{ width: '100%', padding: 6 }}
-            />
+        <div className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
+          <label className="block">
+            <div className="text-[11px] text-zinc-500 mb-1">SEO 標題</div>
+            <input value={draft.seoTitle} onChange={(e) => field('seoTitle', e.target.value)} className={inputClass} />
           </label>
-          <label>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>副標 (deck)</div>
-            <input
-              value={draft.deck}
-              onChange={(e) => field('deck', e.target.value)}
-              style={{ width: '100%', padding: 6 }}
-            />
+          <label className="block">
+            <div className="text-[11px] text-zinc-500 mb-1">副標 (deck)</div>
+            <input value={draft.deck} onChange={(e) => field('deck', e.target.value)} className={inputClass} />
           </label>
-          <label>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>Meta description</div>
+          <label className="block">
+            <div className="text-[11px] text-zinc-500 mb-1">Meta description</div>
             <input
               value={draft.seoDescription}
               onChange={(e) => field('seoDescription', e.target.value)}
-              style={{ width: '100%', padding: 6 }}
+              className={inputClass}
             />
           </label>
-          <label>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>正文 (Markdown)</div>
+          <label className="block">
+            <div className="text-[11px] text-zinc-500 mb-1">正文 (Markdown)</div>
             <textarea
               value={draft.bodyMarkdown}
               onChange={(e) => field('bodyMarkdown', e.target.value)}
               rows={16}
-              style={{ width: '100%', padding: 6, fontFamily: 'monospace', fontSize: 13 }}
+              className={`${inputClass} font-mono resize-y`}
             />
           </label>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={save} disabled={saving}>{saving ? '儲存中…' : '儲存編輯'}</button>
-            <button onClick={copyRichHtml}>{copied ? '已複製 ✓' : '複製內容（貼進 Substack）'}</button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:text-zinc-100 disabled:opacity-50 text-sm transition-colors cursor-pointer"
+            >
+              {saving ? '儲存中…' : '儲存編輯'}
+            </button>
+            <button
+              onClick={copyRichHtml}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors cursor-pointer"
+            >
+              {copied ? '已複製 ✓' : '複製內容（貼進 Substack）'}
+            </button>
             <a href={SUBSTACK_NEW_POST_URL} target="_blank" rel="noopener noreferrer">
-              <button>開啟 Substack 新文章</button>
+              <button className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:text-zinc-100 text-sm transition-colors cursor-pointer">
+                開啟 Substack 新文章
+              </button>
             </a>
           </div>
 
           <details>
-            <summary style={{ cursor: 'pointer', fontSize: 13, color: '#6b7280' }}>預覽（複製來源）</summary>
+            <summary className="cursor-pointer text-[11px] text-zinc-500">預覽（複製來源）</summary>
             <div
               ref={previewRef}
-              style={{ border: '1px solid #f3f4f6', borderRadius: 6, padding: 12, marginTop: 8 }}
+              className="mt-2 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-300 leading-relaxed [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-zinc-100 [&_h2]:mt-3 [&_a]:text-violet-400 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:my-2"
             >
               <ReactMarkdown>{draft.bodyMarkdown}</ReactMarkdown>
             </div>
           </details>
 
-          <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>
+          <p className="text-[11px] text-zinc-500">
             待你手動在 Substack 後台填：封面圖（Canva 模板）、SEO 標題/描述、內嵌音檔。
           </p>
         </div>
       )}
-    </section>
+    </div>
   );
 }
