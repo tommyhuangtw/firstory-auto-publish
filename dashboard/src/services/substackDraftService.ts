@@ -1,6 +1,7 @@
 import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
+import { findImage } from '@/services/unsplashService';
 import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('substackDraftService');
@@ -108,6 +109,7 @@ const SYSTEM_PROMPT = `你是 AI 懶人報的主筆，一位 AI Forward Deployed
 - 正文用 H2（##）分段：現況 → 連到更大的模式 → 給可用的框架；把工具/主題當「論點的證據」帶出，而不是逐條列。
 - 收尾留一句可被 restack 的金句。
 - 長度約 1500–2500 字。
+- 在 1–2 個最適合的 section 之間，獨立一行插入圖片標記，格式為：[[IMG: 英文圖片搜尋關鍵字]]（描述畫面氛圍/主題，例：[[IMG: software engineer working late night warm desk]]）。只在真的能加分時放、不要硬塞，關鍵字一定要用英文。
 
 ${AI_STYLE_BLACKLIST}
 
@@ -165,6 +167,34 @@ function parseDraft(raw: string): ParsedDraft {
     seoDescription: String(obj.seoDescription ?? ''),
     bodyMarkdown: String(obj.bodyMarkdown ?? ''),
   };
+}
+
+/**
+ * Replace [[IMG: query]] markers in the body with real Unsplash images
+ * (markdown image + attribution caption). Caps at 2 images. Markers that can't
+ * be resolved (no key / no result) are simply removed so the essay still ships.
+ */
+async function resolveImages(body: string): Promise<string> {
+  const markers = [...body.matchAll(/\[\[IMG:\s*([^\]]+)\]\]/g)];
+  if (markers.length === 0) return body;
+
+  let result = body;
+  let used = 0;
+  for (const m of markers) {
+    let replacement = '';
+    if (used < 2) {
+      const img = await findImage(m[1].trim());
+      if (img) {
+        replacement =
+          `\n\n![${img.alt}](${img.url})\n\n` +
+          `*Photo by [${img.photographer}](${img.photographerUrl}) on [Unsplash](${img.photoUrl})*\n\n`;
+        used++;
+      }
+    }
+    result = result.replace(m[0], replacement);
+  }
+  log.info({ markers: markers.length, used }, 'Resolved Unsplash images');
+  return result;
 }
 
 interface EpisodeRow {
@@ -229,6 +259,7 @@ ${ep.script_zh}`;
   }
 
   const parsed = parseDraft(res.content);
+  const bodyMarkdown = await resolveImages(parsed.bodyMarkdown);
   const audioUrl = ep.soundon_url ?? ep.youtube_url ?? '';
 
   // Upsert: delete any existing draft for this episode, then insert fresh.
@@ -244,7 +275,7 @@ ${ep.script_zh}`;
       parsed.seoTitle,
       parsed.deck,
       parsed.seoDescription,
-      parsed.bodyMarkdown,
+      bodyMarkdown,
       audioUrl,
     );
 

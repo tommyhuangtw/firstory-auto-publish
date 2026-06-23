@@ -173,7 +173,7 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
             <summary className="cursor-pointer text-[11px] text-zinc-500">預覽（複製來源）</summary>
             <div
               ref={previewRef}
-              className="mt-2 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-300 leading-relaxed [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-zinc-100 [&_h2]:mt-3 [&_a]:text-violet-400 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:my-2"
+              className="mt-2 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-300 leading-relaxed [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-zinc-100 [&_h2]:mt-3 [&_a]:text-violet-400 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:my-2 [&_img]:rounded-lg [&_img]:my-3 [&_img]:w-full [&_em]:text-xs [&_em]:text-zinc-500"
             >
               <ReactMarkdown>{draft.bodyMarkdown}</ReactMarkdown>
             </div>
