@@ -49,6 +49,22 @@ CREATE TABLE IF NOT EXISTS episodes (
   published_at TEXT
 );
 
+-- Substack draft per episode (one-click "share to Substack" feature)
+CREATE TABLE IF NOT EXISTS substack_drafts (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  seo_title TEXT,                          -- SEO title (keyword + benefit)
+  deck TEXT,                               -- subtitle / thesis preview
+  seo_description TEXT,                     -- meta description
+  cover_image_url TEXT,                     -- left empty in v1 (manual Canva cover)
+  body_markdown TEXT,                       -- article body (Markdown)
+  audio_url TEXT,                           -- podcast link for the CTA
+  status TEXT NOT NULL DEFAULT 'draft',     -- 'draft' | 'published' (manual flag)
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_substack_drafts_episode ON substack_drafts(episode_id);
+
 CREATE TABLE IF NOT EXISTS tool_families (
   id INTEGER PRIMARY KEY,
   family_name TEXT UNIQUE NOT NULL,     -- "Claude", "ChatGPT", "Gemini"
