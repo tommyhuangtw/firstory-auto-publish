@@ -111,6 +111,7 @@ Tommy 已建立 Substack page（`@ailanrenbao`，目前空白），動機是 **S
 - 容錯：沒 key／查無結果 → 標記直接移除，文章照常產出。
 - 與 copy-paste 相容：preview 渲染 `<img>`，複製 rich HTML 時一起進剪貼簿，貼進 Substack 由 ProseMirror 匯入。
 - Service: `dashboard/src/services/unsplashService.ts`。
+- **換圖（換一張）**：每張圖的關鍵字 + 候選 index 存在 `substack_drafts.images_json`。review 頁每張圖有「換一張」（抓同關鍵字下一張候選）與可編輯關鍵字「用關鍵字重抓」。API：`POST /api/substack-drafts/[id]/swap-image {imageUrl, query?}`；`swapDraftImage()` 換候選並就地替換內文的圖 + 出處。
 
 ---
 
