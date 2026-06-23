@@ -44,6 +44,7 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN script_summary TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN ig_holiday TEXT');
   safeAlter('ALTER TABLE thumbnail_styles ADD COLUMN usage_count INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE substack_drafts ADD COLUMN images_json TEXT');
   safeAlter('ALTER TABLE shorts ADD COLUMN avatar_filename TEXT');
   safeAlter('ALTER TABLE pipeline_runs ADD COLUMN episode_id INTEGER');
   safeAlter('ALTER TABLE llm_calls ADD COLUMN episode_id INTEGER');

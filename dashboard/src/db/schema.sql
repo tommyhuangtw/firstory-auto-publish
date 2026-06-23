@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS substack_drafts (
   seo_description TEXT,                     -- meta description
   cover_image_url TEXT,                     -- left empty in v1 (manual Canva cover)
   body_markdown TEXT,                       -- article body (Markdown)
+  images_json TEXT,                         -- JSON: [{query,index,url,alt,photographer,photographerUrl,photoUrl}] for "換一張"
   audio_url TEXT,                           -- podcast link for the CTA
   status TEXT NOT NULL DEFAULT 'draft',     -- 'draft' | 'published' (manual flag)
   created_at TEXT DEFAULT (datetime('now')),

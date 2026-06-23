@@ -3,6 +3,16 @@
 import { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
+interface DraftImage {
+  query: string;
+  index: number;
+  url: string;
+  alt: string;
+  photographer: string;
+  photographerUrl: string;
+  photoUrl: string;
+}
+
 interface Draft {
   id: number;
   episodeId: number;
@@ -11,6 +21,7 @@ interface Draft {
   seoDescription: string;
   coverImageUrl: string;
   bodyMarkdown: string;
+  images: DraftImage[];
   audioUrl: string;
   status: string;
 }
@@ -32,7 +43,35 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [swappingIdx, setSwappingIdx] = useState<number | null>(null);
+  const [queryEdits, setQueryEdits] = useState<Record<number, string>>({});
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Swap one article image for a different Unsplash candidate.
+  // useQuery=false → next candidate of the same keyword; true → re-search with edited keyword.
+  async function swapImage(idx: number, useQuery: boolean) {
+    if (!draft) return;
+    const img = draft.images[idx];
+    if (!img) return;
+    setSwappingIdx(idx);
+    setError('');
+    try {
+      const query = useQuery ? (queryEdits[idx] ?? img.query) : undefined;
+      const res = await fetch(`/api/substack-drafts/${draft.id}/swap-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: img.url, query }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Swap failed');
+      setDraft(json.draft);
+      setQueryEdits({});
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSwappingIdx(null);
+    }
+  }
 
   async function generate() {
     setGenerating(true);
@@ -168,6 +207,42 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
               className={`${inputClass} font-mono resize-y`}
             />
           </label>
+
+          {draft.images.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[11px] text-zinc-500">文章圖片（不喜歡可換一張，或改關鍵字重抓）</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {draft.images.map((img, idx) => (
+                  <div key={idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-2 space-y-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt={img.alt} className="w-full h-28 object-cover rounded-md" />
+                    <input
+                      value={queryEdits[idx] ?? img.query}
+                      onChange={(e) => setQueryEdits((q) => ({ ...q, [idx]: e.target.value }))}
+                      placeholder="圖片關鍵字（英文）"
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => swapImage(idx, false)}
+                        disabled={swappingIdx === idx}
+                        className="flex-1 px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
+                      >
+                        {swappingIdx === idx ? '換圖中…' : '換一張'}
+                      </button>
+                      <button
+                        onClick={() => swapImage(idx, true)}
+                        disabled={swappingIdx === idx}
+                        className="px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
+                      >
+                        用關鍵字重抓
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 flex-wrap">
             <button

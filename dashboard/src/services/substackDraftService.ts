@@ -1,10 +1,21 @@
 import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
-import { findImage } from '@/services/unsplashService';
+import { findImage, findImageCandidate } from '@/services/unsplashService';
 import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('substackDraftService');
+
+/** One Unsplash image embedded in the body, tracked so it can be re-fetched ("換一張"). */
+export interface DraftImage {
+  query: string; // search keywords used
+  index: number; // which Unsplash candidate is currently shown (for cycling)
+  url: string; // current image URL (also the anchor used to locate it in the body)
+  alt: string;
+  photographer: string;
+  photographerUrl: string;
+  photoUrl: string;
+}
 
 export interface SubstackDraft {
   id: number;
@@ -14,6 +25,7 @@ export interface SubstackDraft {
   seoDescription: string;
   coverImageUrl: string;
   bodyMarkdown: string;
+  images: DraftImage[];
   audioUrl: string;
   status: 'draft' | 'published';
   createdAt: string;
@@ -28,6 +40,7 @@ interface DbDraftRow {
   seo_description: string | null;
   cover_image_url: string | null;
   body_markdown: string | null;
+  images_json: string | null;
   audio_url: string | null;
   status: string;
   created_at: string;
@@ -35,6 +48,12 @@ interface DbDraftRow {
 }
 
 function mapRow(r: DbDraftRow): SubstackDraft {
+  let images: DraftImage[] = [];
+  try {
+    if (r.images_json) images = JSON.parse(r.images_json) as DraftImage[];
+  } catch {
+    /* malformed → no images */
+  }
   return {
     id: r.id,
     episodeId: r.episode_id,
@@ -43,11 +62,20 @@ function mapRow(r: DbDraftRow): SubstackDraft {
     seoDescription: r.seo_description ?? '',
     coverImageUrl: r.cover_image_url ?? '',
     bodyMarkdown: r.body_markdown ?? '',
+    images,
     audioUrl: r.audio_url ?? '',
     status: (r.status as 'draft' | 'published') ?? 'draft',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Build the markdown block (image + attribution caption) for one image. */
+function imageBlock(img: { alt: string; url: string; photographer: string; photographerUrl: string; photoUrl: string }): string {
+  return (
+    `![${img.alt}](${img.url})\n\n` +
+    `*Photo by [${img.photographer}](${img.photographerUrl}) on [Unsplash](${img.photoUrl})*`
+  );
 }
 
 export function getDraftByEpisode(episodeId: number): SubstackDraft | null {
@@ -173,28 +201,28 @@ function parseDraft(raw: string): ParsedDraft {
  * Replace [[IMG: query]] markers in the body with real Unsplash images
  * (markdown image + attribution caption). Caps at 2 images. Markers that can't
  * be resolved (no key / no result) are simply removed so the essay still ships.
+ * Returns the rewritten body plus the tracked images (for later "換一張" swaps).
  */
-async function resolveImages(body: string): Promise<string> {
+async function resolveImages(body: string): Promise<{ body: string; images: DraftImage[] }> {
   const markers = [...body.matchAll(/\[\[IMG:\s*([^\]]+)\]\]/g)];
-  if (markers.length === 0) return body;
+  if (markers.length === 0) return { body, images: [] };
 
   let result = body;
-  let used = 0;
+  const images: DraftImage[] = [];
   for (const m of markers) {
+    const query = m[1].trim();
     let replacement = '';
-    if (used < 2) {
-      const img = await findImage(m[1].trim());
+    if (images.length < 2) {
+      const img = await findImage(query);
       if (img) {
-        replacement =
-          `\n\n![${img.alt}](${img.url})\n\n` +
-          `*Photo by [${img.photographer}](${img.photographerUrl}) on [Unsplash](${img.photoUrl})*\n\n`;
-        used++;
+        replacement = `\n\n${imageBlock(img)}\n\n`;
+        images.push({ query, index: 0, ...img });
       }
     }
     result = result.replace(m[0], replacement);
   }
-  log.info({ markers: markers.length, used }, 'Resolved Unsplash images');
-  return result;
+  log.info({ markers: markers.length, used: images.length }, 'Resolved Unsplash images');
+  return { body: result, images };
 }
 
 interface EpisodeRow {
@@ -259,7 +287,7 @@ ${ep.script_zh}`;
   }
 
   const parsed = parseDraft(res.content);
-  const bodyMarkdown = await resolveImages(parsed.bodyMarkdown);
+  const { body: bodyMarkdown, images } = await resolveImages(parsed.bodyMarkdown);
   const audioUrl = ep.soundon_url ?? ep.youtube_url ?? '';
 
   // Upsert: delete any existing draft for this episode, then insert fresh.
@@ -267,8 +295,8 @@ ${ep.script_zh}`;
   const info = db
     .prepare(
       `INSERT INTO substack_drafts
-        (episode_id, seo_title, deck, seo_description, cover_image_url, body_markdown, audio_url, status)
-       VALUES (?, ?, ?, ?, '', ?, ?, 'draft')`,
+        (episode_id, seo_title, deck, seo_description, cover_image_url, body_markdown, images_json, audio_url, status)
+       VALUES (?, ?, ?, ?, '', ?, ?, ?, 'draft')`,
     )
     .run(
       episodeId,
@@ -276,6 +304,7 @@ ${ep.script_zh}`;
       parsed.deck,
       parsed.seoDescription,
       bodyMarkdown,
+      JSON.stringify(images),
       audioUrl,
     );
 
@@ -283,4 +312,60 @@ ${ep.script_zh}`;
   const draft = getDraftById(Number(info.lastInsertRowid));
   if (!draft) throw new Error('Draft insert failed');
   return draft;
+}
+
+/**
+ * Swap one image in a draft for a different Unsplash candidate ("換一張").
+ * - `currentUrl` identifies which image to replace (the URL currently in the body).
+ * - If `newQuery` is given, re-search with it from candidate 0; otherwise advance
+ *   to the next candidate of the existing query.
+ * Updates both the body markdown and the tracked images metadata.
+ */
+export async function swapDraftImage(
+  draftId: number,
+  currentUrl: string,
+  newQuery?: string,
+): Promise<SubstackDraft> {
+  const draft = getDraftById(draftId);
+  if (!draft) throw new Error(`Draft ${draftId} not found`);
+
+  const i = draft.images.findIndex((im) => im.url === currentUrl);
+  if (i === -1) throw new Error('找不到要替換的圖片');
+  const old = draft.images[i];
+
+  const query = newQuery?.trim() || old.query;
+  const nextIndex = newQuery?.trim() ? 0 : old.index + 1;
+  const found = await findImageCandidate(query, nextIndex);
+  if (!found) throw new Error('Unsplash 找不到新圖片（可能是關鍵字無結果或未設定金鑰）');
+
+  const next: DraftImage = { query, index: nextIndex, ...found };
+
+  // Replace in body: prefer the exact old block; fall back to swapping the URL
+  // + caption links individually (covers the case where the user edited the body).
+  let body = draft.bodyMarkdown;
+  const oldBlock = imageBlock(old);
+  const newBlock = imageBlock(next);
+  if (body.includes(oldBlock)) {
+    body = body.replace(oldBlock, newBlock);
+  } else if (body.includes(old.url)) {
+    body = body
+      .split(old.url).join(next.url)
+      .split(old.photographerUrl).join(next.photographerUrl)
+      .split(old.photoUrl).join(next.photoUrl)
+      .split(`[${old.photographer}]`).join(`[${next.photographer}]`);
+  } else {
+    throw new Error('內文裡找不到這張圖片（可能已被手動刪除）');
+  }
+
+  const images = [...draft.images];
+  images[i] = next;
+
+  getDb()
+    .prepare(`UPDATE substack_drafts SET body_markdown = ?, images_json = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(body, JSON.stringify(images), draftId);
+
+  log.info({ draftId, query, nextIndex }, 'Swapped Substack draft image');
+  const updated = getDraftById(draftId);
+  if (!updated) throw new Error('Draft reload failed');
+  return updated;
 }
