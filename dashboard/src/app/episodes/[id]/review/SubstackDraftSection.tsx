@@ -169,7 +169,7 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
             </a>
           </div>
 
-          <details>
+          <details open>
             <summary className="cursor-pointer text-[11px] text-zinc-500">預覽（複製來源）</summary>
             <div
               ref={previewRef}

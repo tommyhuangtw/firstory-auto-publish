@@ -109,7 +109,7 @@ const SYSTEM_PROMPT = `你是 AI 懶人報的主筆，一位 AI Forward Deployed
 - 正文用 H2（##）分段：現況 → 連到更大的模式 → 給可用的框架；把工具/主題當「論點的證據」帶出，而不是逐條列。
 - 收尾留一句可被 restack 的金句。
 - 長度約 1500–2500 字。
-- 在 1–2 個最適合的 section 之間，獨立一行插入圖片標記，格式為：[[IMG: 英文圖片搜尋關鍵字]]（描述畫面氛圍/主題，例：[[IMG: software engineer working late night warm desk]]）。只在真的能加分時放、不要硬塞，關鍵字一定要用英文。
+- **務必**在文章中插入 **1–2 張**圖片（這是必要的、不可省略）：在最適合的 section 之間，獨立一行放圖片標記，格式為 [[IMG: 英文圖片搜尋關鍵字]]（描述畫面氛圍/主題，例：[[IMG: software engineer working late night warm desk]]）。關鍵字一定要用英文，挑能呼應該段主題、有質感的畫面。
 
 ${AI_STYLE_BLACKLIST}
 
