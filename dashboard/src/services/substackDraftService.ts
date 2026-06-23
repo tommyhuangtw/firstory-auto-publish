@@ -111,13 +111,13 @@ const SYSTEM_PROMPT = `你是 AI 懶人報的主筆，一位 AI Forward Deployed
 
 ${AI_STYLE_BLACKLIST}
 
-只輸出 JSON（不要 markdown code fence、不要 JSON 以外任何文字），格式：
-{
-  "seoTitle": "SEO 標題（關鍵字 + 好處，勿過長）",
-  "deck": "副標 / thesis 預告，一句話",
-  "seoDescription": "meta description，1–2 句",
-  "bodyMarkdown": "正文，Markdown；不要再放 H1 主標，用 ## 分段"
-}`;
+請「嚴格」用下列格式輸出（不要 JSON、不要 code fence、不要多餘說明）。前三行各一行，正文放在 ===BODY=== 之後，可多行：
+
+SEO_TITLE: <SEO 標題，關鍵字 + 好處，勿過長，單行>
+DECK: <副標 / thesis 預告，一句話，單行>
+SEO_DESCRIPTION: <meta description，1–2 句，單行>
+===BODY===
+<正文，Markdown；不要再放 H1 主標，用 ## 分段>`;
 
 interface ParsedDraft {
   seoTitle: string;
@@ -126,12 +126,33 @@ interface ParsedDraft {
   bodyMarkdown: string;
 }
 
-/** Strip ```json fences if present, then JSON.parse. Throws on failure. */
-function parseDraftJson(raw: string): ParsedDraft {
+/**
+ * Parse the delimited draft format (SEO_TITLE/DECK/SEO_DESCRIPTION lines + ===BODY===).
+ * This avoids JSON's "raw newline inside string literal" failures on long markdown.
+ * Falls back to legacy JSON parsing if the model ignored the format and returned JSON.
+ */
+function parseDraft(raw: string): ParsedDraft {
   let s = raw.trim();
-  const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  const fence = s.match(/^```(?:\w+)?\s*([\s\S]*?)\s*```$/);
   if (fence) s = fence[1].trim();
-  // Fallback: grab the outermost {...} if extra prose leaked in.
+
+  const bodyIdx = s.search(/^===BODY===\s*$/m);
+  if (bodyIdx !== -1) {
+    const header = s.slice(0, bodyIdx);
+    const body = s.replace(/^[\s\S]*?^===BODY===\s*$/m, '').trim();
+    const grab = (label: string): string => {
+      const m = header.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
+      return m ? m[1].trim() : '';
+    };
+    return {
+      seoTitle: grab('SEO_TITLE'),
+      deck: grab('DECK'),
+      seoDescription: grab('SEO_DESCRIPTION'),
+      bodyMarkdown: body,
+    };
+  }
+
+  // Legacy fallback: model returned JSON. Grab outermost {...} and parse.
   if (!s.startsWith('{')) {
     const first = s.indexOf('{');
     const last = s.lastIndexOf('}');
@@ -193,13 +214,21 @@ ${ep.script_zh}`;
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ],
-    options: { temperature: 0.8, maxTokens: 4096 },
+    // Long-form generation → use the project's script/content workhorse model
+    // (gemini-2.5-flash stopped mid-essay; sonnet exceeds the 90s timeout on big inputs).
+    // Generous token budget + timeout for a 1500–2500 字 essay.
+    options: {
+      temperature: 0.8,
+      maxTokens: 8192,
+      preferredModel: 'google/gemini-3.1-pro-preview',
+      timeoutMs: 120_000,
+    },
   });
   if (!res.success || !res.content) {
     throw new Error(`LLM generation failed: ${res.error ?? 'no content'}`);
   }
 
-  const parsed = parseDraftJson(res.content);
+  const parsed = parseDraft(res.content);
   const audioUrl = ep.soundon_url ?? ep.youtube_url ?? '';
 
   // Upsert: delete any existing draft for this episode, then insert fresh.
