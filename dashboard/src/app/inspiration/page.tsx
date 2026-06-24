@@ -25,18 +25,39 @@ export default function InspirationPage() {
   const [draftNote, setDraftNote] = useState<Record<number, string>>({});
   const [draftText, setDraftText] = useState<Record<number, string>>({});
   const [genBusy, setGenBusy] = useState<number | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const buildParams = useCallback((cur: string | null) => {
     const params = new URLSearchParams({ status: statusFilter, sort });
     if (q.trim()) params.set('q', q.trim());
     if (channel) params.set('channel', channel);
     if (category) params.set('category', category);
-    const res = await fetch(`/api/inspiration/insights?${params}`);
+    if (cur) params.set('cursor', cur);
+    return params;
+  }, [statusFilter, sort, q, channel, category]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/inspiration/insights?${buildParams(null)}`);
     const data = await res.json();
     setInsights(data.insights || []);
+    setCursor(data.nextCursor || null);
+    setHasMore(!!data.nextCursor);
     setLoading(false);
-  }, [statusFilter, sort, q, channel, category]);
+  }, [buildParams]);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !cursor) return;
+    setLoadingMore(true);
+    const res = await fetch(`/api/inspiration/insights?${buildParams(cursor)}`);
+    const data = await res.json();
+    setInsights((prev) => [...prev, ...(data.insights || [])]);
+    setCursor(data.nextCursor || null);
+    setHasMore(!!data.nextCursor);
+    setLoadingMore(false);
+  }, [hasMore, loadingMore, cursor, buildParams]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -169,6 +190,20 @@ export default function InspirationPage() {
             )}
           </div>
         ))}
+
+        {!loading && hasMore && sort !== 'random' && !q.trim() && (
+          <IntersectionLoader onVisible={loadMore} busy={loadingMore} />
+        )}
+        {!loading && !hasMore && insights.length > 0 && <p className="text-center text-xs text-zinc-600 py-4">沒有更多了</p>}
     </div>
   );
+}
+
+function IntersectionLoader({ onVisible, busy }: { onVisible: () => void; busy: boolean }) {
+  const ref = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) onVisible(); }, { rootMargin: '300px' });
+    io.observe(el);
+  };
+  return <div ref={ref} className="py-4 text-center text-xs text-zinc-600">{busy ? '載入中…' : ''}</div>;
 }
