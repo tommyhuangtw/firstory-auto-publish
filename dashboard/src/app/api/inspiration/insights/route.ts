@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
   const q = sp.get('q')?.trim();
   const channel = sp.get('channel');
   const category = sp.get('category');
+  const theme = sp.get('theme');
   const cursor = sp.get('cursor');
   const db = getDb();
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
   else conds.push("i.status != 'hidden'");
   if (channel) { conds.push('c.channel_id = ?'); params.push(Number(channel)); }
   if (category) { conds.push('i.category = ?'); params.push(category); }
+  if (theme) { conds.push('i.id IN (SELECT insight_id FROM insight_themes WHERE theme_id = ?)'); params.push(Number(theme)); }
 
   // semantic search: sqlite-vec KNN → filter → preserve KNN order
   if (q) {
