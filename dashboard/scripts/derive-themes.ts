@@ -9,6 +9,6 @@ import { deriveThemes, tagAllInsights } from '../src/services/inspiration/themeS
   console.log('themes derived:', n);
   const { tagged } = tagAllInsights();
   console.log('insights tagged:', tagged);
-  const rows = getDb().prepare('SELECT name, insight_count FROM themes ORDER BY insight_count DESC').all();
+  const rows = getDb().prepare('SELECT name, insight_count FROM inspiration_themes ORDER BY insight_count DESC').all();
   rows.forEach((r: any) => console.log(`  ${String(r.insight_count).padStart(4)}  ${r.name}`));
 })().catch((e) => { console.error('FAILED:', e.message); process.exit(1); });

@@ -393,9 +393,11 @@ export function getDb(): Database.Database {
     )
   `);
 
-  // Theme Tags tables (Sub-project C — Auto Theme Tags)
+  // Theme Tags tables (Sub-project C — Auto Theme Tags).
+  // NOTE: a separate `themes` table already exists for the legacy memory/tool system;
+  // inspiration themes use their OWN table to avoid polluting it.
   _db!.exec(`
-    CREATE TABLE IF NOT EXISTS themes (
+    CREATE TABLE IF NOT EXISTS inspiration_themes (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       name          TEXT NOT NULL,
       description   TEXT,
@@ -404,16 +406,10 @@ export function getDb(): Database.Database {
       created_at    TEXT DEFAULT (datetime('now'))
     )
   `);
-  // If existing themes table has legacy schema (theme_name column), add inspiration columns
-  safeAlter('ALTER TABLE themes ADD COLUMN name TEXT');
-  safeAlter('ALTER TABLE themes ADD COLUMN description TEXT');
-  safeAlter('ALTER TABLE themes ADD COLUMN embedding TEXT');
-  safeAlter('ALTER TABLE themes ADD COLUMN insight_count INTEGER DEFAULT 0');
-  safeAlter('ALTER TABLE themes ADD COLUMN created_at TEXT DEFAULT (datetime(\'now\'))');
   _db!.exec(`
     CREATE TABLE IF NOT EXISTS insight_themes (
       insight_id INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
-      theme_id   INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+      theme_id   INTEGER NOT NULL REFERENCES inspiration_themes(id) ON DELETE CASCADE,
       score      REAL,
       PRIMARY KEY (insight_id, theme_id)
     )

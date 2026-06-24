@@ -42,13 +42,11 @@ ${list}
   const vecs = await embedTexts(themes.map((t) => `${t.name} — ${t.description || ''}`));
 
   const tx = db.transaction(() => {
-    // Only delete inspiration-derived rows (where name IS NOT NULL); legacy memory rows use theme_name
-    db.prepare('DELETE FROM themes WHERE name IS NOT NULL').run();
+    db.prepare('DELETE FROM inspiration_themes').run();
     themes.forEach((t, i) => {
       const v = vecs[i];
-      // theme_name mirrors name to satisfy legacy NOT NULL constraint on shared table
-      db.prepare('INSERT INTO themes (name, theme_name, description, embedding) VALUES (?, ?, ?, ?)')
-        .run(t.name, t.name, t.description || '', v ? JSON.stringify(v) : null);
+      db.prepare('INSERT INTO inspiration_themes (name, description, embedding) VALUES (?, ?, ?)')
+        .run(t.name, t.description || '', v ? JSON.stringify(v) : null);
     });
   });
   tx();
@@ -59,7 +57,7 @@ ${list}
 /** Cosine an insight embedding to all themes → top MAX_THEMES_PER above MIN_SCORE. */
 export function assignThemes(insightVec: number[]): Array<{ themeId: number; score: number }> {
   const db = getDb();
-  const themes = db.prepare('SELECT id, embedding FROM themes WHERE embedding IS NOT NULL').all() as ThemeRow[];
+  const themes = db.prepare('SELECT id, embedding FROM inspiration_themes WHERE embedding IS NOT NULL').all() as ThemeRow[];
   return themes
     .map((t) => { const v = parseEmbedding(t.embedding); return { themeId: t.id, score: v ? cosine(insightVec, v) : -1 }; })
     .filter((s) => s.score >= MIN_SCORE)
@@ -97,6 +95,6 @@ export function tagAllInsights(): { tagged: number } {
 
 export function recomputeThemeCounts(): void {
   getDb().exec(
-    `UPDATE themes SET insight_count = (SELECT COUNT(*) FROM insight_themes it WHERE it.theme_id = themes.id)`,
+    `UPDATE inspiration_themes SET insight_count = (SELECT COUNT(*) FROM insight_themes it WHERE it.theme_id = inspiration_themes.id)`,
   );
 }
