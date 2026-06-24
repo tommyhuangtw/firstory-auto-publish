@@ -12,11 +12,10 @@ interface Insight {
 export default function InspirationPage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'visible' | 'saved' | 'new'>('visible');
+  const [statusFilter, setStatusFilter] = useState<'visible' | 'saved'>('visible');
   const [sort, setSort] = useState<'resonance' | 'newest' | 'random'>('resonance');
   const [q, setQ] = useState('');
   const [channel, setChannel] = useState('');
-  const [category, setCategory] = useState('');
   const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
   const [theme, setTheme] = useState('');
   const [themes, setThemes] = useState<{ id: number; name: string; insight_count: number }[]>([]);
@@ -35,11 +34,10 @@ export default function InspirationPage() {
     const params = new URLSearchParams({ status: statusFilter, sort });
     if (q.trim()) params.set('q', q.trim());
     if (channel) params.set('channel', channel);
-    if (category) params.set('category', category);
     if (theme) params.set('theme', theme);
     if (cur) params.set('cursor', cur);
     return params;
-  }, [statusFilter, sort, q, channel, category, theme]);
+  }, [statusFilter, sort, q, channel, theme]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,16 +136,10 @@ export default function InspirationPage() {
           <option value="">全部頻道</option>
           {channels.map((c) => <option key={c.id} value={c.id}>{c.title || c.handle}</option>)}
         </select>
-        <select value={category} onChange={(e) => setCategory(e.target.value)}
-          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
-          <option value="">全部類別</option>
-          <option value="mindset">mindset</option><option value="tactic">tactic</option>
-          <option value="contrarian">contrarian</option><option value="story">story</option>
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'visible' | 'saved' | 'new')}
-          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
-          <option value="visible">全部</option><option value="saved">已存</option><option value="new">新挖到</option>
-        </select>
+        <button onClick={() => setStatusFilter(statusFilter === 'saved' ? 'visible' : 'saved')}
+          className={`px-3 py-1.5 text-sm rounded-lg ${statusFilter === 'saved' ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}>
+          {statusFilter === 'saved' ? '⭐ 收藏中' : '☆ 只看收藏'}
+        </button>
         <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest' | 'random')}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
           <option value="resonance">共鳴排序</option><option value="newest">最新</option><option value="random">隨機</option>

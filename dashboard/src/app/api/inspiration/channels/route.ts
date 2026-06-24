@@ -6,7 +6,9 @@ import { resolveChannel, addChannel } from '@/services/inspiration/channelCrawle
 export async function GET() {
   const db = getDb();
   const channels = db.prepare(
-    `SELECT c.*, (SELECT COUNT(*) FROM content_summaries cs WHERE cs.channel_id = c.id) AS ingested_count
+    `SELECT c.*,
+            (SELECT COUNT(*) FROM content_summaries cs WHERE cs.channel_id = c.id) AS ingested_count,
+            (SELECT COUNT(*) FROM insights i JOIN content_summaries cs2 ON cs2.id = i.source_id WHERE cs2.channel_id = c.id) AS insight_count
      FROM channels c ORDER BY c.created_at DESC`,
   ).all();
   return NextResponse.json({ channels });

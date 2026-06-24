@@ -17,7 +17,7 @@ export async function deriveThemes(): Promise<number> {
   ).all() as Array<{ hook: string; idea: string }>;
   const list = sample.map((s, i) => `${i + 1}. ${s.hook}`).join('\n');
 
-  const prompt = `以下是我內容靈感庫裡的代表性 insight（每則一句 hook）。請幫我歸納出大約 15 個「主題分類」，讓我之後可以按主題瀏覽（例如：創業、AI 應用、行銷、商業思維、創意發想、生產力、個人成長…，但請依實際內容歸納，不要硬塞）。
+  const prompt = `以下是我內容靈感庫裡的代表性 insight（每則一句 hook）。請幫我歸納出 6 到 9 個「主題分類」（寧少勿多，每個主題要夠大、夠有區隔，不要切太細），讓我之後可以按主題瀏覽（例如：創業、AI 應用、行銷、商業思維、創意發想、生產力、個人成長…，但請依實際內容歸納，不要硬塞）。
 每個主題要：一個簡短的繁體中文名稱 + 一句話描述。主題之間不要重疊。
 
 ${list}

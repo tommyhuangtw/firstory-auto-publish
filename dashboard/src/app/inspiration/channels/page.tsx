@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 interface Channel {
   id: number; handle: string | null; title: string | null; thumbnail_url: string | null;
-  active: number; fetch_count: number; last_crawled_at: string | null; ingested_count: number;
+  active: number; fetch_count: number; last_crawled_at: string | null; ingested_count: number; insight_count: number;
 }
 
 export default function ChannelsPage() {
@@ -89,7 +89,7 @@ export default function ChannelsPage() {
             {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-10 h-10 rounded-full" />}
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-zinc-100 truncate">{c.title || c.handle}</p>
-              <p className="text-xs text-zinc-500">{c.handle} · {c.ingested_count} 篇已抓 · 每次抓 {c.fetch_count} · {c.last_crawled_at ? `上次 ${c.last_crawled_at.slice(0, 16)}` : '尚未抓取'}</p>
+              <p className="text-xs text-zinc-500">{c.handle} · {c.ingested_count} 部影片 · <span className="text-brand">{c.insight_count} 條 insight</span> · 每次抓 {c.fetch_count} · {c.last_crawled_at ? `上次 ${c.last_crawled_at.slice(0, 16)}` : '尚未抓取'}</p>
             </div>
             <button onClick={() => crawl(c.id)} disabled={busy === `c${c.id}`}
               className="px-2 py-1 text-xs rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">{busy === `c${c.id}` ? '…' : '立即抓取'}</button>
