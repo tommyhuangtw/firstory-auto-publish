@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import * as sqliteVec from 'sqlite-vec';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'podcast.db');
 const SCHEMA_PATH = path.join(process.cwd(), 'src', 'db', 'schema.sql');
@@ -21,6 +22,14 @@ export function getDb(): Database.Database {
   // Performance settings
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+
+  // Vector search extension (sqlite-vec). Must load before creating vec0 tables.
+  try {
+    sqliteVec.load(_db);
+    _db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS vec_insights USING vec0(embedding float[1536])');
+  } catch (e) {
+    console.error('sqlite-vec load failed:', (e as Error).message);
+  }
 
   // Run schema migration
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
