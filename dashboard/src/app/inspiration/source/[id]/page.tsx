@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 interface SourceInsight { id: number; hook: string; idea: string; category: string | null; resonance: number | null }
 interface SourceData {
   id: number; url: string | null; title: string | null; source_type: string; status: string;
-  transcript: string | null; channel_title: string | null; error?: string;
+  transcript: string | null; channel_title: string | null; channel_name: string | null; error?: string;
   insights: SourceInsight[];
 }
 
@@ -31,7 +31,7 @@ export default function SourcePage() {
       <a href="/inspiration" className="text-sm text-zinc-400 hover:text-zinc-200">← 靈感庫</a>
       <h1 className="text-xl font-bold text-zinc-100 mt-2 mb-1">{data.title || '(無標題)'}</h1>
       <div className="text-xs text-zinc-500 mb-6">
-        {data.channel_title && <span className="text-brand">{data.channel_title}</span>}
+        {(data.channel_title || data.channel_name) && <span className="text-brand">{data.channel_title || data.channel_name}</span>}
         {data.url && <> · <a href={data.url} target="_blank" className="text-brand hover:underline">來源連結 ↗</a></>}
         {' · '}{data.source_type}
         {data.status !== 'completed' && <> · <span className="text-amber-400">{data.status}</span></>}

@@ -5,9 +5,47 @@ import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
 import { transcribeAudio } from '@/services/subtitleGenerator';
 import { resolveAppleEpisode } from './applePodcast';
+import { fetchWithKeyRotation } from '@/lib/youtubeKeys';
 import type { IngestInput, ResolvedSource, SourceType } from './types';
 
 const log = createChildLogger('inspiration-sources');
+
+/** Decode common HTML entities — APIFY transcripts come HTML-encoded (e.g. &#39; → '). */
+export function decodeHtmlEntities(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+export interface VideoMeta { title: string | null; channelName: string | null; thumbnailUrl: string | null }
+
+/** Fetch a YouTube video's title/channel/thumbnail via the Data API. Returns nulls on failure. */
+export async function fetchYouTubeVideoMeta(videoId: string): Promise<VideoMeta> {
+  try {
+    const resp = await fetchWithKeyRotation(
+      (k) => `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${k}`,
+      `video-meta:${videoId}`,
+    );
+    const data = await resp.json();
+    const sn = data.items?.[0]?.snippet;
+    if (!sn) return { title: null, channelName: null, thumbnailUrl: null };
+    return {
+      title: sn.title || null,
+      channelName: sn.channelTitle || null,
+      thumbnailUrl: sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url || null,
+    };
+  } catch (e) {
+    log.warn({ videoId, err: (e as Error).message }, 'video meta fetch failed');
+    return { title: null, channelName: null, thumbnailUrl: null };
+  }
+}
 
 /** Decide which kind of source an input is. */
 export function detectSourceType(input: IngestInput): SourceType {
@@ -39,7 +77,8 @@ async function fetchYouTubeTranscript(url: string): Promise<string> {
     return r;
   }, { label: `apify-transcript:${videoId}` });
   const data = await resp.json();
-  return data?.[0]?.captions || data?.[0]?.text || data?.[0]?.transcript || '';
+  const raw = data?.[0]?.captions || data?.[0]?.text || data?.[0]?.transcript || '';
+  return decodeHtmlEntities(raw);
 }
 
 /** Download an audio URL to a temp file; returns the path (caller deletes). */
@@ -66,7 +105,9 @@ export async function resolveSource(input: IngestInput): Promise<ResolvedSource>
   if (sourceType === 'youtube') {
     const transcript = await fetchYouTubeTranscript(input.url!);
     if (!transcript.trim()) throw new Error('YouTube transcript was empty');
-    return { sourceType, title: input.title || null, channelName: null, thumbnailUrl: null, transcript, costUsd: 0 };
+    const vid = youTubeId(input.url!);
+    const meta = vid ? await fetchYouTubeVideoMeta(vid) : { title: null, channelName: null, thumbnailUrl: null };
+    return { sourceType, title: input.title || meta.title, channelName: meta.channelName, thumbnailUrl: meta.thumbnailUrl, transcript, costUsd: 0 };
   }
 
   // apple_podcast
