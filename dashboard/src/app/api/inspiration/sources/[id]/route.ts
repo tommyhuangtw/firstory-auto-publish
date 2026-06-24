@@ -4,8 +4,13 @@ import { getDb } from '@/db';
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = getDb();
-  const row = db.prepare('SELECT id, url, source_type, title, status, error_message, cost_usd FROM content_summaries WHERE id = ?').get(Number(id));
+  const row = db.prepare(
+    `SELECT cs.id, cs.url, cs.source_type, cs.title, cs.status, cs.error_message, cs.cost_usd, cs.transcript,
+            ch.title AS channel_title
+     FROM content_summaries cs LEFT JOIN channels ch ON ch.id = cs.channel_id
+     WHERE cs.id = ?`,
+  ).get(Number(id));
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const insightCount = (db.prepare('SELECT COUNT(*) c FROM insights WHERE source_id = ?').get(Number(id)) as { c: number }).c;
-  return NextResponse.json({ ...row, insightCount });
+  const insights = db.prepare('SELECT id, hook, idea, category, resonance FROM insights WHERE source_id = ? ORDER BY id').all(Number(id));
+  return NextResponse.json({ ...row, insightCount: insights.length, insights });
 }

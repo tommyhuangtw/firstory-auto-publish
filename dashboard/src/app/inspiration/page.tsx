@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 interface Insight {
-  id: number; hook: string; idea: string; why_share: string | null; category: string | null;
+  id: number; source_id: number; hook: string; idea: string; why_share: string | null; category: string | null;
   resonance: number | null; status: string; origin: string;
   source_title: string | null; source_url: string | null; source_type: string;
   channel_title: string | null; channel_handle: string | null;
@@ -135,7 +135,10 @@ export default function InspirationPage() {
             <p className="text-base font-semibold text-zinc-100 mb-1">{it.hook}</p>
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-1">{it.idea}</p>
             {it.why_share && <p className="text-xs text-zinc-500 mb-2">💬 {it.why_share}</p>}
-            {it.source_url && <a href={it.source_url} target="_blank" className="text-xs text-brand hover:underline">📺 {it.source_title || it.source_type} ↗</a>}
+            <div className="flex gap-3">
+              {it.source_url && <a href={it.source_url} target="_blank" className="text-xs text-brand hover:underline">📺 {it.source_title || it.source_type} ↗</a>}
+              <a href={`/inspiration/source/${it.source_id}`} className="text-xs text-brand hover:underline">📄 講稿</a>
+            </div>
 
             <div className="flex gap-2 mt-3">
               <button onClick={() => setStatus(it.id, it.status === 'saved' ? 'new' : 'saved')} disabled={busy === `s${it.id}`}
