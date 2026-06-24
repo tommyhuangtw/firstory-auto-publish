@@ -4,6 +4,7 @@ import { embedTexts } from '@/services/trends/embeddings';
 import { resolveSource } from './sources';
 import { extractInsights } from './extractor';
 import { loadInterestProfile, scoreResonance } from './resonance';
+import { upsertVec } from './vectorIndex';
 import type { IngestInput } from './types';
 
 const log = createChildLogger('inspiration-pipeline');
@@ -49,7 +50,8 @@ export async function runIngest(sourceId: number, input: IngestInput): Promise<{
       candidates.forEach((c, i) => {
         const vec = vecs[i] || null;
         const resonance = scoreResonance(vec, profile);
-        insert.run(sourceId, c.hook, c.idea, c.why_share, c.category, resonance, vec ? JSON.stringify(vec) : null, origin);
+        const r = insert.run(sourceId, c.hook, c.idea, c.why_share, c.category, resonance, vec ? JSON.stringify(vec) : null, origin);
+        if (vec) upsertVec(Number(r.lastInsertRowid), vec);
       });
     });
     tx();
