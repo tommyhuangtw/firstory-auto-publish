@@ -84,8 +84,19 @@ export interface ChannelRow {
   fetch_count: number;
 }
 
+// In-flight guards: prevent overlapping crawls of the same channel (or two crawl-all runs) from
+// racing the external_id dedup check and producing duplicate ingests. Single-process only.
+const crawlInFlight = new Set<number>();
+let crawlAllInFlight = false;
+
 /** Crawl one channel: list latest, skip already-ingested (by external_id), ingest the rest sequentially. */
 export async function crawlChannel(channelRow: ChannelRow): Promise<{ discovered: number; ingested: number; skipped: number }> {
+  if (crawlInFlight.has(channelRow.id)) {
+    log.warn({ channelId: channelRow.id }, 'crawl already in flight for this channel, skipping');
+    return { discovered: 0, ingested: 0, skipped: 0 };
+  }
+  crawlInFlight.add(channelRow.id);
+  try {
   const db = getDb();
   const videos = await listLatestVideos(channelRow.uploads_playlist_id, channelRow.fetch_count);
   let ingested = 0;
@@ -112,10 +123,19 @@ export async function crawlChannel(channelRow: ChannelRow): Promise<{ discovered
   db.prepare("UPDATE channels SET last_crawled_at = datetime('now') WHERE id = ?").run(channelRow.id);
   log.info({ channel: channelRow.title, discovered: videos.length, ingested, skipped }, 'Channel crawled');
   return { discovered: videos.length, ingested, skipped };
+  } finally {
+    crawlInFlight.delete(channelRow.id);
+  }
 }
 
 /** Crawl every active channel sequentially. */
 export async function crawlAllActive(): Promise<{ channels: number; ingested: number; skipped: number }> {
+  if (crawlAllInFlight) {
+    log.warn('crawl-all already in flight, skipping');
+    return { channels: 0, ingested: 0, skipped: 0 };
+  }
+  crawlAllInFlight = true;
+  try {
   const db = getDb();
   const rows = db.prepare(
     'SELECT id, channel_id, uploads_playlist_id, title, fetch_count FROM channels WHERE active = 1',
@@ -132,6 +152,9 @@ export async function crawlAllActive(): Promise<{ channels: number; ingested: nu
     }
   }
   return { channels: rows.length, ingested, skipped };
+  } finally {
+    crawlAllInFlight = false;
+  }
 }
 
 const DEFAULT_HANDLES = ['@AlexHormozi', '@nateherk', '@garytalksstuff', '@SiliconValleyGirl', '@LennysPodcast'];

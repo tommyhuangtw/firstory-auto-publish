@@ -38,17 +38,25 @@ export async function GET(request: NextRequest) {
   if (category) { conds.push('i.category = ?'); params.push(category); }
   if (theme) { conds.push('i.id IN (SELECT insight_id FROM insight_themes WHERE theme_id = ?)'); params.push(Number(theme)); }
 
-  // semantic search: sqlite-vec KNN → filter → preserve KNN order
+  // semantic search: sqlite-vec KNN → filter → preserve KNN order.
+  // If the embedding service or vec index is unavailable, fall THROUGH to the normal browse
+  // path (graceful degradation) rather than returning empty or 500.
   if (q) {
-    const qv = await embedText(q);
-    if (!qv) return NextResponse.json({ insights: [], nextCursor: null });
-    const ids = searchVec(qv, 200);
-    if (!ids.length) return NextResponse.json({ insights: [], nextCursor: null });
-    const where = ['i.id IN (' + ids.join(',') + ')', ...conds].join(' AND ');
-    const rows = db.prepare(`${baseSelect} WHERE ${where}`).all(...params) as Array<Record<string, unknown>>;
-    const order = new Map(ids.map((id, idx) => [id, idx]));
-    rows.sort((a, b) => (order.get(a.id as number)! - order.get(b.id as number)!));
-    return NextResponse.json({ insights: rows.slice(0, 100), nextCursor: null });
+    try {
+      const qv = await embedText(q);
+      if (qv) {
+        const ids = searchVec(qv, 200);
+        if (!ids.length) return NextResponse.json({ insights: [], nextCursor: null });
+        const where = ['i.id IN (' + ids.join(',') + ')', ...conds].join(' AND ');
+        const rows = db.prepare(`${baseSelect} WHERE ${where}`).all(...params) as Array<Record<string, unknown>>;
+        const order = new Map(ids.map((id, idx) => [id, idx]));
+        rows.sort((a, b) => (order.get(a.id as number)! - order.get(b.id as number)!));
+        return NextResponse.json({ insights: rows.slice(0, 100), nextCursor: null });
+      }
+      // qv null → embedding unavailable → fall through to browse
+    } catch (e) {
+      console.error('semantic search failed, falling back to browse:', (e as Error).message);
+    }
   }
 
   // random: fresh batch, no pagination

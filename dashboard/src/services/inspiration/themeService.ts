@@ -54,15 +54,28 @@ ${list}
   return themes.length;
 }
 
-/** Cosine an insight embedding to all themes → top MAX_THEMES_PER above MIN_SCORE. */
-export function assignThemes(insightVec: number[]): Array<{ themeId: number; score: number }> {
-  const db = getDb();
-  const themes = db.prepare('SELECT id, embedding FROM inspiration_themes WHERE embedding IS NOT NULL').all() as ThemeRow[];
-  return themes
-    .map((t) => { const v = parseEmbedding(t.embedding); return { themeId: t.id, score: v ? cosine(insightVec, v) : -1 }; })
+export interface ThemeVec { themeId: number; vec: number[] }
+
+/** Load + parse all theme embeddings ONCE (reuse across many insights to avoid per-insight re-query/parse). */
+export function loadThemeVectors(): ThemeVec[] {
+  const rows = getDb().prepare('SELECT id, embedding FROM inspiration_themes WHERE embedding IS NOT NULL').all() as ThemeRow[];
+  const out: ThemeVec[] = [];
+  for (const r of rows) { const v = parseEmbedding(r.embedding); if (v) out.push({ themeId: r.id, vec: v }); }
+  return out;
+}
+
+/** Pure cosine assignment against preloaded theme vectors → top MAX_THEMES_PER above MIN_SCORE. */
+export function assignThemesWith(insightVec: number[], themeVecs: ThemeVec[]): Array<{ themeId: number; score: number }> {
+  return themeVecs
+    .map((t) => ({ themeId: t.themeId, score: cosine(insightVec, t.vec) }))
     .filter((s) => s.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_THEMES_PER);
+}
+
+/** Convenience: assign against a fresh load of theme vectors (single-shot callers). */
+export function assignThemes(insightVec: number[]): Array<{ themeId: number; score: number }> {
+  return assignThemesWith(insightVec, loadThemeVectors());
 }
 
 /** Write an insight's theme assignments (replaces any existing). */
@@ -76,6 +89,7 @@ export function setInsightThemes(insightId: number, assigned: Array<{ themeId: n
 /** Re-tag every insight against the current themes; recompute counts. */
 export function tagAllInsights(): { tagged: number } {
   const db = getDb();
+  const themeVecs = loadThemeVectors();   // load once, reuse for every insight
   const rows = db.prepare('SELECT id, embedding FROM insights WHERE embedding IS NOT NULL').all() as Array<{ id: number; embedding: string }>;
   let tagged = 0;
   const tx = db.transaction(() => {
@@ -83,7 +97,7 @@ export function tagAllInsights(): { tagged: number } {
     for (const r of rows) {
       const v = parseEmbedding(r.embedding);
       if (!v) continue;
-      const assigned = assignThemes(v);
+      const assigned = assignThemesWith(v, themeVecs);
       if (assigned.length) { setInsightThemes(r.id, assigned); tagged++; }
     }
   });

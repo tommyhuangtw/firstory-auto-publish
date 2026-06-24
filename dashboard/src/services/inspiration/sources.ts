@@ -56,7 +56,7 @@ export function detectSourceType(input: IngestInput): SourceType {
   throw new Error('Unrecognized URL — expected a YouTube or Apple Podcasts link');
 }
 
-function youTubeId(url: string): string | null {
+export function youTubeId(url: string): string | null {
   const m = url.match(/(?:v=|youtu\.be\/|\/shorts\/|\/embed\/)([\w-]{11})/);
   return m?.[1] || null;
 }

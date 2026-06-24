@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface Insight {
   id: number; source_id: number; hook: string; idea: string; why_share: string | null; category: string | null;
@@ -204,10 +204,13 @@ export default function InspirationPage() {
 }
 
 function IntersectionLoader({ onVisible, busy }: { onVisible: () => void; busy: boolean }) {
-  const ref = (el: HTMLDivElement | null) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
     if (!el) return;
     const io = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) onVisible(); }, { rootMargin: '300px' });
     io.observe(el);
-  };
+    return () => io.disconnect();
+  }, [onVisible]);
   return <div ref={ref} className="py-4 text-center text-xs text-zinc-600">{busy ? '載入中…' : ''}</div>;
 }

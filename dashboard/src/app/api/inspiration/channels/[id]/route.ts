@@ -16,6 +16,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  getDb().prepare('DELETE FROM channels WHERE id = ?').run(Number(id));
+  const cid = Number(id);
+  const db = getDb();
+  // Keep the already-ingested content (per the UI's "已抓的 insight 會保留" promise) but unlink it
+  // from the removed channel so no rows dangle on a missing channel_id.
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE content_summaries SET channel_id = NULL WHERE channel_id = ?').run(cid);
+    db.prepare('DELETE FROM channels WHERE id = ?').run(cid);
+  });
+  tx();
   return NextResponse.json({ ok: true });
 }
