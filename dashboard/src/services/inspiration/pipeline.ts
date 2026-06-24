@@ -5,6 +5,7 @@ import { resolveSource } from './sources';
 import { extractInsights } from './extractor';
 import { loadInterestProfile, scoreResonance } from './resonance';
 import { upsertVec } from './vectorIndex';
+import { assignThemes, setInsightThemes } from './themeService';
 import type { IngestInput } from './types';
 
 const log = createChildLogger('inspiration-pipeline');
@@ -51,7 +52,11 @@ export async function runIngest(sourceId: number, input: IngestInput): Promise<{
         const vec = vecs[i] || null;
         const resonance = scoreResonance(vec, profile);
         const r = insert.run(sourceId, c.hook, c.idea, c.why_share, c.category, resonance, vec ? JSON.stringify(vec) : null, origin);
-        if (vec) upsertVec(Number(r.lastInsertRowid), vec);
+        if (vec) {
+          const newId = Number(r.lastInsertRowid);
+          upsertVec(newId, vec);
+          setInsightThemes(newId, assignThemes(vec));
+        }
       });
     });
     tx();
