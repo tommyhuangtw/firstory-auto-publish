@@ -328,6 +328,41 @@ export function getDb(): Database.Database {
   `);
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_scan_runs_started ON trend_scan_runs(started_at)');
 
+  // Inspiration Library tables (insights + insight_drafts)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS insights (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id   INTEGER NOT NULL REFERENCES content_summaries(id) ON DELETE CASCADE,
+      hook        TEXT    NOT NULL,
+      idea        TEXT    NOT NULL,
+      why_share   TEXT,
+      category    TEXT,
+      resonance   REAL,
+      embedding   TEXT,
+      origin      TEXT    NOT NULL DEFAULT 'ai_mined',
+      status      TEXT    NOT NULL DEFAULT 'new',
+      source_ts   TEXT,
+      created_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS insight_drafts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      insight_id  INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+      user_note   TEXT,
+      draft_text  TEXT    NOT NULL,
+      platform    TEXT    NOT NULL DEFAULT 'threads',
+      status      TEXT    NOT NULL DEFAULT 'pending_review',
+      created_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_source ON insights(source_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_resonance ON insights(resonance)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_drafts_insight ON insight_drafts(insight_id)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');
