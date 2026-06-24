@@ -7,7 +7,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json().catch(() => ({}));
   const db = getDb();
   if (typeof body.active === 'boolean') db.prepare('UPDATE channels SET active = ? WHERE id = ?').run(body.active ? 1 : 0, Number(id));
-  if (typeof body.fetchCount === 'number') db.prepare('UPDATE channels SET fetch_count = ? WHERE id = ?').run(body.fetchCount, Number(id));
+  if (typeof body.fetchCount === 'number') {
+    const fc = Math.max(1, Math.min(50, Math.floor(body.fetchCount))); // Data API caps maxResults at 50
+    db.prepare('UPDATE channels SET fetch_count = ? WHERE id = ?').run(fc, Number(id));
+  }
   return NextResponse.json({ ok: true });
 }
 

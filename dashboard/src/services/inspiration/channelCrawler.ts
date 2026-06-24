@@ -38,19 +38,22 @@ export async function resolveChannel(urlOrHandle: string): Promise<ResolvedChann
   const data = await resp.json();
   const item = data.items?.[0];
   if (!item) throw new Error(`No YouTube channel found for @${handle}`);
+  const uploads = item.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) throw new Error(`Channel @${handle} has no uploads playlist`);
   return {
     channelId: item.id,
-    uploadsPlaylistId: item.contentDetails.relatedPlaylists.uploads,
-    title: item.snippet.title,
-    thumbnailUrl: item.snippet.thumbnails?.default?.url || null,
+    uploadsPlaylistId: uploads,
+    title: item.snippet?.title || handle,
+    thumbnailUrl: item.snippet?.thumbnails?.default?.url || null,
     handle: '@' + handle,
   };
 }
 
 /** List the latest `limit` videos from a channel's uploads playlist. */
 export async function listLatestVideos(uploadsPlaylistId: string, limit: number): Promise<ChannelVideo[]> {
+  const maxResults = Math.max(1, Math.min(50, Math.floor(limit) || 5)); // Data API caps maxResults at 50
   const resp = await fetchWithKeyRotation(
-    (k) => `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=${limit}&key=${k}`,
+    (k) => `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(uploadsPlaylistId)}&maxResults=${maxResults}&key=${k}`,
     `playlist:${uploadsPlaylistId}`,
   );
   const data = await resp.json();
@@ -73,7 +76,7 @@ export function addChannel(c: ResolvedChannel, fetchCount = 5): number {
   return Number(r.lastInsertRowid);
 }
 
-interface ChannelRow {
+export interface ChannelRow {
   id: number;
   channel_id: string;
   uploads_playlist_id: string;
@@ -88,6 +91,8 @@ export async function crawlChannel(channelRow: ChannelRow): Promise<{ discovered
   let ingested = 0;
   let skipped = 0;
   for (const v of videos) {
+    // Dedup by external_id regardless of status: a previously-failed video (e.g. a Short with no
+    // transcript) stays skipped on re-crawl rather than being re-attempted every time.
     const exists = db.prepare('SELECT 1 FROM content_summaries WHERE external_id = ?').get(v.videoId);
     if (exists) { skipped++; continue; }
     const input: IngestInput = {
@@ -118,9 +123,13 @@ export async function crawlAllActive(): Promise<{ channels: number; ingested: nu
   let ingested = 0;
   let skipped = 0;
   for (const row of rows) {
-    const r = await crawlChannel(row);
-    ingested += r.ingested;
-    skipped += r.skipped;
+    try {
+      const r = await crawlChannel(row);
+      ingested += r.ingested;
+      skipped += r.skipped;
+    } catch (e) {
+      log.warn({ channelId: row.id, err: (e as Error).message }, 'channel crawl failed, continuing');
+    }
   }
   return { channels: rows.length, ingested, skipped };
 }
