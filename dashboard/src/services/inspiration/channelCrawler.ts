@@ -1,6 +1,8 @@
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { fetchWithKeyRotation } from '@/lib/youtubeKeys';
+import { createSourceRow, runIngest } from '@/services/inspiration/pipeline';
+import type { IngestInput } from './types';
 
 const log = createChildLogger('channel-crawler');
 
@@ -69,4 +71,74 @@ export function addChannel(c: ResolvedChannel, fetchCount = 5): number {
      VALUES ('youtube', ?, ?, ?, ?, ?, ?)`,
   ).run(c.handle, c.channelId, c.uploadsPlaylistId, c.title, c.thumbnailUrl, fetchCount);
   return Number(r.lastInsertRowid);
+}
+
+interface ChannelRow {
+  id: number;
+  channel_id: string;
+  uploads_playlist_id: string;
+  title: string | null;
+  fetch_count: number;
+}
+
+/** Crawl one channel: list latest, skip already-ingested (by external_id), ingest the rest sequentially. */
+export async function crawlChannel(channelRow: ChannelRow): Promise<{ discovered: number; ingested: number; skipped: number }> {
+  const db = getDb();
+  const videos = await listLatestVideos(channelRow.uploads_playlist_id, channelRow.fetch_count);
+  let ingested = 0;
+  let skipped = 0;
+  for (const v of videos) {
+    const exists = db.prepare('SELECT 1 FROM content_summaries WHERE external_id = ?').get(v.videoId);
+    if (exists) { skipped++; continue; }
+    const input: IngestInput = {
+      url: `https://www.youtube.com/watch?v=${v.videoId}`,
+      title: v.title,
+      channelId: channelRow.id,
+      externalId: v.videoId,
+    };
+    const sourceId = createSourceRow(input);
+    try {
+      await runIngest(sourceId, input);
+      ingested++;
+    } catch (e) {
+      log.warn({ videoId: v.videoId, err: (e as Error).message }, 'ingest failed during crawl');
+    }
+  }
+  db.prepare("UPDATE channels SET last_crawled_at = datetime('now') WHERE id = ?").run(channelRow.id);
+  log.info({ channel: channelRow.title, discovered: videos.length, ingested, skipped }, 'Channel crawled');
+  return { discovered: videos.length, ingested, skipped };
+}
+
+/** Crawl every active channel sequentially. */
+export async function crawlAllActive(): Promise<{ channels: number; ingested: number; skipped: number }> {
+  const db = getDb();
+  const rows = db.prepare(
+    'SELECT id, channel_id, uploads_playlist_id, title, fetch_count FROM channels WHERE active = 1',
+  ).all() as ChannelRow[];
+  let ingested = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    const r = await crawlChannel(row);
+    ingested += r.ingested;
+    skipped += r.skipped;
+  }
+  return { channels: rows.length, ingested, skipped };
+}
+
+const DEFAULT_HANDLES = ['@AlexHormozi', '@nateherk', '@garytalksstuff', '@SiliconValleyGirl', '@LennysPodcast'];
+
+/** Idempotently resolve + insert the default channels. Returns how many were newly added. */
+export async function seedDefaultChannels(): Promise<number> {
+  const db = getDb();
+  let added = 0;
+  for (const h of DEFAULT_HANDLES) {
+    if (db.prepare('SELECT 1 FROM channels WHERE handle = ?').get(h)) continue;
+    try {
+      const c = await resolveChannel(h);
+      if (addChannel(c) > 0) added++;
+    } catch (e) {
+      log.warn({ handle: h, err: (e as Error).message }, 'seed resolve failed');
+    }
+  }
+  return added;
 }
