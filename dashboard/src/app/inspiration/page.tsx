@@ -6,14 +6,18 @@ interface Insight {
   id: number; hook: string; idea: string; why_share: string | null; category: string | null;
   resonance: number | null; status: string; origin: string;
   source_title: string | null; source_url: string | null; source_type: string;
+  channel_title: string | null; channel_handle: string | null;
 }
 
 export default function InspirationPage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'visible' | 'saved' | 'new'>('visible');
-  const [sort, setSort] = useState<'resonance' | 'newest'>('resonance');
+  const [sort, setSort] = useState<'resonance' | 'newest' | 'random'>('resonance');
   const [q, setQ] = useState('');
+  const [channel, setChannel] = useState('');
+  const [category, setCategory] = useState('');
+  const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingestPoints, setIngestPoints] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -26,13 +30,22 @@ export default function InspirationPage() {
     setLoading(true);
     const params = new URLSearchParams({ status: statusFilter, sort });
     if (q.trim()) params.set('q', q.trim());
+    if (channel) params.set('channel', channel);
+    if (category) params.set('category', category);
     const res = await fetch(`/api/inspiration/insights?${params}`);
     const data = await res.json();
     setInsights(data.insights || []);
     setLoading(false);
-  }, [statusFilter, sort, q]);
+  }, [statusFilter, sort, q, channel, category]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch('/api/inspiration/channels').then((r) => r.json()).then((d) => setChannels(d.channels || [])).catch(() => {});
+  }, []);
+
+  // Shuffle: switch to random (triggers a reload), or re-fetch a fresh random set if already random.
+  const shuffle = () => { if (sort !== 'random') setSort('random'); else load(); };
 
   const ingest = async () => {
     if (!ingestUrl.trim()) return;
@@ -87,14 +100,27 @@ export default function InspirationPage() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 語意搜尋"
           className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100" />
+        <select value={channel} onChange={(e) => setChannel(e.target.value)}
+          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
+          <option value="">全部頻道</option>
+          {channels.map((c) => <option key={c.id} value={c.id}>{c.title || c.handle}</option>)}
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}
+          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
+          <option value="">全部類別</option>
+          <option value="mindset">mindset</option><option value="tactic">tactic</option>
+          <option value="contrarian">contrarian</option><option value="story">story</option>
+        </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'visible' | 'saved' | 'new')}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
           <option value="visible">全部</option><option value="saved">已存</option><option value="new">新挖到</option>
         </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest')}
+        <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest' | 'random')}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
-          <option value="resonance">共鳴排序</option><option value="newest">最新</option>
+          <option value="resonance">共鳴排序</option><option value="newest">最新</option><option value="random">隨機</option>
         </select>
+        <button onClick={shuffle}
+          className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25">🎲 給我靈感</button>
       </div>
 
       {loading ? <p className="text-zinc-400">載入中…</p>
@@ -104,6 +130,7 @@ export default function InspirationPage() {
             <div className="flex items-center gap-2 mb-2">
               {it.resonance != null && <span className="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">🔥 共鳴 {it.resonance}</span>}
               {it.category && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300">{it.category}</span>}
+              {it.channel_title && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-brand/10 text-brand truncate max-w-[40%]">{it.channel_title}</span>}
             </div>
             <p className="text-base font-semibold text-zinc-100 mb-1">{it.hook}</p>
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-1">{it.idea}</p>
