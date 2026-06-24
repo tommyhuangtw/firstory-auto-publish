@@ -22,20 +22,31 @@ const REFERENCE_IMAGES = [
   'https://res.cloudinary.com/dxurvdax4/image/upload/v1750843184/nwap9q7xy9oc7a7qjkw4.png',
 ];
 
-const CHARACTER = `主角為「湯懶懶 Mr. Sloth」——一隻慵懶療癒但其實很懂效率的樹懶，擅長把瑣事交給 AI、自己專注耍廢喝珍奶。請嚴格參考提供的參考圖，保持同一個角色外型。`;
+const CHARACTER = `「湯懶懶 Mr. Sloth」是 AI 懶人報的品牌角色——一隻聰明、從容、專業的樹懶。請嚴格參考提供的參考圖，保持同一個角色的外型長相，並呈現專業、有自信的形象。`;
 
-const STYLE = `風格：溫暖療癒的繪本插畫感、柔和暖色調（奶油白、焦糖、暖黃），乾淨不雜亂，湯懶懶為視覺主角佔據焦點，背景留適度空白、畫面不要過滿。橫式構圖。
-重要：受眾是台灣人，畫面中所有文字標籤一律用「繁體中文（台灣用語）」，只有本來就是英文的專有名詞或技術術語（例如 AI、TDD、API、Claude、ChatGPT）才保留英文。文字要少、字級要大、清楚易讀，不要一堆小字。`;
+const COMPOSITION = `構圖重點（很重要）：畫面「主體」是這段內容要講的「概念本身」，用編輯插畫把那個概念／隱喻視覺化。湯懶懶只是帶有品牌風格的「配角點綴」——比例不用大、不要佔滿畫面、不一定在正中央，自然融入畫面一角即可。重點是內容，不是樹懶。`;
+
+const PROFESSIONAL = `調性必須專業可信（這是放在 Substack 專業文章裡的插圖）：
+- 不要珍珠奶茶、懶骨頭沙發、躺平、打瞌睡、擺爛等「耍廢」道具或姿態。
+- 不必侷限在辦公室或房間；場景由「要表達的概念」決定，可以是抽象、概念化的視覺隱喻。
+- 畫面文字要專業、有洞見、點出重點，不要寫「我負責耍廢」「躺平」「relax」這類自嘲的話。`;
+
+const STYLE = `風格：溫暖但專業的編輯插畫感、柔和暖色調（奶油白、焦糖、暖黃），乾淨簡潔不雜亂、留適度空白。橫式構圖。
+受眾是台灣人：畫面中所有文字一律用「繁體中文（台灣用語）」，只有本來就是英文的專有名詞／技術術語（AI、TDD、API、Claude、ChatGPT 等）才保留英文。文字要少、字級大、清楚易讀。`;
 
 /**
  * Generate one in-article 湯懶懶 illustration for a scene brief.
  * Returns a stable Cloudinary URL. Throws on failure (caller decides fallback).
  */
 export async function generateSlothIllustration(brief: string): Promise<string> {
-  const prompt = `請繪製一張橫式（3:2）Instagram 插畫風格的編輯插圖。
+  const prompt = `請繪製一張橫式（3:2）的編輯插畫（editorial illustration）。
 ${CHARACTER}
 
-場景：${brief}
+這張圖要表達的概念／場景：${brief}
+
+${COMPOSITION}
+
+${PROFESSIONAL}
 
 ${STYLE}`;
 
