@@ -15,8 +15,9 @@ export function createSourceRow(input: IngestInput): number {
     : /youtube\.com|youtu\.be/i.test(input.url || '') ? 'youtube'
     : /podcasts\.apple\.com/i.test(input.url || '') ? 'apple_podcast' : 'manual';
   const r = db.prepare(
-    `INSERT INTO content_summaries (url, source_type, title, status) VALUES (?, ?, ?, 'processing')`,
-  ).run(input.url || '(manual)', sourceType, input.title || null);
+    `INSERT INTO content_summaries (url, source_type, title, status, channel_id, external_id)
+     VALUES (?, ?, ?, 'processing', ?, ?)`,
+  ).run(input.url || '(manual)', sourceType, input.title || null, input.channelId ?? null, input.externalId ?? null);
   return Number(r.lastInsertRowid);
 }
 

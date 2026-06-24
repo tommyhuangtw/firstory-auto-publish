@@ -15,6 +15,8 @@ export interface IngestInput {
   text?: string;            // manual paste
   title?: string;           // manual title (optional)
   userPoints?: string;      // 入口 A: Tommy's own highlighted points
+  channelId?: number;       // set when ingested via a channel crawl
+  externalId?: string;      // YouTube video id (or Apple episode id) — dedup key
 }
 
 /** Resolved source: transcript + metadata, before insight extraction. */
