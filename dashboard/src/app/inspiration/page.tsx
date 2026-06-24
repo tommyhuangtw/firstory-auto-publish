@@ -18,6 +18,8 @@ export default function InspirationPage() {
   const [channel, setChannel] = useState('');
   const [category, setCategory] = useState('');
   const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
+  const [theme, setTheme] = useState('');
+  const [themes, setThemes] = useState<{ id: number; name: string; insight_count: number }[]>([]);
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingestPoints, setIngestPoints] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -34,9 +36,10 @@ export default function InspirationPage() {
     if (q.trim()) params.set('q', q.trim());
     if (channel) params.set('channel', channel);
     if (category) params.set('category', category);
+    if (theme) params.set('theme', theme);
     if (cur) params.set('cursor', cur);
     return params;
-  }, [statusFilter, sort, q, channel, category]);
+  }, [statusFilter, sort, q, channel, category, theme]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +66,10 @@ export default function InspirationPage() {
 
   useEffect(() => {
     fetch('/api/inspiration/channels').then((r) => r.json()).then((d) => setChannels(d.channels || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/inspiration/themes').then((r) => r.json()).then((d) => setThemes(d.themes || [])).catch(() => {});
   }, []);
 
   // Shuffle: switch to random (triggers a reload), or re-fetch a fresh random set if already random.
@@ -121,6 +128,11 @@ export default function InspirationPage() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 語意搜尋"
           className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100" />
+        <select value={theme} onChange={(e) => setTheme(e.target.value)}
+          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
+          <option value="">全部主題</option>
+          {themes.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.insight_count})</option>)}
+        </select>
         <select value={channel} onChange={(e) => setChannel(e.target.value)}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
           <option value="">全部頻道</option>
