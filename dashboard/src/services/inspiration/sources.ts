@@ -73,7 +73,7 @@ export async function resolveSource(input: IngestInput): Promise<ResolvedSource>
   const ep = await resolveAppleEpisode(input.url!);
   const audioPath = await downloadAudio(ep.audioUrl);
   try {
-    const t = await transcribeAudio(audioPath, { language: 'zh' });
+    const t = await transcribeAudio(audioPath, { language: 'zh', chunkLongAudio: true });
     // Whisper pricing ≈ $0.006 / minute.
     const costUsd = ((t.duration || 0) / 60) * 0.006;
     log.info({ durationSec: t.duration, costUsd: costUsd.toFixed(3) }, 'Podcast transcribed');

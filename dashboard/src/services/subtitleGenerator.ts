@@ -65,7 +65,7 @@ export interface SubtitleCue {
 
 export async function transcribeAudio(
   audioPath: string,
-  opts: { language?: string; model?: string; maxDurationSec?: number } = {}
+  opts: { language?: string; model?: string; maxDurationSec?: number; chunkLongAudio?: boolean } = {}
 ): Promise<TranscriptionResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
@@ -91,6 +91,26 @@ export async function transcribeAudio(
       { stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }
     );
     inputPath = trimmedPath;
+  }
+
+  // ── Long-audio path: split into time chunks and stitch (opt-in via chunkLongAudio).
+  //    Avoids undici's 5-min fetch timeout on big uploads AND the quality loss from
+  //    crushing a long file under 25MB. The main show pipeline does NOT set this flag,
+  //    so its behavior is unchanged. ──
+  if (opts.chunkLongAudio) {
+    const durationSec = await getAudioDurationSec(inputPath);
+    if (durationSec && durationSec > CHUNK_SEC) {
+      try {
+        const merged = await transcribeInChunks(inputPath, durationSec, model, language, apiKey);
+        log.info(
+          { segments: merged.segments.length, words: merged.words.length, duration: merged.duration },
+          'Whisper transcription complete (chunked)'
+        );
+        return merged;
+      } finally {
+        if (inputPath !== audioPath) { try { fs.unlinkSync(inputPath); } catch { /* ignore */ } }
+      }
+    }
   }
 
   // ── Auto-compress if file exceeds Whisper's 25MB limit ──
@@ -127,10 +147,31 @@ export async function transcribeAudio(
     }
   }
 
-  const fileBuffer = fs.readFileSync(inputPath);
+  const result = await whisperTranscribeFile(inputPath, model, language, apiKey);
+
+  // Clean up trimmed/compressed file
+  if (inputPath !== audioPath) {
+    try { fs.unlinkSync(inputPath); } catch { /* ignore */ }
+  }
+
+  log.info(
+    { segments: result.segments.length, words: result.words.length, duration: result.duration },
+    'Whisper transcription complete'
+  );
+
+  return result;
+}
+
+// ── Whisper helpers ──
+
+/** Upload one audio file to Whisper and map the verbose_json response. */
+async function whisperTranscribeFile(
+  filePath: string, model: string, language: string, apiKey: string,
+): Promise<TranscriptionResult> {
+  const fileBuffer = fs.readFileSync(filePath);
   const fileBlob = new Blob([fileBuffer], { type: 'audio/mpeg' });
   const form = new FormData();
-  form.append('file', fileBlob, path.basename(inputPath));
+  form.append('file', fileBlob, path.basename(filePath));
   form.append('model', model);
   form.append('response_format', 'verbose_json');
   form.append('language', language);
@@ -153,14 +194,8 @@ export async function transcribeAudio(
     { label: 'whisper-transcription', maxRetries: 3 },
   );
 
-  // Clean up trimmed file
-  if (inputPath !== audioPath) {
-    try { fs.unlinkSync(inputPath); } catch { /* ignore */ }
-  }
-
   const data = await resp.json();
-
-  const result: TranscriptionResult = {
+  return {
     text: data.text || '',
     language: data.language || language,
     duration: data.duration || 0,
@@ -176,13 +211,56 @@ export async function transcribeAudio(
       end: w.end as number,
     })),
   };
+}
 
-  log.info(
-    { segments: result.segments.length, words: result.words.length, duration: result.duration },
-    'Whisper transcription complete'
-  );
+/** Probe audio duration in seconds via ffprobe; null if unavailable. */
+async function getAudioDurationSec(filePath: string): Promise<number | null> {
+  try {
+    const { execSync } = await import('child_process');
+    const out = execSync(
+      `ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${filePath}"`,
+      { stdio: 'pipe' },
+    ).toString().trim();
+    const d = parseFloat(out);
+    return isFinite(d) && d > 0 ? d : null;
+  } catch { return null; }
+}
 
-  return result;
+// 10-min chunks: small upload, well under Whisper's 25MB cap and the 5-min fetch timeout.
+const CHUNK_SEC = 600;
+
+/**
+ * Transcribe a long audio file by splitting into CHUNK_SEC slices and stitching the
+ * results with offset timestamps. Each chunk is re-encoded to 16kHz mono (Whisper-optimal,
+ * tiny, good speech quality). Segment/word times are shifted by the chunk's start offset so
+ * the merged timeline matches the original audio.
+ */
+async function transcribeInChunks(
+  filePath: string, durationSec: number, model: string, language: string, apiKey: string,
+): Promise<TranscriptionResult> {
+  const { execSync } = await import('child_process');
+  const numChunks = Math.ceil(durationSec / CHUNK_SEC);
+  log.info({ durationSec: Math.round(durationSec), numChunks, chunkSec: CHUNK_SEC }, 'Long audio — transcribing in chunks');
+
+  const merged: TranscriptionResult = { text: '', language, duration: durationSec, segments: [], words: [] };
+  for (let i = 0; i < numChunks; i++) {
+    const start = i * CHUNK_SEC;
+    const chunkPath = filePath.replace(/\.mp3$/i, `_chunk${i}.mp3`);
+    execSync(
+      `ffmpeg -y -nostdin -ss ${start} -t ${CHUNK_SEC} -i "${filePath}" -ar 16000 -ac 1 -b:a 64k "${chunkPath}"`,
+      { stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 },
+    );
+    try {
+      const part = await whisperTranscribeFile(chunkPath, model, language, apiKey);
+      merged.text += (merged.text ? ' ' : '') + part.text;
+      for (const s of part.segments) merged.segments.push({ id: merged.segments.length, start: s.start + start, end: s.end + start, text: s.text });
+      for (const w of part.words) merged.words.push({ word: w.word, start: w.start + start, end: w.end + start });
+      log.info({ chunk: i + 1, of: numChunks, textLen: part.text.length }, 'Chunk transcribed');
+    } finally {
+      try { fs.unlinkSync(chunkPath); } catch { /* ignore */ }
+    }
+  }
+  return merged;
 }
 
 // ── 2. Script-to-Transcript Alignment ──
