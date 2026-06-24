@@ -103,15 +103,19 @@ Tommy 已建立 Substack page（`@ailanrenbao`，目前空白），動機是 **S
   - **Canva Connect Autofill API**：原生 Canva，但需 **Canva Enterprise**（個人帳號門檻）；本環境已連 Canva 整合，亦可走「Claude 從 brand template 生封面」路徑，待驗證。
 - 不採用每次純 AI 生圖（風格易飄，與「質感一致的品牌」相違）。
 
-### 2.6 文章內插圖（Unsplash 編輯照片）
+### 2.6 文章內插圖（湯懶懶插畫 + Unsplash 照片 — 混合）
 
-- 文章「封面」之外，內文也插入 1–2 張有質感的編輯照片，提升閱讀體驗。
-- 來源：**Unsplash**（編輯照片、免費、最貼近 Substack 質感，不像 AI 生圖會風格漂移）。需 `UNSPLASH_ACCESS_KEY`（放 `dashboard/.env.local`）。
-- 流程：LLM 在 essay 適合的 section 之間標 `[[IMG: 英文關鍵字]]` → `unsplashService.findImage()` 取一張 landscape 照片 → 換成 markdown 圖片 + `Photo by … on Unsplash` 出處（含 UTM，符合 Unsplash API 條款 + 觸發 download 端點）。上限 2 張。
-- 容錯：沒 key／查無結果 → 標記直接移除，文章照常產出。
-- 與 copy-paste 相容：preview 渲染 `<img>`，複製 rich HTML 時一起進剪貼簿，貼進 Substack 由 ProseMirror 匯入。
-- Service: `dashboard/src/services/unsplashService.ts`。
-- **換圖（換一張）**：每張圖的關鍵字 + 候選 index 存在 `substack_drafts.images_json`。review 頁每張圖有「換一張」（抓同關鍵字下一張候選）與可編輯關鍵字「用關鍵字重抓」。API：`POST /api/substack-drafts/[id]/swap-image {imageUrl, query?}`；`swapDraftImage()` 換候選並就地替換內文的圖 + 出處。
+每篇 1–2 張內文圖，由 LLM 當「美術指導」依內容決定形式：
+
+- **湯懶懶插畫（預設、主力）**：把該段的概念畫成懶懶的隱喻場景 → 品牌識別、可分享、建立追蹤。
+  - 一致性靠 `kie.ai` image-to-image + 固定的 5 張 **湯懶懶 reference images**（角色不漂移）。
+  - 生成後上 **Cloudinary** 取得穩定公開 URL（Substack 貼上才抓得到）。無需出處標註。
+  - Service: `dashboard/src/services/slothIllustrationService.ts`。需 `KIE_AI_API_KEY` + `CLOUDINARY_*`。
+- **Unsplash 照片（少數）**：只在「具體真實世界主題」（真實硬體/地點/實體產品/真實場景）才用，照片更有說服力時。需 `UNSPLASH_ACCESS_KEY`，含 `Photo by … on Unsplash` 出處（API 條款）。Service: `unsplashService.ts`。
+- **規則 / 護欄**：第一張一律懶懶；整篇最多 1 張照片；最多 2 張；純抽象文章全用懶懶。
+- **流程**：LLM 標 `[[SLOTH: 中文場景brief]]` 或 `[[PHOTO: 英文關鍵字]]` → `resolveImages()` 依型別分流、**並行**生成（懶懶生圖慢）→ 嵌入。容錯：失敗的標記直接移除，文章照常出。
+- **換圖**：`images_json` 存每張的 `type` + brief/query。review 頁懶懶「重生／改描述重生」、照片「換一張／關鍵字重抓」。API：`POST /api/substack-drafts/[id]/swap-image {imageUrl, query?}`（sloth=重生、photo=換候選）。
+- 與 copy-paste 相容：preview 渲染 `<img>`，複製 rich HTML 一起進剪貼簿，貼進 Substack 由 ProseMirror 匯入。
 
 ---
 
