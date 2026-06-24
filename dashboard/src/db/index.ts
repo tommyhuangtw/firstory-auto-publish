@@ -404,6 +404,12 @@ export function getDb(): Database.Database {
       created_at    TEXT DEFAULT (datetime('now'))
     )
   `);
+  // If existing themes table has legacy schema (theme_name column), add inspiration columns
+  safeAlter('ALTER TABLE themes ADD COLUMN name TEXT');
+  safeAlter('ALTER TABLE themes ADD COLUMN description TEXT');
+  safeAlter('ALTER TABLE themes ADD COLUMN embedding TEXT');
+  safeAlter('ALTER TABLE themes ADD COLUMN insight_count INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE themes ADD COLUMN created_at TEXT DEFAULT (datetime(\'now\'))');
   _db!.exec(`
     CREATE TABLE IF NOT EXISTS insight_themes (
       insight_id INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,

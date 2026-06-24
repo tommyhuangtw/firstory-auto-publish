@@ -42,11 +42,13 @@ ${list}
   const vecs = await embedTexts(themes.map((t) => `${t.name} — ${t.description || ''}`));
 
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM themes').run();
+    // Only delete inspiration-derived rows (where name IS NOT NULL); legacy memory rows use theme_name
+    db.prepare('DELETE FROM themes WHERE name IS NOT NULL').run();
     themes.forEach((t, i) => {
       const v = vecs[i];
-      db.prepare('INSERT INTO themes (name, description, embedding) VALUES (?, ?, ?)')
-        .run(t.name, t.description || '', v ? JSON.stringify(v) : null);
+      // theme_name mirrors name to satisfy legacy NOT NULL constraint on shared table
+      db.prepare('INSERT INTO themes (name, theme_name, description, embedding) VALUES (?, ?, ?, ?)')
+        .run(t.name, t.name, t.description || '', v ? JSON.stringify(v) : null);
     });
   });
   tx();
