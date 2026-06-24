@@ -166,6 +166,10 @@ export function getDb(): Database.Database {
   `);
   safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_status ON content_summaries(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_type ON content_summaries(source_type)');
+  safeAlter('ALTER TABLE content_summaries ADD COLUMN channel_id INTEGER');
+  safeAlter('ALTER TABLE content_summaries ADD COLUMN external_id TEXT');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_external ON content_summaries(external_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_channel ON content_summaries(channel_id)');
 
   // Multi-Agent System tables
   _db!.exec(`
@@ -362,6 +366,23 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_resonance ON insights(resonance)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_drafts_insight ON insight_drafts(insight_id)');
+
+  // Channel Registry (Task: Channel Registry + Incremental Crawl)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS channels (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform            TEXT    NOT NULL DEFAULT 'youtube',
+      handle              TEXT,
+      channel_id          TEXT    UNIQUE,
+      uploads_playlist_id TEXT,
+      title               TEXT,
+      thumbnail_url       TEXT,
+      active              INTEGER NOT NULL DEFAULT 1,
+      fetch_count         INTEGER NOT NULL DEFAULT 5,
+      last_crawled_at     TEXT,
+      created_at          TEXT    DEFAULT (datetime('now'))
+    )
+  `);
 
   // Seed tool families
   try {
