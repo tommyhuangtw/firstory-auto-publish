@@ -667,6 +667,7 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
       preferredModel: TRANSLATE_MODEL,
       maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21)) ? 16384 : 8192,
       temperature: 0.7,
+      timeoutMs: 240_000, // long scripts exceed the 90s default; sysdesign translation can take ~150-220s
     },
   });
 
