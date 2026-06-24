@@ -393,6 +393,28 @@ export function getDb(): Database.Database {
     )
   `);
 
+  // Theme Tags tables (Sub-project C — Auto Theme Tags)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS themes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      description   TEXT,
+      embedding     TEXT,
+      insight_count INTEGER DEFAULT 0,
+      created_at    TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS insight_themes (
+      insight_id INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+      theme_id   INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+      score      REAL,
+      PRIMARY KEY (insight_id, theme_id)
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_themes_theme ON insight_themes(theme_id)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_themes_insight ON insight_themes(insight_id)');
+
   // Seed tool families
   try {
     const { seedFamilies } = require('@/services/memory/toolFamilies');
