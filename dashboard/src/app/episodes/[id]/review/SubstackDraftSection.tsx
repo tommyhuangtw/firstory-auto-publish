@@ -4,7 +4,8 @@ import { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 interface DraftImage {
-  query: string;
+  type: 'sloth' | 'photo';
+  query: string; // sloth: scene brief; photo: keywords
   index: number;
   url: string;
   alt: string;
@@ -210,37 +211,47 @@ export default function SubstackDraftSection({ episodeId, initialDraft }: Props)
 
           {draft.images.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] text-zinc-500">文章圖片（不喜歡可換一張，或改關鍵字重抓）</div>
+              <div className="text-[11px] text-zinc-500">文章圖片（懶懶插畫可重生、照片可換一張；改描述後再按）</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {draft.images.map((img, idx) => (
-                  <div key={idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-2 space-y-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.url} alt={img.alt} className="w-full h-28 object-cover rounded-md" />
-                    <input
-                      value={queryEdits[idx] ?? img.query}
-                      onChange={(e) => setQueryEdits((q) => ({ ...q, [idx]: e.target.value }))}
-                      placeholder="圖片關鍵字（英文）"
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => swapImage(idx, false)}
-                        disabled={swappingIdx === idx}
-                        className="flex-1 px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
-                      >
-                        {swappingIdx === idx ? '換圖中…' : '換一張'}
-                      </button>
-                      <button
-                        onClick={() => swapImage(idx, true)}
-                        disabled={swappingIdx === idx}
-                        className="px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
-                      >
-                        用關鍵字重抓
-                      </button>
+                {draft.images.map((img, idx) => {
+                  const isSloth = img.type === 'sloth';
+                  return (
+                    <div key={idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-2 space-y-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt={img.alt} className="w-full h-28 object-cover rounded-md" />
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded ${isSloth ? 'bg-amber-500/15 text-amber-400' : 'bg-sky-500/15 text-sky-400'}`}>
+                          {isSloth ? '懶懶插畫' : '照片'}
+                        </span>
+                      </div>
+                      <textarea
+                        value={queryEdits[idx] ?? img.query}
+                        onChange={(e) => setQueryEdits((q) => ({ ...q, [idx]: e.target.value }))}
+                        rows={isSloth ? 3 : 1}
+                        placeholder={isSloth ? '場景描述（懶懶在做什麼、隱喻什麼）' : '圖片關鍵字（英文）'}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[11px] text-zinc-300 resize-y focus:outline-none focus:border-violet-500/50"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => swapImage(idx, false)}
+                          disabled={swappingIdx === idx}
+                          className="flex-1 px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
+                        >
+                          {swappingIdx === idx ? (isSloth ? '重生中…' : '換圖中…') : isSloth ? '重生一張' : '換一張'}
+                        </button>
+                        <button
+                          onClick={() => swapImage(idx, true)}
+                          disabled={swappingIdx === idx}
+                          className="px-2 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 text-[11px] transition-colors cursor-pointer"
+                        >
+                          {isSloth ? '改描述重生' : '用關鍵字重抓'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+              <p className="text-[10px] text-zinc-600">懶懶插畫重生需約 1–2 分鐘（AI 生圖）。</p>
             </div>
           )}
 

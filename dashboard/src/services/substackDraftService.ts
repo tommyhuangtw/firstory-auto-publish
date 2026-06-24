@@ -2,19 +2,25 @@ import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
 import { findImage, findImageCandidate } from '@/services/unsplashService';
+import { generateSlothIllustration } from '@/services/slothIllustrationService';
 import { createChildLogger } from '@/lib/logger';
 
 const log = createChildLogger('substackDraftService');
 
-/** One Unsplash image embedded in the body, tracked so it can be re-fetched ("換一張"). */
+/**
+ * One image embedded in the body, tracked so it can be regenerated/re-fetched.
+ * - type 'sloth': an AI 湯懶懶 illustration (brief = scene description; no attribution).
+ * - type 'photo': an Unsplash photo (query + candidate index + attribution).
+ */
 export interface DraftImage {
-  query: string; // search keywords used
-  index: number; // which Unsplash candidate is currently shown (for cycling)
+  type: 'sloth' | 'photo';
+  query: string; // sloth: scene brief; photo: search keywords
+  index: number; // photo: which Unsplash candidate is shown (cycling); sloth: 0
   url: string; // current image URL (also the anchor used to locate it in the body)
   alt: string;
-  photographer: string;
-  photographerUrl: string;
-  photoUrl: string;
+  photographer: string; // photo only
+  photographerUrl: string; // photo only
+  photoUrl: string; // photo only
 }
 
 export interface SubstackDraft {
@@ -50,7 +56,12 @@ interface DbDraftRow {
 function mapRow(r: DbDraftRow): SubstackDraft {
   let images: DraftImage[] = [];
   try {
-    if (r.images_json) images = JSON.parse(r.images_json) as DraftImage[];
+    if (r.images_json) {
+      images = (JSON.parse(r.images_json) as DraftImage[]).map((im) => ({
+        ...im,
+        type: im.type ?? 'photo', // back-compat: pre-hybrid drafts were all photos
+      }));
+    }
   } catch {
     /* malformed → no images */
   }
@@ -70,8 +81,15 @@ function mapRow(r: DbDraftRow): SubstackDraft {
   };
 }
 
-/** Build the markdown block (image + attribution caption) for one image. */
-function imageBlock(img: { alt: string; url: string; photographer: string; photographerUrl: string; photoUrl: string }): string {
+/**
+ * Build the markdown block for one image.
+ * - sloth: just the image (no attribution needed for our own illustration).
+ * - photo: image + "Photo by … on Unsplash" attribution (required by Unsplash API terms).
+ */
+function imageBlock(img: DraftImage): string {
+  if (img.type === 'sloth') {
+    return `![${img.alt}](${img.url})`;
+  }
   return (
     `![${img.alt}](${img.url})\n\n` +
     `*Photo by [${img.photographer}](${img.photographerUrl}) on [Unsplash](${img.photoUrl})*`
@@ -137,7 +155,9 @@ const SYSTEM_PROMPT = `你是 AI 懶人報的主筆，一位 AI Forward Deployed
 - 正文用 H2（##）分段：現況 → 連到更大的模式 → 給可用的框架；把工具/主題當「論點的證據」帶出，而不是逐條列。
 - 收尾留一句可被 restack 的金句。
 - 長度約 1500–2500 字。
-- **務必**在文章中插入 **1–2 張**圖片（這是必要的、不可省略）：在最適合的 section 之間，獨立一行放圖片標記，格式為 [[IMG: 英文圖片搜尋關鍵字]]（描述畫面氛圍/主題，例：[[IMG: software engineer working late night warm desk]]）。關鍵字一定要用英文，挑能呼應該段主題、有質感的畫面。
+- **務必**在文章中插入 **1–2 張**圖片（必要、不可省略），且你要當「美術指導」，依該段內容判斷用哪種圖，在最適合的 section 之間「獨立一行」放標記：
+  - **首選、預設**：湯懶懶隱喻插畫，格式 \`[[SLOTH: 中文場景brief]]\`。brief 要描述「湯懶懶在做什麼動作 + 這個畫面隱喻該段什麼概念」。**第一張圖一律用 SLOTH**。例：\`[[SLOTH: 湯懶懶躺在沙發喝珍奶，淡定看著一條平緩的折線突然像火箭往上衝，隱喻 AI 讓程式碼產出暴增]]\`
+  - **少數情況**：當該段在講「具體真實世界的東西」（真實硬體/晶片/資料中心、真實地點、實體產品、真實場景照片更有說服力）才用照片，格式 \`[[PHOTO: 英文搜尋關鍵字]]\`。**整篇最多 1 張 PHOTO**；純抽象的文章就全部用 SLOTH。
 
 ${AI_STYLE_BLACKLIST}
 
@@ -197,31 +217,62 @@ function parseDraft(raw: string): ParsedDraft {
   };
 }
 
+/** Resolve one marker to a DraftImage (sloth illustration or Unsplash photo). */
+async function resolveOne(type: 'sloth' | 'photo', text: string): Promise<DraftImage | null> {
+  if (type === 'sloth') {
+    try {
+      const url = await generateSlothIllustration(text);
+      return { type: 'sloth', query: text, index: 0, url, alt: '湯懶懶插畫', photographer: '', photographerUrl: '', photoUrl: '' };
+    } catch (err) {
+      log.warn({ error: (err as Error).message, brief: text }, 'Sloth illustration failed');
+      return null;
+    }
+  }
+  const img = await findImage(text);
+  return img ? { type: 'photo', query: text, index: 0, ...img } : null;
+}
+
 /**
- * Replace [[IMG: query]] markers in the body with real Unsplash images
- * (markdown image + attribution caption). Caps at 2 images. Markers that can't
- * be resolved (no key / no result) are simply removed so the essay still ships.
- * Returns the rewritten body plus the tracked images (for later "換一張" swaps).
+ * Replace [[SLOTH: brief]] / [[PHOTO: query]] markers in the body with real images.
+ * Hybrid: 湯懶懶 illustrations by default, Unsplash photos for concrete subjects.
+ * Caps: ≤2 images total, ≤1 photo. Unresolvable markers are dropped so the essay
+ * still ships. Resolution runs in parallel (sloth generation is slow). Returns the
+ * rewritten body plus tracked images (for later regenerate/swap).
  */
 async function resolveImages(body: string): Promise<{ body: string; images: DraftImage[] }> {
-  const markers = [...body.matchAll(/\[\[IMG:\s*([^\]]+)\]\]/g)];
+  const markers = [...body.matchAll(/\[\[(SLOTH|PHOTO):\s*([^\]]+)\]\]/g)];
   if (markers.length === 0) return { body, images: [] };
 
+  // Decide which markers to keep (order preserved): ≤2 total, ≤1 photo.
+  const kept: { raw: string; type: 'sloth' | 'photo'; text: string }[] = [];
+  let photos = 0;
+  for (const m of markers) {
+    const type = m[1] === 'SLOTH' ? 'sloth' : 'photo';
+    if (kept.length >= 2) break;
+    if (type === 'photo' && photos >= 1) continue;
+    if (type === 'photo') photos++;
+    kept.push({ raw: m[0], type, text: m[2].trim() });
+  }
+
+  // Resolve kept markers concurrently.
+  const resolved = await Promise.all(kept.map((k) => resolveOne(k.type, k.text)));
+
+  // Replace each marker (kept→image or '', dropped/overflow→'').
   let result = body;
   const images: DraftImage[] = [];
+  const keptRaw = new Set(kept.map((k) => k.raw));
+  kept.forEach((k, i) => {
+    const img = resolved[i];
+    const replacement = img ? `\n\n${imageBlock(img)}\n\n` : '';
+    if (img) images.push(img);
+    result = result.replace(k.raw, replacement);
+  });
+  // Strip any markers we didn't keep (over the cap).
   for (const m of markers) {
-    const query = m[1].trim();
-    let replacement = '';
-    if (images.length < 2) {
-      const img = await findImage(query);
-      if (img) {
-        replacement = `\n\n${imageBlock(img)}\n\n`;
-        images.push({ query, index: 0, ...img });
-      }
-    }
-    result = result.replace(m[0], replacement);
+    if (!keptRaw.has(m[0])) result = result.replace(m[0], '');
   }
-  log.info({ markers: markers.length, used: images.length }, 'Resolved Unsplash images');
+
+  log.info({ markers: markers.length, used: images.length }, 'Resolved article images');
   return { body: result, images };
 }
 
@@ -315,16 +366,17 @@ ${ep.script_zh}`;
 }
 
 /**
- * Swap one image in a draft for a different Unsplash candidate ("換一張").
- * - `currentUrl` identifies which image to replace (the URL currently in the body).
- * - If `newQuery` is given, re-search with it from candidate 0; otherwise advance
- *   to the next candidate of the existing query.
+ * Swap one image in a draft.
+ * - `currentUrl` identifies which image to replace.
+ * - `newText`: for a photo → new keywords; for a sloth → new scene brief. Optional.
+ * sloth: regenerate the illustration (with the new/old brief).
+ * photo: re-search with new keywords, or advance to the next candidate.
  * Updates both the body markdown and the tracked images metadata.
  */
 export async function swapDraftImage(
   draftId: number,
   currentUrl: string,
-  newQuery?: string,
+  newText?: string,
 ): Promise<SubstackDraft> {
   const draft = getDraftById(draftId);
   if (!draft) throw new Error(`Draft ${draftId} not found`);
@@ -333,12 +385,18 @@ export async function swapDraftImage(
   if (i === -1) throw new Error('找不到要替換的圖片');
   const old = draft.images[i];
 
-  const query = newQuery?.trim() || old.query;
-  const nextIndex = newQuery?.trim() ? 0 : old.index + 1;
-  const found = await findImageCandidate(query, nextIndex);
-  if (!found) throw new Error('Unsplash 找不到新圖片（可能是關鍵字無結果或未設定金鑰）');
-
-  const next: DraftImage = { query, index: nextIndex, ...found };
+  let next: DraftImage;
+  if (old.type === 'sloth') {
+    const brief = newText?.trim() || old.query;
+    const url = await generateSlothIllustration(brief);
+    next = { type: 'sloth', query: brief, index: 0, url, alt: '湯懶懶插畫', photographer: '', photographerUrl: '', photoUrl: '' };
+  } else {
+    const query = newText?.trim() || old.query;
+    const nextIndex = newText?.trim() ? 0 : old.index + 1;
+    const found = await findImageCandidate(query, nextIndex);
+    if (!found) throw new Error('Unsplash 找不到新圖片（可能是關鍵字無結果或未設定金鑰）');
+    next = { type: 'photo', query, index: nextIndex, ...found };
+  }
 
   // Replace in body: prefer the exact old block; fall back to swapping the URL
   // + caption links individually (covers the case where the user edited the body).
@@ -364,7 +422,7 @@ export async function swapDraftImage(
     .prepare(`UPDATE substack_drafts SET body_markdown = ?, images_json = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(body, JSON.stringify(images), draftId);
 
-  log.info({ draftId, query, nextIndex }, 'Swapped Substack draft image');
+  log.info({ draftId, type: old.type, query: next.query, index: next.index }, 'Swapped Substack draft image');
   const updated = getDraftById(draftId);
   if (!updated) throw new Error('Draft reload failed');
   return updated;
