@@ -1,0 +1,84 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createChildLogger } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
+import { transcribeAudio } from '@/services/subtitleGenerator';
+import { resolveAppleEpisode } from './applePodcast';
+import type { IngestInput, ResolvedSource, SourceType } from './types';
+
+const log = createChildLogger('inspiration-sources');
+
+/** Decide which kind of source an input is. */
+export function detectSourceType(input: IngestInput): SourceType {
+  if (input.text && !input.url) return 'manual';
+  const u = input.url || '';
+  if (/youtube\.com|youtu\.be/i.test(u)) return 'youtube';
+  if (/podcasts\.apple\.com/i.test(u)) return 'apple_podcast';
+  throw new Error('Unrecognized URL — expected a YouTube or Apple Podcasts link');
+}
+
+function youTubeId(url: string): string | null {
+  const m = url.match(/(?:v=|youtu\.be\/|\/shorts\/|\/embed\/)([\w-]{11})/);
+  return m?.[1] || null;
+}
+
+/** Fetch a YouTube transcript via APIFY (same actor used by the pipeline). */
+async function fetchYouTubeTranscript(url: string): Promise<string> {
+  const apifyToken = process.env.APIFY_API_TOKEN;
+  if (!apifyToken) throw new Error('APIFY_API_TOKEN not set');
+  const videoId = youTubeId(url);
+  if (!videoId) throw new Error('Could not parse YouTube video id');
+  const resp = await withRetry(async () => {
+    const r = await fetch(
+      `https://api.apify.com/v2/acts/karamelo~youtube-transcripts/run-sync-get-dataset-items?token=${apifyToken}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: [`https://www.youtube.com/watch?v=${videoId}`], outputFormat: 'singleStringText' }) },
+    );
+    if (!r.ok) throw new Error(`Apify ${r.status}`);
+    return r;
+  }, { label: `apify-transcript:${videoId}` });
+  const data = await resp.json();
+  return data?.[0]?.captions || data?.[0]?.text || data?.[0]?.transcript || '';
+}
+
+/** Download an audio URL to a temp file; returns the path (caller deletes). */
+async function downloadAudio(audioUrl: string): Promise<string> {
+  const r = await fetch(audioUrl);
+  if (!r.ok) throw new Error(`Audio download ${r.status}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  const tmp = path.join(os.tmpdir(), `inspiration-${Date.now()}.mp3`);
+  fs.writeFileSync(tmp, buf);
+  return tmp;
+}
+
+/**
+ * Resolve any IngestInput to a transcript + metadata.
+ * Loop-ready: a future channel pipeline calls this per episode/video.
+ */
+export async function resolveSource(input: IngestInput): Promise<ResolvedSource> {
+  const sourceType = detectSourceType(input);
+
+  if (sourceType === 'manual') {
+    return { sourceType, title: input.title || null, channelName: null, thumbnailUrl: null, transcript: input.text!.trim(), costUsd: 0 };
+  }
+
+  if (sourceType === 'youtube') {
+    const transcript = await fetchYouTubeTranscript(input.url!);
+    if (!transcript.trim()) throw new Error('YouTube transcript was empty');
+    return { sourceType, title: input.title || null, channelName: null, thumbnailUrl: null, transcript, costUsd: 0 };
+  }
+
+  // apple_podcast
+  const ep = await resolveAppleEpisode(input.url!);
+  const audioPath = await downloadAudio(ep.audioUrl);
+  try {
+    const t = await transcribeAudio(audioPath, { language: 'zh' });
+    // Whisper pricing ≈ $0.006 / minute.
+    const costUsd = ((t.duration || 0) / 60) * 0.006;
+    log.info({ durationSec: t.duration, costUsd: costUsd.toFixed(3) }, 'Podcast transcribed');
+    return { sourceType, title: input.title || ep.title, channelName: ep.channelName, thumbnailUrl: ep.thumbnailUrl, transcript: t.text, costUsd };
+  } finally {
+    try { fs.unlinkSync(audioPath); } catch { /* best effort */ }
+  }
+}
