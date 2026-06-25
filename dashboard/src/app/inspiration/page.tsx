@@ -25,6 +25,7 @@ export default function InspirationPage() {
   const [draftOpen, setDraftOpen] = useState<Record<number, boolean>>({});
   const [draftNote, setDraftNote] = useState<Record<number, string>>({});
   const [draftText, setDraftText] = useState<Record<number, string>>({});
+  const [draftStories, setDraftStories] = useState<Record<number, boolean>>({});
   const [genBusy, setGenBusy] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -96,7 +97,7 @@ export default function InspirationPage() {
     setGenBusy(id);
     const res = await fetch(`/api/inspiration/insights/${id}/draft`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userNote: draftNote[id] || '' }),
+      body: JSON.stringify({ userNote: draftNote[id] || '', useStories: !!draftStories[id] }),
     });
     const data = await res.json();
     setDraftText((p) => ({ ...p, [id]: data.draft_text || data.error || '產生失敗' }));
@@ -179,9 +180,13 @@ export default function InspirationPage() {
                 <textarea value={draftNote[it.id] || ''} onChange={(e) => setDraftNote((p) => ({ ...p, [it.id]: e.target.value }))}
                   placeholder="加入你的經驗/角度（貼文的靈魂）" rows={2}
                   className="w-full px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100 mb-2" />
+                <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none mb-2">
+                  <input type="checkbox" checked={!!draftStories[it.id]} onChange={(e) => setDraftStories((p) => ({ ...p, [it.id]: e.target.checked }))} className="accent-[var(--brand,#e0a96d)]" />
+                  帶入個人故事（只在相關時才用）
+                </label>
                 <button onClick={() => generate(it.id)} disabled={genBusy === it.id}
                   className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
-                  {genBusy === it.id ? '產生中…' : 'AI 改寫一篇 Threads 貼文 →'}
+                  {genBusy === it.id ? '產生中…' : '✍️ 用我的口吻寫一篇 →'}
                 </button>
                 {draftText[it.id] && (
                   <div className="mt-2">

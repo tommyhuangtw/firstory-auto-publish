@@ -4,7 +4,6 @@ import { useState, useCallback } from 'react';
 
 interface WriteResult {
   draft: string;
-  examples: { text: string; engagement_rate: number; sim: number }[];
   stories: { content: string; sim: number }[];
 }
 
@@ -13,6 +12,8 @@ export default function WritePage() {
   const [idea, setIdea] = useState('');
   const [useStories, setUseStories] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [rolling, setRolling] = useState(false);
+  const [insightSrc, setInsightSrc] = useState('');
   const [result, setResult] = useState<WriteResult | null>(null);
   const [draft, setDraft] = useState('');
   const [copied, setCopied] = useState(false);
@@ -51,6 +52,23 @@ export default function WritePage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  // 🎲 Roll a random insight from the inspiration library as today's mindset.
+  async function rollDice() {
+    setRolling(true);
+    setError('');
+    try {
+      const d = await fetch('/api/inspiration/insights?sort=random&limit=1').then(r => r.json());
+      const ins = (d.insights || [])[0];
+      if (!ins) { setError('靈感庫沒有可用的靈感'); return; }
+      setIdea(`${ins.hook}${ins.idea ? `\n${ins.idea}` : ''}`);
+      setInsightSrc(ins.hook);
+    } catch {
+      setError('骰靈感失敗,請重試');
+    } finally {
+      setRolling(false);
+    }
+  }
+
   const over = draft.length > 500;
 
   return (
@@ -70,14 +88,27 @@ export default function WritePage() {
 
         {/* Idea */}
         <div>
-          <label className="text-xs text-zinc-500">
-            {mode === 'rewrite' ? '你的想法（會用你的口吻改寫）' : '主題／角度（可留空，讓 AI 自由發揮）'}
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-zinc-500">
+              {mode === 'rewrite' ? '你的想法 / mindset（會用你的口吻延伸）' : '主題／角度（可留空，讓 AI 自由發揮）'}
+            </label>
+            <button
+              onClick={rollDice}
+              disabled={rolling}
+              className="text-xs px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
+              title="從靈感庫隨機骰一個今天有 feel 的點"
+            >
+              {rolling ? '🎲 …' : '🎲 骰一個靈感'}
+            </button>
+          </div>
+          {insightSrc && (
+            <div className="mt-1 text-[11px] text-brand/80">💡 來自靈感庫：{insightSrc.slice(0, 50)}</div>
+          )}
           <textarea
             value={idea}
-            onChange={e => setIdea(e.target.value)}
+            onChange={e => { setIdea(e.target.value); if (insightSrc) setInsightSrc(''); }}
             rows={4}
-            placeholder={mode === 'rewrite' ? '把你想講的東西寫下來…' : '例如：AI 接案怎麼開始接第一個客戶（留空也行）'}
+            placeholder={mode === 'rewrite' ? '把你想講的東西寫下來，或按右上角骰一個靈感…' : '例如：AI 接案怎麼開始接第一個客戶（留空也行）'}
             className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 focus:border-brand outline-none"
           />
         </div>
@@ -121,13 +152,10 @@ export default function WritePage() {
 
           {/* Transparency */}
           <button onClick={() => setShowRefs(v => !v)} className="mt-3 text-xs text-zinc-500 hover:text-zinc-300">
-            {showRefs ? '▾' : '▸'} 參考素材（範例 {result.examples.length}・故事 {result.stories.length}）
+            {showRefs ? '▾' : '▸'} 背景故事（{result.stories.length}）— 僅供 AI 理解你的視角,不會被複述
           </button>
           {showRefs && (
             <div className="mt-2 space-y-2 text-[11px]">
-              {result.examples.map((e, i) => (
-                <div key={i} className="text-zinc-500"><span className="text-brand">範例</span> sim {e.sim.toFixed(2)}・互動率 {(e.engagement_rate * 100).toFixed(1)}%：{e.text.slice(0, 60).replace(/\n/g, ' ')}…</div>
-              ))}
               {result.stories.map((s, i) => (
                 <div key={i} className="text-zinc-500"><span className="text-amber-400">故事</span> sim {s.sim.toFixed(2)}：{s.content.slice(0, 70)}</div>
               ))}

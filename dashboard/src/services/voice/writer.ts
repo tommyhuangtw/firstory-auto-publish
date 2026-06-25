@@ -1,30 +1,22 @@
 /**
- * Voice writer — generate a Threads post draft in Tommy's voice.
+ * Voice writer (v2) — generate a Threads post draft in Tommy's voice.
  *
- * bio + style profile are ALWAYS injected. Style examples are retrieved by
- * similarity then engagement. Stories are opt-in, similarity-gated, and the
- * prompt explicitly allows the model to use none — never shoehorn an unrelated
- * anecdote. See spec: docs/superpowers/specs/2026-06-25-voice-writer-design.md
+ * Voice comes ONLY from the distilled bio + style profile (the "how he says
+ * things", abstract — no catchphrases). We deliberately do NOT few-shot raw
+ * past posts: that made the model copy his openings/phrases/stories. Stories
+ * are opt-in background memory (to inform perspective), never retold by default.
+ * The output must extend a NEW mindset, focused on 1-2 points.
+ * See spec: docs/superpowers/specs/2026-06-26-voice-writer-v2-design.md
  */
 
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { getLLMService } from '@/services/llmService';
 import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
-import { retrieveExamples, retrieveStories } from './retrieval';
+import { retrieveStories } from './retrieval';
 
 const log = createChildLogger('voice:writer');
 const MODEL = 'google/gemini-3.1-flash-lite-preview';
-
-/** Fisher-Yates shuffle (in place copy). */
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
 
 // Rotating "angle" nudges so re-generating the same idea yields fresh drafts.
 const VARIETY_NUDGES = [
@@ -43,7 +35,6 @@ export interface WriteRequest {
 
 export interface WriteResult {
   draft: string;
-  examples: { text: string; engagement_rate: number; sim: number }[];
   stories: { content: string; sim: number }[];
 }
 
@@ -54,43 +45,33 @@ function activeAsset(type: 'bio' | 'style'): string {
   return row?.content || '';
 }
 
-const RULES = `Threads 貼文規則(嚴格遵守):
-- **務必控制在 500 字以內**(Threads 硬上限),盡量精簡有力
+const RULES = `寫作規則(嚴格遵守):
+- **一篇只聚焦 1-2 個重點 / mindset**,講深、不貪多,不要塞一堆主題
+- 用他的「語氣與思考方式」表達,但要**延伸出一個『新的』觀點/角度**,不是重組他寫過的東西
+- **絕不重用**他過去的開場白、口頭禪、招牌金句、或具體故事;讀者看過他的舊文,任何似曾相識的套路都會讓人膩
+- **務必控制在 500 字以內**(Threads 上限),精簡有力
 - 不要 hashtag、不要連結、不要 markdown 語法(**粗體** 等)
-- 口語、對話感,符合他的語氣
 - 直接輸出貼文純文字,不要任何前後說明`;
 
 export async function writeThreadsPost(req: WriteRequest): Promise<WriteResult> {
   const bio = activeAsset('bio');
   const style = activeAsset('style');
 
-  // Retrieval query: the idea (rewrite) or topic hint (autonomous); fall back to
-  // his core focus when autonomous with no hint.
   const query = req.idea.trim() || 'AI 接案 企業 AI 導入 自動化';
-
-  // Pull a wider relevant×high-engagement pool, then randomly pick 4 so that
-  // re-generating the same idea varies the few-shot (and thus the draft).
-  const pool = await retrieveExamples(query, 8);
-  const examples = shuffle(pool).slice(0, 4);
   const stories = req.useStories ? await retrieveStories(query) : [];
 
-  const exampleBlock = examples.length
-    ? `以下是他寫過的高互動貼文,**模仿語氣、節奏、結構,但不要抄內容**:\n\n${examples.map((e, i) => `範例${i + 1}:\n${e.text}`).join('\n\n---\n\n')}`
+  // Stories are BACKGROUND memory (to inform perspective), not material to retell.
+  const backgroundBlock = stories.length
+    ? `\n\n# 關於他的背景記憶(僅供你理解他的視角與經歷,**不要在文章裡複述這些故事**,除非主題自然需要而他本人會想提):\n${stories.map((s) => `- ${s.content}`).join('\n')}`
     : '';
 
-  const storyBlock = stories.length
-    ? `\n\n可選的個人故事素材(只在與主題**自然貼合**時才融入;硬湊一個不相關的故事比不用更糟 —— 寧可完全不用):\n${stories.map((s) => `- ${s.content}`).join('\n')}`
-    : '';
-
-  const systemPrompt = `你要模仿「湯懶懶 / Tommy」的口吻寫一篇 Threads 貼文。
+  const systemPrompt = `你要用「湯懶懶 / Tommy」的口吻寫一篇 Threads 貼文。你的任務是用他的**語氣和思考方式**,延伸出一個**新的觀點**,不是重組或複述他寫過的內容。
 
 # 他的背景
 ${bio || '(無)'}
 
-# 他的寫作風格
-${style || '(無)'}
-
-${exampleBlock}${storyBlock}
+# 他的寫作風格(這是「怎麼說」的機制,照這個語氣寫;裡面不該、也不要出現任何招牌金句)
+${style || '(無)'}${backgroundBlock}
 
 ${RULES}
 
@@ -98,8 +79,8 @@ ${VERSION_GUARD_ZH}`;
 
   const nudge = VARIETY_NUDGES[Math.floor(Math.random() * VARIETY_NUDGES.length)];
   const base = req.mode === 'rewrite'
-    ? `請把以下「我的想法」用我的口吻改寫成一篇 Threads 貼文。忠於想法的核心,不要硬加不相關的個人故事:\n\n${req.idea}`
-    : `請用我的口吻、在我的主軸(AI 接案 / 企業 AI 導入為主)寫一篇 Threads 貼文。${req.idea.trim() ? `主題/角度:${req.idea}` : '主題自由發揮,挑一個我會感興趣、對讀者有價值的點。'}`;
+    ? `這是我想分享的重點 / mindset:\n\n${req.idea}\n\n請用我的口吻,聚焦這 1-2 個重點,延伸寫成一篇 Threads 貼文。`
+    : `請用我的口吻寫一篇 Threads 貼文。${req.idea.trim() ? `這是今天想寫的 mindset / 角度:\n${req.idea}` : '從我的主軸(AI 接案 / 企業 AI 導入)挑一個我會有感、對讀者有價值的點切入。'}`;
   const userPrompt = `${base}\n\n（${nudge}）`;
 
   const llm = getLLMService();
@@ -116,10 +97,9 @@ ${VERSION_GUARD_ZH}`;
     throw new Error(`Draft generation failed: ${result.error}`);
   }
 
-  log.info({ mode: req.mode, examples: examples.length, stories: stories.length }, 'Draft generated');
+  log.info({ mode: req.mode, stories: stories.length }, 'Draft generated');
   return {
     draft: result.content.trim(),
-    examples: examples.map((e) => ({ text: e.text, engagement_rate: e.engagement_rate, sim: e.sim })),
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
   };
 }
