@@ -440,6 +440,7 @@ export function getDb(): Database.Database {
       shares           INTEGER DEFAULT 0,
       engagement_rate  REAL    DEFAULT 0,
       is_repost        INTEGER DEFAULT 0,
+      embedding        TEXT,
       fetched_at       TEXT    DEFAULT (datetime('now')),
       insights_at      TEXT
     )
@@ -453,10 +454,14 @@ export function getDb(): Database.Database {
       source_post_id TEXT,                                -- origin post for a story (nullable)
       pinned         INTEGER NOT NULL DEFAULT 0,
       status         TEXT NOT NULL DEFAULT 'draft',       -- 'draft' | 'kept' | 'hidden'
+      embedding      TEXT,
       created_at     TEXT DEFAULT (datetime('now')),
       updated_at     TEXT DEFAULT (datetime('now'))
     )
   `);
+  // Embedding columns for the voice writer (added post-hoc for existing DBs).
+  safeAlter('ALTER TABLE threads_posts ADD COLUMN embedding TEXT');
+  safeAlter('ALTER TABLE voice_assets ADD COLUMN embedding TEXT');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_engagement ON threads_posts(engagement_rate)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_posted ON threads_posts(posted_at)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_type ON voice_assets(type)');

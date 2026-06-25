@@ -223,5 +223,10 @@ export async function generateAllAssets(): Promise<{ style: boolean; bio: boolea
   const style = await generateStyleProfile().then(() => true).catch((e) => { log.error({ e: e.message }, 'style failed'); return false; });
   const bio = await suggestBio().then(() => true).catch((e) => { log.error({ e: e.message }, 'bio failed'); return false; });
   const stories = await extractStories().catch((e) => { log.error({ e: e.message }, 'stories failed'); return 0; });
+  // Embed the freshly extracted stories so the writer can retrieve them.
+  try {
+    const { backfillEmbeddings } = await import('./embeddings');
+    await backfillEmbeddings();
+  } catch (e) { log.warn({ e: (e as Error).message }, 'embedding backfill after asset gen failed'); }
   return { style, bio, stories };
 }

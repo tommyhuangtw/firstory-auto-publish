@@ -169,6 +169,9 @@ async function runVoiceSync(): Promise<void> {
     log.info('Running Threads voice corpus sync...');
     const { syncThreadsPosts } = await import('@/services/voice/sync');
     const result = await syncThreadsPosts();
+    // Embed any new posts so the writer's retrieval stays current.
+    const { backfillEmbeddings } = await import('@/services/voice/embeddings');
+    await backfillEmbeddings();
     log.info(result, 'Threads voice sync complete');
   } catch (err) {
     log.error({ err: (err as Error).message }, 'Threads voice sync failed');
