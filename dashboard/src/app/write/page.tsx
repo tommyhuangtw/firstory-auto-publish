@@ -13,6 +13,7 @@ export default function WritePage() {
   const [useStories, setUseStories] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rolling, setRolling] = useState(false);
+  const [diceCategory, setDiceCategory] = useState('');
   const [insightSrc, setInsightSrc] = useState('');
   const [result, setResult] = useState<WriteResult | null>(null);
   const [draft, setDraft] = useState('');
@@ -57,7 +58,8 @@ export default function WritePage() {
     setRolling(true);
     setError('');
     try {
-      const d = await fetch('/api/inspiration/insights?sort=random&limit=1').then(r => r.json());
+      const catParam = diceCategory ? `&category=${encodeURIComponent(diceCategory)}` : '';
+      const d = await fetch(`/api/inspiration/insights?sort=random&limit=1${catParam}`).then(r => r.json());
       const ins = (d.insights || [])[0];
       if (!ins) { setError('靈感庫沒有可用的靈感'); return; }
       setIdea(`${ins.hook}${ins.idea ? `\n${ins.idea}` : ''}`);
@@ -92,14 +94,28 @@ export default function WritePage() {
             <label className="text-xs text-zinc-500">
               {mode === 'rewrite' ? '你的想法 / mindset（會用你的口吻延伸）' : '主題／角度（可留空，讓 AI 自由發揮）'}
             </label>
-            <button
-              onClick={rollDice}
-              disabled={rolling}
-              className="text-xs px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
-              title="從靈感庫隨機骰一個今天有 feel 的點"
-            >
-              {rolling ? '🎲 …' : '🎲 骰一個靈感'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={diceCategory}
+                onChange={e => setDiceCategory(e.target.value)}
+                className="text-xs px-1.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 outline-none focus:border-brand cursor-pointer"
+                title="限定骰靈感的分類"
+              >
+                <option value="">全部分類</option>
+                <option value="mindset">心法（觀點・原則）</option>
+                <option value="contrarian">反直覺（顛覆常識的看法）</option>
+                <option value="tactic">戰術（具體做法・步驟）</option>
+                <option value="story">故事（案例・經歷）</option>
+              </select>
+              <button
+                onClick={rollDice}
+                disabled={rolling}
+                className="text-xs px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
+                title="從靈感庫隨機骰一個今天有 feel 的點"
+              >
+                {rolling ? '🎲 …' : '🎲 骰一個靈感'}
+              </button>
+            </div>
           </div>
           {insightSrc && (
             <div className="mt-1 text-[11px] text-brand/80">💡 來自靈感庫：{insightSrc.slice(0, 50)}</div>
