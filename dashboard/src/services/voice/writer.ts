@@ -14,7 +14,26 @@ import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 import { retrieveExamples, retrieveStories } from './retrieval';
 
 const log = createChildLogger('voice:writer');
-const MODEL = 'google/gemini-3.1-pro-preview';
+const MODEL = 'google/gemini-3.1-flash-lite-preview';
+
+/** Fisher-Yates shuffle (in place copy). */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Rotating "angle" nudges so re-generating the same idea yields fresh drafts.
+const VARIETY_NUDGES = [
+  '這次用一個跟你以往不同的開場方式,給點新鮮感。',
+  '這次試著用一個提問或反直覺的點切入。',
+  '這次用比較故事感、生活化的方式開場。',
+  '這次開門見山、直接拋出核心觀點。',
+  '這次的節奏可以更輕快、更口語一點。',
+];
 
 export interface WriteRequest {
   mode: 'rewrite' | 'autonomous';
@@ -49,7 +68,10 @@ export async function writeThreadsPost(req: WriteRequest): Promise<WriteResult> 
   // his core focus when autonomous with no hint.
   const query = req.idea.trim() || 'AI 接案 企業 AI 導入 自動化';
 
-  const examples = await retrieveExamples(query, 4);
+  // Pull a wider relevant×high-engagement pool, then randomly pick 4 so that
+  // re-generating the same idea varies the few-shot (and thus the draft).
+  const pool = await retrieveExamples(query, 8);
+  const examples = shuffle(pool).slice(0, 4);
   const stories = req.useStories ? await retrieveStories(query) : [];
 
   const exampleBlock = examples.length
@@ -74,9 +96,11 @@ ${RULES}
 
 ${VERSION_GUARD_ZH}`;
 
-  const userPrompt = req.mode === 'rewrite'
+  const nudge = VARIETY_NUDGES[Math.floor(Math.random() * VARIETY_NUDGES.length)];
+  const base = req.mode === 'rewrite'
     ? `請把以下「我的想法」用我的口吻改寫成一篇 Threads 貼文。忠於想法的核心,不要硬加不相關的個人故事:\n\n${req.idea}`
     : `請用我的口吻、在我的主軸(AI 接案 / 企業 AI 導入為主)寫一篇 Threads 貼文。${req.idea.trim() ? `主題/角度:${req.idea}` : '主題自由發揮,挑一個我會感興趣、對讀者有價值的點。'}`;
+  const userPrompt = `${base}\n\n（${nudge}）`;
 
   const llm = getLLMService();
   const result = await llm.call({
@@ -85,7 +109,7 @@ ${VERSION_GUARD_ZH}`;
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    options: { preferredModel: MODEL, maxTokens: 2048, temperature: 0.85 },
+    options: { preferredModel: MODEL, maxTokens: 2048, temperature: 0.95 },
   });
 
   if (!result.success || !result.content) {
