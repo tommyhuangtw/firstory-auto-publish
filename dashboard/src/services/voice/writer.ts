@@ -17,6 +17,7 @@ import { retrieveStories } from './retrieval';
 
 const log = createChildLogger('voice:writer');
 const MODEL = 'google/gemini-3.1-flash-lite-preview';
+const MAX_LEN = 500; // Threads hard limit (characters)
 
 // Rotating "angle" nudges so re-generating the same idea yields fresh drafts.
 const VARIETY_NUDGES = [
@@ -61,7 +62,7 @@ const RULES = `寫作規則(嚴格遵守):
 - **一篇只聚焦 1-2 個重點 / mindset**,講深、不貪多,不要塞一堆主題
 - 用他的「語氣與思考方式」表達,但要**延伸出一個『新的』觀點/角度**,不是重組他寫過的東西
 - **絕不重用**他過去的開場白、口頭禪、招牌金句、或具體故事;讀者看過他的舊文,任何似曾相識的套路都會讓人膩
-- **務必控制在 500 字以內**(Threads 上限),精簡有力
+- **目標 350-450 字,絕對不可超過 500 字**(Threads 硬上限);寧可精簡也不要超字
 - 不要 hashtag、不要連結、不要 markdown 語法(**粗體** 等)
 - 直接輸出貼文純文字,不要任何前後說明`;
 
@@ -109,9 +110,34 @@ ${VERSION_GUARD_ZH}`;
     throw new Error(`Draft generation failed: ${result.error}`);
   }
 
-  log.info({ mode: req.mode, stories: stories.length }, 'Draft generated');
+  let draft = result.content.trim();
+  // Hard guarantee on the Threads length limit: the model often overshoots the
+  // prompt's target, so compress in one pass if it's still over.
+  if (draft.length > MAX_LEN) {
+    draft = await compressToLimit(draft, llm);
+  }
+
+  log.info({ mode: req.mode, stories: stories.length, len: draft.length }, 'Draft generated');
   return {
-    draft: result.content.trim(),
+    draft,
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
   };
+}
+
+/** Compress an over-length draft to ≤480 chars, preserving hook/point/ending. */
+async function compressToLimit(draft: string, llm: ReturnType<typeof getLLMService>): Promise<string> {
+  const r = await llm.call({
+    stage: 'voice_write_compress',
+    messages: [
+      {
+        role: 'system',
+        content: '你是文字編輯。把這篇 Threads 貼文精簡到 **480 字以內**(務必),保留開頭的 hook、核心觀點、和結尾的 CTA/提問,維持一句一行的口語節奏。不要新增內容、不要改變立場或語氣。直接輸出精簡後的純文字,不要任何說明。',
+      },
+      { role: 'user', content: draft },
+    ],
+    options: { preferredModel: MODEL, maxTokens: 1024, temperature: 0.3 },
+  });
+  const out = (r.success && r.content) ? r.content.trim() : draft;
+  // Last-resort hard cut if the compressor still overshot.
+  return out.length > MAX_LEN ? out.slice(0, MAX_LEN) : out;
 }
