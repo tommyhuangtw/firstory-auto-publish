@@ -131,6 +131,9 @@ export function initializeSchedulerJobs(): void {
   registerTrendScanJobs();
   scheduler.register('社群熱點補跑檢查', '*/30 * * * *', trendCatchUp);
 
+  // Threads voice corpus — daily incremental sync (new posts + refresh recent insights)
+  scheduler.register('Threads 語料同步', '0 11 * * *', runVoiceSync);
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
@@ -155,6 +158,22 @@ export function reloadScheduleFromDb(): void {
 }
 
 // ── Analytics sync handlers ──────────────────────────────────────────
+
+async function runVoiceSync(): Promise<void> {
+  try {
+    const { isThreadsConnected } = await import('@/services/threads');
+    if (!isThreadsConnected()) {
+      log.info('Threads not connected, skipping voice sync');
+      return;
+    }
+    log.info('Running Threads voice corpus sync...');
+    const { syncThreadsPosts } = await import('@/services/voice/sync');
+    const result = await syncThreadsPosts();
+    log.info(result, 'Threads voice sync complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Threads voice sync failed');
+  }
+}
 
 async function runSoundonSync(): Promise<void> {
   log.info('Running SoundOn analytics sync...');
