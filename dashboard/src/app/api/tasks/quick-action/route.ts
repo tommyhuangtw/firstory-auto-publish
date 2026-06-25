@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/db';
 import { createHmac } from 'crypto';
 import { execSync } from 'child_process';
+import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 
 const PROJECT_ROOT = path.resolve(process.cwd(), '..');
@@ -9,7 +10,6 @@ const PROJECT_ROOT = path.resolve(process.cwd(), '..');
 function getSecret(): string {
   // Use the same bot token as agents/base.ts for HMAC
   if (process.env.TELEGRAM_BOT_TOKEN) return process.env.TELEGRAM_BOT_TOKEN;
-  const { readFileSync, existsSync } = require('fs');
   const envPath = path.join(process.env.HOME || '~', '.hermes', '.env');
   if (existsSync(envPath)) {
     const lines = readFileSync(envPath, 'utf-8').split('\n');

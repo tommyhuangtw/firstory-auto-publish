@@ -12,6 +12,12 @@ import { getDb } from '@/db';
 import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import type { ResolvedTool } from './toolExtractor';
+import {
+  buildDigestContext,
+  buildThemeContext,
+  buildMilestoneContext,
+  SEGMENT_MEMORY_CONFIG,
+} from './digestService';
 
 const log = createChildLogger('memory:service');
 
@@ -243,13 +249,12 @@ export function buildMemoryContext(
     recentDigests: '', activeThemes: '', historicalMilestones: '',
   };
 
-  // Import digest context builders (lazy to avoid circular deps at module load)
+  // Digest/theme/milestone context (statically imported — no circular dep exists)
   let recentDigests = '';
   let activeThemes = '';
   let historicalMilestones = '';
   if (segmentType) {
     try {
-      const { buildDigestContext, buildThemeContext, buildMilestoneContext } = require('./digestService');
       recentDigests = buildDigestContext(segmentType);
       activeThemes = buildThemeContext(segmentType);
       historicalMilestones = buildMilestoneContext();
@@ -259,7 +264,6 @@ export function buildMemoryContext(
   }
 
   // Determine tool memory window (months) based on segment type
-  const { SEGMENT_MEMORY_CONFIG } = require('./digestService');
   const toolWindowMonths = segmentType && SEGMENT_MEMORY_CONFIG[segmentType]
     ? SEGMENT_MEMORY_CONFIG[segmentType].ownWindowMonths
     : 2; // default 2 months

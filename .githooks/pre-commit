@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Block commits that introduce runtime require() imports in dashboard TS source.
+#
+# Why: under Next.js/Turbopack, `require('./localEsmModule')` can return a module
+# whose named exports are all `undefined` (load-order dependent). This silently
+# broke the robot pipeline once (see memory: turbopack-require-esm-gotcha).
+# Always use static `import` instead. The @typescript-eslint/no-require-imports
+# rule catches it; this hook makes it blocking for staged files only.
+#
+# Scope: ONLY the no-require-imports rule — pre-existing lint debt does not block.
+# Install (one-time, per clone): git config core.hooksPath .githooks
+#
+# Note: written for bash 3.2 (macOS default) — no mapfile/readarray.
+
+set -eu
+
+# Staged .ts/.tsx under dashboard/src (Added/Copied/Modified only),
+# rewritten relative to the dashboard dir for eslint.
+rel=""
+while IFS= read -r f; do
+  [ -n "$f" ] && rel="$rel ${f#dashboard/}"
+done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^dashboard/src/.*\.(ts|tsx)$' || true)
+
+# Trim and bail if nothing staged
+rel="${rel# }"
+[ -z "$rel" ] && exit 0
+
+cd dashboard
+
+# Run eslint; surface only no-require-imports violations.
+out=$(npx --no-install eslint $rel 2>/dev/null || true)
+hits=$(printf '%s\n' "$out" | grep -B1 'no-require-imports' || true)
+
+if [ -n "$hits" ]; then
+  echo "✖ commit blocked: runtime require() import found in staged TS files."
+  echo "  Use a static \`import\` instead (Turbopack ESM-require interop is unreliable)."
+  echo
+  printf '%s\n' "$hits"
+  exit 1
+fi
+
+exit 0

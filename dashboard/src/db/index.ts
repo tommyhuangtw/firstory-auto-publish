@@ -2,6 +2,11 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import * as sqliteVec from 'sqlite-vec';
+// Static imports (not runtime require) — getDb is a hoisted function and these
+// seed helpers only call it at runtime, so the db <-> seed cycle resolves safely.
+// Avoids the Turbopack "require() of ESM returns undefined exports" load-order trap.
+import { seedFamilies } from '@/services/memory/toolFamilies';
+import { seedThumbnailStyles, reconcileStyleUsage } from '@/services/thumbnailStyles';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'podcast.db');
 const SCHEMA_PATH = path.join(process.cwd(), 'src', 'db', 'schema.sql');
@@ -419,16 +424,14 @@ export function getDb(): Database.Database {
 
   // Seed tool families
   try {
-    const { seedFamilies } = require('@/services/memory/toolFamilies');
     seedFamilies();
-  } catch { /* toolFamilies not available during build */ }
+  } catch { /* seeding is best-effort; ignore failures during build/init */ }
 
   // Seed thumbnail styles + backfill usage from YouTube-published history
   try {
-    const { seedThumbnailStyles, reconcileStyleUsage } = require('@/services/thumbnailStyles');
     seedThumbnailStyles();
     reconcileStyleUsage(); // idempotent: backfills counts + auto-retires styles used >=2x
-  } catch { /* thumbnailStyles not available during build */ }
+  } catch { /* seeding is best-effort; ignore failures during build/init */ }
 
   // Seed default settings
   const seedSetting = (key: string, value: string) => {
