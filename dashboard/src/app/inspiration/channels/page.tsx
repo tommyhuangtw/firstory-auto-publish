@@ -66,12 +66,18 @@ export default function ChannelsPage() {
         <h1 className="text-xl font-bold text-brand">頻道來源</h1>
         <div className="flex gap-2">
           <a href="/inspiration" className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">← 靈感庫</a>
-          <button onClick={crawlAll} disabled={busy === 'all'}
+          <button onClick={crawlAll} disabled={busy === 'all'} title="抓取所有「啟用中」頻道的最新影片"
             className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
             {busy === 'all' ? '抓取中…' : '全部抓取'}
           </button>
         </div>
       </div>
+
+      <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <span className="text-zinc-300">立即抓取</span>：抓該頻道<b>最新</b> N 部影片，已抓過的自動跳過、只補新片（背景執行）。
+        <span className="text-zinc-300">全部抓取</span>：一次抓所有「啟用中」頻道。
+        <span className="text-zinc-300">啟用中／已停用</span>：是否納入「全部抓取」（停用不影響單獨的立即抓取，已抓資料都保留）。
+      </p>
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-6 flex gap-2">
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="貼上 YouTube 頻道網址（如 https://www.youtube.com/@LennysPodcast）"
@@ -91,9 +97,9 @@ export default function ChannelsPage() {
               <p className="font-semibold text-zinc-100 truncate">{c.title || c.handle}</p>
               <p className="text-xs text-zinc-500">{c.handle} · {c.ingested_count} 部影片 · <span className="text-brand">{c.insight_count} 條 insight</span> · 每次抓 {c.fetch_count} · {c.last_crawled_at ? `上次 ${c.last_crawled_at.slice(0, 16)}` : '尚未抓取'}</p>
             </div>
-            <button onClick={() => crawl(c.id)} disabled={busy === `c${c.id}`}
+            <button onClick={() => crawl(c.id)} disabled={busy === `c${c.id}`} title={`抓這個頻道最新 ${c.fetch_count} 部，去重後只補新片（背景執行）`}
               className="px-2 py-1 text-xs rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">{busy === `c${c.id}` ? '…' : '立即抓取'}</button>
-            <button onClick={() => toggle(c)}
+            <button onClick={() => toggle(c)} title={c.active ? '啟用中：會被「全部抓取」掃到。點一下改為停用' : '已停用：「全部抓取」會跳過它。點一下改為啟用'}
               className={`px-2 py-1 text-xs rounded-lg ${c.active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'} hover:opacity-80`}>{c.active ? '啟用中' : '已停用'}</button>
             <button onClick={() => remove(c.id)} className="px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700">移除</button>
           </div>
