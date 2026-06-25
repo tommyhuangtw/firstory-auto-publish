@@ -31,7 +31,19 @@ export interface WriteRequest {
   mode: 'rewrite' | 'autonomous';
   idea: string;
   useStories: boolean;
+  viral?: boolean;
 }
+
+// High-leverage rules distilled from 12k high-engagement Threads posts.
+// See: dashboard/data/research/threads-viral-playbook.md
+const VIRAL_PLAYBOOK = `🔥 爆文模式 — 套用高流量 Threads 寫法,但**不可犧牲真實感與他的口吻**:
+- 開頭第一行 ≤25 字就要有鉤子。優先:反差宣告(「我把 ___ 刪掉了」)、數字/結果前置(「我把 ___ 從 X 變成 Y」)、或脆弱自白(先講低谷)。禁止「今天想跟大家分享」這種暖場。
+- 第一人稱 + 至少一個具體數字(天數/金額/百分比/次數);把「很有效」換成可量化結果。
+- 一句一行、多用空行,手機上有呼吸感;正文精簡。
+- 鎖定「一個」主要情緒(好奇/共鳴/不甘/爽感/反差),不要一篇想做到全部。
+- 方法/工具當配角,主角是「我達成了什麼」;能演成一個小場景更好。
+- 結尾二選一:開放提問(衝回覆)或互惠型 CTA(「想要細節留言我整理給你 / 收藏起來」);不要乞求按讚追蹤。
+- 真實感優先:具體、敢點真名、可保留一句小坦白;絕不淪為樣板推銷文(讀者一眼看穿會反感)。`;
 
 export interface WriteResult {
   draft: string;
@@ -74,7 +86,7 @@ ${bio || '(無)'}
 ${style || '(無)'}${backgroundBlock}
 
 ${RULES}
-
+${req.viral ? `\n${VIRAL_PLAYBOOK}\n` : ''}
 ${VERSION_GUARD_ZH}`;
 
   const nudge = VARIETY_NUDGES[Math.floor(Math.random() * VARIETY_NUDGES.length)];

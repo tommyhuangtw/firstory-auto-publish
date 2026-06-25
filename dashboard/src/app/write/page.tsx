@@ -11,6 +11,7 @@ export default function WritePage() {
   const [mode, setMode] = useState<'rewrite' | 'autonomous'>('rewrite');
   const [idea, setIdea] = useState('');
   const [useStories, setUseStories] = useState(false);
+  const [viral, setViral] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [diceCategory, setDiceCategory] = useState('');
@@ -34,7 +35,7 @@ export default function WritePage() {
       const res = await fetch('/api/voice/write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, idea, useStories }),
+        body: JSON.stringify({ mode, idea, useStories, viral }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || '生成失敗'); return; }
@@ -129,11 +130,17 @@ export default function WritePage() {
           />
         </div>
 
-        {/* Story toggle */}
-        <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
-          <input type="checkbox" checked={useStories} onChange={e => setUseStories(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
-          帶入個人故事（只在主題相關時才會用，不會硬塞）
-        </label>
+        {/* Toggles */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+            <input type="checkbox" checked={useStories} onChange={e => setUseStories(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+            帶入個人故事（只在主題相關時才會用，不會硬塞）
+          </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={viral} onChange={e => setViral(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+            <span className={viral ? 'text-brand' : 'text-zinc-400'}>🔥 爆文模式（套用高流量寫法：狠 hook、一句一行、具體數字、互惠 CTA）</span>
+          </label>
+        </div>
 
         <div className="flex items-center gap-3">
           <button

@@ -13,6 +13,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = await request.json().catch(() => ({}));
   const userNote: string | undefined = typeof body.userNote === 'string' && body.userNote.trim() ? body.userNote : undefined;
   const useStories = !!body.useStories;
+  const viral = !!body.viral;
   const db = getDb();
   const insight = db.prepare('SELECT id, hook, idea, why_share FROM insights WHERE id = ?').get(Number(id)) as InsightRow | undefined;
   if (!insight) return NextResponse.json({ error: 'insight not found' }, { status: 404 });
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // it in Tommy's tone (style profile only, no copying his old posts).
     const mindset = `${insight.hook}\n${insight.idea}${insight.why_share ? `\n${insight.why_share}` : ''}`
       + (userNote ? `\n\n我自己想補充的角度:${userNote}` : '');
-    const { draft: draftText } = await writeThreadsPost({ mode: 'rewrite', idea: mindset, useStories });
+    const { draft: draftText } = await writeThreadsPost({ mode: 'rewrite', idea: mindset, useStories, viral });
     const d = db.prepare(
       `INSERT INTO insight_drafts (insight_id, user_note, draft_text, platform, status) VALUES (?, ?, ?, 'threads', 'pending_review')`,
     ).run(insight.id, userNote || null, draftText);
