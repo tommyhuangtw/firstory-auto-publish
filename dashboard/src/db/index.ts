@@ -422,6 +422,46 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_themes_theme ON insight_themes(theme_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_themes_insight ON insight_themes(insight_id)');
 
+  // Personal Threads Voice Corpus (scope A) — ingest own Threads posts + insights,
+  // distil into editable voice assets (bio / style / story). See spec:
+  // docs/superpowers/specs/2026-06-25-threads-voice-corpus-design.md
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS threads_posts (
+      post_id          TEXT PRIMARY KEY,
+      text             TEXT,
+      media_type       TEXT,
+      permalink        TEXT,
+      posted_at        TEXT,
+      views            INTEGER DEFAULT 0,
+      likes            INTEGER DEFAULT 0,
+      replies          INTEGER DEFAULT 0,
+      reposts          INTEGER DEFAULT 0,
+      quotes           INTEGER DEFAULT 0,
+      shares           INTEGER DEFAULT 0,
+      engagement_rate  REAL    DEFAULT 0,
+      is_repost        INTEGER DEFAULT 0,
+      fetched_at       TEXT    DEFAULT (datetime('now')),
+      insights_at      TEXT
+    )
+  `);
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS voice_assets (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      type           TEXT NOT NULL,                       -- 'bio' | 'style' | 'story'
+      content        TEXT NOT NULL,
+      topic_tags     TEXT,                                -- JSON array (mainly for stories)
+      source_post_id TEXT,                                -- origin post for a story (nullable)
+      pinned         INTEGER NOT NULL DEFAULT 0,
+      status         TEXT NOT NULL DEFAULT 'draft',       -- 'draft' | 'kept' | 'hidden'
+      created_at     TEXT DEFAULT (datetime('now')),
+      updated_at     TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_engagement ON threads_posts(engagement_rate)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_posted ON threads_posts(posted_at)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_type ON voice_assets(type)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_status ON voice_assets(status)');
+
   // Seed tool families
   try {
     seedFamilies();

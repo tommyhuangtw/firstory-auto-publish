@@ -162,6 +162,103 @@ export function getThreadsPostUrl(postId: string): string {
   return `https://www.threads.net/post/${postId}`;
 }
 
+// ── Read API (own post history + per-post insights) ──
+// Used by the personal voice corpus. Requires threads_basic + threads_manage_insights scopes.
+
+export interface ThreadsPostRaw {
+  id: string;
+  text?: string;
+  media_type?: string;
+  permalink?: string;
+  timestamp?: string;
+}
+
+export interface ThreadsInsights {
+  views: number;
+  likes: number;
+  replies: number;
+  reposts: number;
+  quotes: number;
+  shares: number;
+}
+
+/** Whether Threads read credentials are configured. */
+export function isThreadsConnected(): boolean {
+  return getCredentials() !== null;
+}
+
+/**
+ * Fetch the authenticated user's full Threads post history (paginated to the end).
+ * Returns [] if not connected. Throws on API error.
+ */
+export async function fetchAllThreadsPosts(): Promise<ThreadsPostRaw[]> {
+  const creds = getCredentials();
+  if (!creds) {
+    log.warn('Threads not connected, cannot fetch posts');
+    return [];
+  }
+
+  const posts: ThreadsPostRaw[] = [];
+  const params = new URLSearchParams({
+    fields: 'id,text,media_type,permalink,timestamp',
+    limit: '100',
+    access_token: creds.accessToken,
+  });
+  let url: string | undefined = `${THREADS_API}/me/threads?${params.toString()}`;
+  let pages = 0;
+
+  while (url && pages < 100) {
+    const resp = await withRetry(
+      async () => {
+        const r = await fetch(url as string);
+        if (!r.ok) throw new Error(`Threads list failed: ${r.status} ${await r.text()}`);
+        return r;
+      },
+      { label: 'threads-list-posts' },
+    );
+    const data = await resp.json();
+    if (data.error) throw new Error(`Threads list error: ${JSON.stringify(data.error)}`);
+
+    const batch: ThreadsPostRaw[] = data.data || [];
+    posts.push(...batch);
+    pages++;
+    url = batch.length ? data.paging?.next : undefined;
+  }
+
+  log.info({ count: posts.length, pages }, 'Fetched Threads post history');
+  return posts;
+}
+
+/**
+ * Fetch engagement insights for a single post.
+ * Returns null on failure (e.g. metric unavailable for the post) — caller skips/retries later.
+ */
+export async function fetchPostInsights(postId: string): Promise<ThreadsInsights | null> {
+  const creds = getCredentials();
+  if (!creds) return null;
+
+  const metrics = 'views,likes,replies,reposts,quotes,shares';
+  try {
+    const r = await fetch(
+      `${THREADS_API}/${postId}/insights?metric=${metrics}&access_token=${creds.accessToken}`,
+    );
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      log.warn({ postId, status: r.status, error: data.error }, 'Insights fetch failed');
+      return null;
+    }
+    const out: ThreadsInsights = { views: 0, likes: 0, replies: 0, reposts: 0, quotes: 0, shares: 0 };
+    for (const m of (data.data || [])) {
+      const value = m.total_value?.value ?? m.values?.[0]?.value ?? 0;
+      if (m.name in out) (out as unknown as Record<string, number>)[m.name] = value;
+    }
+    return out;
+  } catch (err) {
+    log.warn({ postId, error: (err as Error).message }, 'Insights fetch threw');
+    return null;
+  }
+}
+
 interface BuildThreadsCaptionOptions {
   igCaption: string;
   episodeTitle: string;
