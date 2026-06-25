@@ -79,7 +79,7 @@ export default function SettingsPage() {
 
   const loadData = useCallback(async () => {
     const [settingsRes, fbRes, threadsRes] = await Promise.all([
-      fetch('/api/settings').then(r => r.json()),
+      fetch('/api/settings').then(r => r.json()).catch(() => ({})),
       fetch('/api/auth/facebook/status').then(r => r.json()).catch(() => ({ connected: false })),
       fetch('/api/auth/threads/status').then(r => r.json()).catch(() => ({ connected: false })),
     ]);
@@ -211,16 +211,40 @@ export default function SettingsPage() {
         </section>
 
         {/* Threads Connection */}
-        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 opacity-60">
-          <div className="flex items-center gap-2 mb-1">
-            <h2 className="text-sm font-medium text-zinc-200">Threads 連結</h2>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">
-              開發中
-            </span>
-          </div>
-          <p className="text-[11px] text-zinc-500">
-            連結後可從 Review 頁面發布貼文到 Threads（功能尚未啟用）
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">Threads 連結</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            連結後可讀取你的貼文與互動數據（給「我的語料」用），並發布貼文到 Threads
           </p>
+
+          {threadsStatus?.connected ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-sm text-zinc-200">@{threadsStatus.username}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
+                  已連結
+                </span>
+              </div>
+              <button
+                onClick={handleThreadsDisconnect}
+                disabled={threadsDisconnecting}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-red-950/50 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+              >
+                {threadsDisconnecting ? '斷開中...' : '斷開連結'}
+              </button>
+            </div>
+          ) : (
+            <a
+              href="/api/auth/threads"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-100 hover:bg-white text-zinc-900 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.589 12c.027 3.086.718 5.496 2.057 7.164 1.43 1.781 3.631 2.695 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.964-.065-1.19.408-2.285 1.331-3.082.88-.76 2.119-1.207 3.583-1.291a13.853 13.853 0 0 1 1.999.062c-.084-.508-.243-.928-.476-1.252-.319-.444-.812-.667-1.467-.667h-.018c-.526 0-1.24.145-1.694.819l-1.689-1.137c.609-.903 1.601-1.4 2.794-1.4h.018c1.236.014 2.232.396 2.96 1.135.654.665 1.024 1.572 1.13 2.77.069.016.137.034.205.052.972.235 1.766.629 2.354 1.165.749.681 1.137 1.6 1.137 2.69 0 .926-.295 1.745-.876 2.434-.624.74-1.55 1.244-2.756 1.498l-.024.005.024-.005zm.16-7.043c-.327 0-.66.01-1.001.03-1.181.069-1.92.572-1.881 1.286.041.74.864 1.085 1.658 1.042.733-.04 1.69-.326 1.852-2.255a8.86 8.86 0 0 0-.628-.103z" />
+              </svg>
+              連結 Threads
+            </a>
+          )}
         </section>
 
         {/* Ad Presets — moved to Sponsor page */}
