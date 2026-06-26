@@ -114,3 +114,6 @@ rewritten_script.*
 hermes/podcast-mcp/dist/
 # Seed CSV for trend interest-labeling (local only, imported into DB)
 public_posts_raw_rows_threadify.csv
+
+# git worktrees (isolated workspaces)
+.worktrees/
