@@ -198,8 +198,13 @@ export default function InspirationPage() {
                 {draftText[it.id] && (
                   <div className="mt-2">
                     <p className="text-sm text-zinc-200 whitespace-pre-wrap bg-zinc-800/50 rounded-lg p-3">{draftText[it.id]}</p>
-                    <button onClick={() => navigator.clipboard.writeText(draftText[it.id])}
-                      className="mt-2 px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">複製</button>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button onClick={() => navigator.clipboard.writeText(draftText[it.id])}
+                        className="px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">複製</button>
+                      <a href={`https://www.threads.net/intent/post?text=${encodeURIComponent(draftText[it.id])}`}
+                        target="_blank" rel="noreferrer"
+                        className="px-2 py-1 text-xs rounded-lg bg-brand/90 hover:bg-brand text-white">去 Threads 發文 →</a>
+                    </div>
                   </div>
                 )}
               </div>

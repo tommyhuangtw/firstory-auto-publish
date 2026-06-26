@@ -164,6 +164,13 @@ export default function WritePage() {
               <button onClick={copyDraft} className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
                 {copied ? '已複製 ✓' : '複製'}
               </button>
+              <a
+                href={`https://www.threads.net/intent/post?text=${encodeURIComponent(draft)}`}
+                target="_blank" rel="noreferrer"
+                className="px-2.5 py-1 rounded-lg bg-brand/90 hover:bg-brand text-white"
+              >
+                去 Threads 發文 →
+              </a>
             </div>
           </div>
           <textarea
