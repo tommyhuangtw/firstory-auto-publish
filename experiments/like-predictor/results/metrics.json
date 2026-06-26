@@ -1,0 +1,77 @@
+{
+  "A: Classical (TF-IDF + GBDT)": {
+    "ranking": {
+      "spearman_overall": 0.1575,
+      "spearman_within_author": 0.2906,
+      "pairwise_accuracy": 0.5949
+    },
+    "viral": {
+      "roc_auc": 0.6253,
+      "pr_auc": 0.138,
+      "f1": 0.1888,
+      "precision_at_10": 0.3,
+      "base_rate": 0.082
+    },
+    "n_test": 2390
+  },
+  "B: Embedding (multilingual MiniLM + GBDT)": {
+    "ranking": {
+      "spearman_overall": 0.1123,
+      "spearman_within_author": 0.3058,
+      "pairwise_accuracy": 0.602
+    },
+    "viral": {
+      "roc_auc": 0.6124,
+      "pr_auc": 0.1316,
+      "f1": 0.1429,
+      "precision_at_10": 0.4,
+      "base_rate": 0.082
+    },
+    "n_test": 2390
+  },
+  "C: LLM (OpenRouter few-shot)": {
+    "ranking": {
+      "spearman_overall": 0.2515,
+      "spearman_within_author": 0.1514,
+      "pairwise_accuracy": 0.3806
+    },
+    "viral": {
+      "roc_auc": 0.7064,
+      "pr_auc": 0.1319,
+      "f1": 0.225,
+      "precision_at_10": 0.1,
+      "base_rate": 0.08
+    },
+    "n_test": 200
+  },
+  "(sample) A: Classical (TF-IDF + GBDT)": {
+    "ranking": {
+      "spearman_overall": 0.1859,
+      "spearman_within_author": 0.3539,
+      "pairwise_accuracy": 0.626
+    },
+    "viral": {
+      "roc_auc": 0.7228,
+      "pr_auc": 0.2777,
+      "f1": 0.1875,
+      "precision_at_10": 0.3,
+      "base_rate": 0.08
+    },
+    "n_test": 200
+  },
+  "(sample) B: Embedding (multilingual MiniLM + GBDT)": {
+    "ranking": {
+      "spearman_overall": 0.1662,
+      "spearman_within_author": 0.3177,
+      "pairwise_accuracy": 0.6425
+    },
+    "viral": {
+      "roc_auc": 0.6681,
+      "pr_auc": 0.2047,
+      "f1": 0.125,
+      "precision_at_10": 0.2,
+      "base_rate": 0.08
+    },
+    "n_test": 200
+  }
+}
