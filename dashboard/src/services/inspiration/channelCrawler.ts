@@ -111,6 +111,7 @@ export async function crawlChannel(channelRow: ChannelRow): Promise<{ discovered
       title: v.title,
       channelId: channelRow.id,
       externalId: v.videoId,
+      publishedAt: v.publishedAt,
     };
     const sourceId = createSourceRow(input);
     try {

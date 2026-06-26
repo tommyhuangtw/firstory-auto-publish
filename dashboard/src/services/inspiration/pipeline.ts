@@ -25,9 +25,9 @@ export function createSourceRow(input: IngestInput): number {
     else if (sourceType === 'apple_podcast') externalId = parseAppleUrl(input.url).episodeId ?? null;
   }
   const r = db.prepare(
-    `INSERT INTO content_summaries (url, source_type, title, status, channel_id, external_id)
-     VALUES (?, ?, ?, 'processing', ?, ?)`,
-  ).run(input.url || '(manual)', sourceType, input.title || null, input.channelId ?? null, externalId);
+    `INSERT INTO content_summaries (url, source_type, title, status, channel_id, external_id, published_at)
+     VALUES (?, ?, ?, 'processing', ?, ?, ?)`,
+  ).run(input.url || '(manual)', sourceType, input.title || null, input.channelId ?? null, externalId, input.publishedAt ?? null);
   return Number(r.lastInsertRowid);
 }
 
@@ -41,8 +41,8 @@ export async function runIngest(sourceId: number, input: IngestInput): Promise<{
   try {
     const resolved = await resolveSource(input);
     db.prepare(
-      `UPDATE content_summaries SET title = COALESCE(title, ?), channel_name = ?, thumbnail_url = ?, transcript = ?, source_type = ?, cost_usd = ? WHERE id = ?`,
-    ).run(resolved.title, resolved.channelName, resolved.thumbnailUrl, resolved.transcript, resolved.sourceType, resolved.costUsd, sourceId);
+      `UPDATE content_summaries SET title = COALESCE(title, ?), channel_name = ?, thumbnail_url = ?, transcript = ?, source_type = ?, cost_usd = ?, published_at = COALESCE(published_at, ?) WHERE id = ?`,
+    ).run(resolved.title, resolved.channelName, resolved.thumbnailUrl, resolved.transcript, resolved.sourceType, resolved.costUsd, resolved.publishedAt, sourceId);
 
     const origin = input.userPoints?.trim() ? 'user_marked' : 'ai_mined';
     const candidates = await extractInsights(resolved.transcript, { title: resolved.title || undefined, userPoints: input.userPoints });
@@ -52,15 +52,15 @@ export async function runIngest(sourceId: number, input: IngestInput): Promise<{
     const profile = loadInterestProfile();
 
     const insert = db.prepare(
-      `INSERT INTO insights (source_id, hook, idea, why_share, category, resonance, embedding, origin, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
+      `INSERT INTO insights (source_id, hook, idea, why_share, category, resonance, embedding, origin, status, source_ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
     );
     const inserted: Array<{ id: number; vec: number[] }> = [];
     const tx = db.transaction(() => {
       candidates.forEach((c, i) => {
         const vec = vecs[i] || null;
         const resonance = scoreResonance(vec, profile);
-        const r = insert.run(sourceId, c.hook, c.idea, c.why_share, c.category, resonance, vec ? JSON.stringify(vec) : null, origin);
+        const r = insert.run(sourceId, c.hook, c.idea, c.why_share, c.category, resonance, vec ? JSON.stringify(vec) : null, origin, resolved.publishedAt);
         if (vec) inserted.push({ id: Number(r.lastInsertRowid), vec });
       });
     });

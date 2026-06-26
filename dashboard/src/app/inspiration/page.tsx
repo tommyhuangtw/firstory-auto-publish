@@ -4,16 +4,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface Insight {
   id: number; source_id: number; hook: string; idea: string; why_share: string | null; category: string | null;
-  resonance: number | null; status: string; origin: string;
-  source_title: string | null; source_url: string | null; source_type: string;
+  resonance: number | null; status: string; origin: string; source_ts: string | null;
+  source_title: string | null; source_url: string | null; source_type: string; published_at: string | null;
   channel_title: string | null; channel_handle: string | null;
+}
+
+/** Format a source publish date as `YYYY/MM/DD` plus a relative hint (e.g. 「3 天前」). */
+function formatPublished(iso: string | null): { date: string; rel: string } | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const date = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const rel = days <= 0 ? '今天' : days === 1 ? '昨天' : days < 30 ? `${days} 天前`
+    : days < 365 ? `${Math.floor(days / 30)} 個月前` : `${Math.floor(days / 365)} 年前`;
+  return { date, rel };
 }
 
 export default function InspirationPage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'visible' | 'saved'>('visible');
-  const [sort, setSort] = useState<'resonance' | 'newest' | 'random'>('resonance');
+  const [sort, setSort] = useState<'resonance' | 'newest' | 'published' | 'random'>('resonance');
   const [q, setQ] = useState('');
   const [channel, setChannel] = useState('');
   const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
@@ -148,9 +160,9 @@ export default function InspirationPage() {
           className={`px-3 py-1.5 text-sm rounded-lg ${statusFilter === 'saved' ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}>
           {statusFilter === 'saved' ? '⭐ 收藏中' : '☆ 只看收藏'}
         </button>
-        <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest' | 'random')}
+        <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest' | 'published' | 'random')}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
-          <option value="resonance">共鳴排序</option><option value="newest">最新</option><option value="random">隨機</option>
+          <option value="resonance">共鳴排序</option><option value="published">最新發布</option><option value="newest">最近攝取</option><option value="random">隨機</option>
         </select>
         <button onClick={shuffle}
           className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25">🎲 給我靈感</button>
@@ -164,6 +176,11 @@ export default function InspirationPage() {
               {it.resonance != null && <span className="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">🔥 共鳴 {it.resonance}</span>}
               {it.category && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300">{it.category}</span>}
               {it.channel_title && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-brand/10 text-brand truncate max-w-[40%]">{it.channel_title}</span>}
+              {formatPublished(it.published_at) && (
+                <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700/40 text-zinc-400" title={`發布於 ${formatPublished(it.published_at)!.date}`}>
+                  📅 {formatPublished(it.published_at)!.date} · {formatPublished(it.published_at)!.rel}
+                </span>
+              )}
             </div>
             <p className="text-base font-semibold text-zinc-100 mb-1">{it.hook}</p>
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-1">{it.idea}</p>

@@ -7,6 +7,7 @@ export interface AppleEpisode {
   channelName: string | null;
   audioUrl: string;
   thumbnailUrl: string | null;
+  publishedAt: string | null; // episode publish date (ISO), null if unknown
 }
 
 /** Pull podcastId (id…) and episodeId (?i=…) out of an Apple Podcasts URL. */
@@ -97,12 +98,15 @@ async function firstEnclosureFromFeed(feedUrl: string): Promise<AppleEpisode> {
   const enc = xml.match(/<enclosure[^>]*\surl=["']([^"']+)["']/i);
   if (!enc) throw new Error('No <enclosure> audio URL found in feed');
   const showTitle = xml.match(/<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*<\/title>/i);
-  const itemTitle = xml.match(/<item>[\s\S]*?<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*<\/title>/i);
+  const firstItem = xml.match(/<item>[\s\S]*?<\/item>/i)?.[0] || '';
+  const itemTitle = firstItem.match(/<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*<\/title>/i);
+  const pubDate = firstItem.match(/<pubDate>\s*(.*?)\s*<\/pubDate>/i);
   return {
     audioUrl: enc[1],
     title: itemTitle?.[1]?.trim() || null,
     channelName: showTitle?.[1]?.trim() || null,
     thumbnailUrl: null,
+    publishedAt: pubDate?.[1] ? new Date(pubDate[1]).toISOString() : null,
   };
 }
 
@@ -133,6 +137,7 @@ export async function resolveAppleEpisode(url: string): Promise<AppleEpisode> {
     const trackName = (ep.trackName as string) || '';
     const collectionName = (ep.collectionName as string) || null;
     const thumbnail = (ep.artworkUrl600 as string) || null;
+    const releaseDate = (ep.releaseDate as string) || null; // iTunes returns ISO
 
     // If iTunes directly provides the audio URL, use it (fast path)
     const episodeUrl = ep.episodeUrl as string | undefined;
@@ -143,6 +148,7 @@ export async function resolveAppleEpisode(url: string): Promise<AppleEpisode> {
         title: trackName || null,
         channelName: collectionName,
         thumbnailUrl: thumbnail,
+        publishedAt: releaseDate,
       };
     }
 
@@ -159,6 +165,7 @@ export async function resolveAppleEpisode(url: string): Promise<AppleEpisode> {
       title: title || trackName || null,
       channelName: collectionName,
       thumbnailUrl: thumbnail,
+      publishedAt: releaseDate,
     };
   }
 

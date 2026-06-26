@@ -182,6 +182,8 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_type ON content_summaries(source_type)');
   safeAlter('ALTER TABLE content_summaries ADD COLUMN channel_id INTEGER');
   safeAlter('ALTER TABLE content_summaries ADD COLUMN external_id TEXT');
+  // Original publish date of the source video/episode (ISO). Distinct from created_at (ingest time).
+  safeAlter('ALTER TABLE content_summaries ADD COLUMN published_at TEXT');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_external ON content_summaries(external_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_content_summaries_channel ON content_summaries(channel_id)');
 
@@ -382,6 +384,7 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_source ON insights(source_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_resonance ON insights(resonance)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_insights_source_ts ON insights(source_ts)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_insight_drafts_insight ON insight_drafts(insight_id)');
 
   // Channel Registry (Task: Channel Registry + Incremental Crawl)

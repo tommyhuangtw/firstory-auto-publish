@@ -134,6 +134,13 @@ export function initializeSchedulerJobs(): void {
   // Threads voice corpus — daily incremental sync (new posts + refresh recent insights)
   scheduler.register('Threads 語料同步', '0 11 * * *', runVoiceSync);
 
+  // Inspiration channel crawl — auto-pull new uploads from monitored channels + extract insights.
+  // Schedule from settings (inspiration_crawl_schedule, default 07:00 daily); skip if disabled.
+  const insp = getInspirationCrawlConfig();
+  if (insp.enabled) {
+    scheduler.register(INSPIRATION_CRAWL_JOB, insp.cron, runInspirationCrawl);
+  }
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
@@ -158,6 +165,53 @@ export function reloadScheduleFromDb(): void {
 }
 
 // ── Analytics sync handlers ──────────────────────────────────────────
+
+const INSPIRATION_CRAWL_JOB = '靈感頻道爬取';
+
+/** Read inspiration crawl config from settings: cron schedule + enabled flag. */
+export function getInspirationCrawlConfig(): { cron: string; enabled: boolean } {
+  let cron = '0 7 * * *'; // default: 07:00 daily (before the 08:00 morning curation)
+  let enabled = true;
+  try {
+    const db = getDb();
+    const c = db.prepare('SELECT value FROM settings WHERE key = ?').get('inspiration_crawl_schedule') as { value: string } | undefined;
+    if (c?.value && c.value.trim().split(/\s+/).length === 5) cron = c.value.trim();
+    const e = db.prepare('SELECT value FROM settings WHERE key = ?').get('inspiration_crawl_enabled') as { value: string } | undefined;
+    if (e?.value != null) enabled = e.value !== '0' && e.value.toLowerCase() !== 'false';
+  } catch { /* DB not ready — use defaults */ }
+  return { cron, enabled };
+}
+
+/**
+ * Apply the current inspiration-crawl settings to the live scheduler — used by the
+ * settings toggle so changes take effect without a restart. Registers/updates/enables
+ * the single job in place; never calls scheduler.start() (which would double-schedule
+ * every other job). Throws on an invalid cron (caller maps to a 400).
+ */
+export function applyInspirationCrawlConfig(): { cron: string; enabled: boolean } {
+  const scheduler = getScheduler();
+  const cfg = getInspirationCrawlConfig();
+  const name = INSPIRATION_CRAWL_JOB;
+  if (!scheduler.getRegisteredNames().includes(name)) {
+    scheduler.register(name, cfg.cron, runInspirationCrawl); // sets enabled=true, task=null
+  }
+  // updateSchedule (re)creates the cron task in place when enabled; disable stops it.
+  if (cfg.enabled) { scheduler.enable(name); scheduler.updateSchedule(name, cfg.cron); }
+  else { scheduler.disable(name); }
+  log.info(cfg, 'Inspiration crawl config applied to scheduler');
+  return cfg;
+}
+
+async function runInspirationCrawl(): Promise<void> {
+  log.info('Running inspiration channel crawl...');
+  try {
+    const { crawlAllActive } = await import('@/services/inspiration/channelCrawler');
+    const result = await crawlAllActive();
+    log.info(result, 'Inspiration channel crawl complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Inspiration channel crawl failed');
+  }
+}
 
 async function runVoiceSync(): Promise<void> {
   try {
@@ -337,6 +391,18 @@ async function catchUpMissedSyncs(): Promise<void> {
   if (!hasYoutube) {
     log.info({ today }, 'Catch-up: YouTube sync missing for today, running now');
     await runYoutubeSync();
+  }
+
+  // Inspiration crawl: if enabled and no active channel was crawled today, run it now.
+  const insp = getInspirationCrawlConfig();
+  if (insp.enabled) {
+    const crawledToday = db.prepare(
+      "SELECT 1 FROM channels WHERE active = 1 AND date(last_crawled_at, 'localtime') = date('now', 'localtime') LIMIT 1",
+    ).get();
+    if (!crawledToday) {
+      log.info({ today }, 'Catch-up: inspiration crawl missing for today, running now');
+      await runInspirationCrawl();
+    }
   }
 }
 

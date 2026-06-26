@@ -7,11 +7,15 @@ interface Channel {
   active: number; fetch_count: number; last_crawled_at: string | null; ingested_count: number; insight_count: number;
 }
 
+interface CrawlConfig { enabled: boolean; time: string | null; cron: string }
+
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [crawlCfg, setCrawlCfg] = useState<CrawlConfig | null>(null);
+  const [timeInput, setTimeInput] = useState('07:00');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -21,6 +25,23 @@ export default function ChannelsPage() {
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch('/api/inspiration/crawl-config').then((r) => r.json()).then((d: CrawlConfig) => {
+      setCrawlCfg(d); if (d.time) setTimeInput(d.time);
+    }).catch(() => {});
+  }, []);
+
+  const saveCrawlCfg = async (patch: { enabled?: boolean; time?: string }) => {
+    setBusy('cfg');
+    const res = await fetch('/api/inspiration/crawl-config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    });
+    const data = await res.json();
+    setBusy(null);
+    if (data.error) { alert(data.error); return; }
+    setCrawlCfg(data); if (data.time) setTimeInput(data.time);
+  };
 
   const add = async () => {
     if (!url.trim()) return;
@@ -72,6 +93,25 @@ export default function ChannelsPage() {
           </button>
         </div>
       </div>
+
+      {crawlCfg && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-4 flex flex-wrap items-center gap-3">
+          <button onClick={() => saveCrawlCfg({ enabled: !crawlCfg.enabled })} disabled={busy === 'cfg'}
+            title="開啟後，系統每天自動抓取所有「啟用中」頻道的新片並擷取 insight"
+            className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${crawlCfg.enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'} hover:opacity-80`}>
+            {crawlCfg.enabled ? '🟢 自動每日抓取：開' : '⚪️ 自動每日抓取：關'}
+          </button>
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <span>每天</span>
+            <input type="time" value={timeInput} onChange={(e) => setTimeInput(e.target.value)}
+              disabled={!crawlCfg.enabled}
+              className="px-2 py-1 rounded-lg bg-zinc-800 text-zinc-100 disabled:opacity-50" />
+            <button onClick={() => saveCrawlCfg({ time: timeInput })} disabled={busy === 'cfg' || !crawlCfg.enabled || timeInput === crawlCfg.time}
+              className="px-2 py-1 text-xs rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-40">儲存時間</button>
+          </div>
+          <span className="text-xs text-zinc-600">只抓「啟用中」頻道的新片，去重後不重複擷取</span>
+        </div>
+      )}
 
       <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
         <span className="text-zinc-300">立即抓取</span>：抓該頻道<b>最新</b> N 部影片，已抓過的自動跳過、只補新片（背景執行）。

@@ -24,9 +24,9 @@ export function decodeHtmlEntities(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
-export interface VideoMeta { title: string | null; channelName: string | null; thumbnailUrl: string | null }
+export interface VideoMeta { title: string | null; channelName: string | null; thumbnailUrl: string | null; publishedAt: string | null }
 
-/** Fetch a YouTube video's title/channel/thumbnail via the Data API. Returns nulls on failure. */
+/** Fetch a YouTube video's title/channel/thumbnail/publishedAt via the Data API. Returns nulls on failure. */
 export async function fetchYouTubeVideoMeta(videoId: string): Promise<VideoMeta> {
   try {
     const resp = await fetchWithKeyRotation(
@@ -35,15 +35,16 @@ export async function fetchYouTubeVideoMeta(videoId: string): Promise<VideoMeta>
     );
     const data = await resp.json();
     const sn = data.items?.[0]?.snippet;
-    if (!sn) return { title: null, channelName: null, thumbnailUrl: null };
+    if (!sn) return { title: null, channelName: null, thumbnailUrl: null, publishedAt: null };
     return {
       title: sn.title || null,
       channelName: sn.channelTitle || null,
       thumbnailUrl: sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url || null,
+      publishedAt: sn.publishedAt || null,
     };
   } catch (e) {
     log.warn({ videoId, err: (e as Error).message }, 'video meta fetch failed');
-    return { title: null, channelName: null, thumbnailUrl: null };
+    return { title: null, channelName: null, thumbnailUrl: null, publishedAt: null };
   }
 }
 
@@ -99,15 +100,16 @@ export async function resolveSource(input: IngestInput): Promise<ResolvedSource>
   const sourceType = detectSourceType(input);
 
   if (sourceType === 'manual') {
-    return { sourceType, title: input.title || null, channelName: null, thumbnailUrl: null, transcript: input.text!.trim(), costUsd: 0 };
+    return { sourceType, title: input.title || null, channelName: null, thumbnailUrl: null, transcript: input.text!.trim(), costUsd: 0, publishedAt: input.publishedAt ?? null };
   }
 
   if (sourceType === 'youtube') {
     const transcript = await fetchYouTubeTranscript(input.url!);
     if (!transcript.trim()) throw new Error('YouTube transcript was empty');
     const vid = youTubeId(input.url!);
-    const meta = vid ? await fetchYouTubeVideoMeta(vid) : { title: null, channelName: null, thumbnailUrl: null };
-    return { sourceType, title: input.title || meta.title, channelName: meta.channelName, thumbnailUrl: meta.thumbnailUrl, transcript, costUsd: 0 };
+    const meta = vid ? await fetchYouTubeVideoMeta(vid) : { title: null, channelName: null, thumbnailUrl: null, publishedAt: null };
+    // Channel crawls already carry the playlist publishedAt; fall back to the video snippet's.
+    return { sourceType, title: input.title || meta.title, channelName: meta.channelName, thumbnailUrl: meta.thumbnailUrl, transcript, costUsd: 0, publishedAt: input.publishedAt ?? meta.publishedAt };
   }
 
   // apple_podcast
@@ -118,7 +120,7 @@ export async function resolveSource(input: IngestInput): Promise<ResolvedSource>
     // Whisper pricing ≈ $0.006 / minute.
     const costUsd = ((t.duration || 0) / 60) * 0.006;
     log.info({ durationSec: t.duration, costUsd: costUsd.toFixed(3) }, 'Podcast transcribed');
-    return { sourceType, title: input.title || ep.title, channelName: ep.channelName, thumbnailUrl: ep.thumbnailUrl, transcript: t.text, costUsd };
+    return { sourceType, title: input.title || ep.title, channelName: ep.channelName, thumbnailUrl: ep.thumbnailUrl, transcript: t.text, costUsd, publishedAt: input.publishedAt ?? ep.publishedAt };
   } finally {
     try { fs.unlinkSync(audioPath); } catch { /* best effort */ }
   }
