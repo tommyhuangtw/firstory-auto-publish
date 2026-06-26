@@ -10,7 +10,7 @@
 import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { runScrape } from './crawler';
-import { engagementVelocity, isAIRelevant } from './scorer';
+import { engagementVelocity, isAIRelevant, isNicheRelevant } from './scorer';
 import { embedTexts } from './embeddings';
 import { sendTrendAlert } from './digest';
 import type { TrendScanResult, RawThreadPost } from './types';
@@ -78,7 +78,8 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
       if (p.timestamp && new Date(p.timestamp).getTime() < nicheCutoff) { result.stale++; drop(p, 'niche_stale'); return false; }
       // Relevance: keyword search is noisy (搜「接案」會撈到「案件」). Check the TEXT
       // only — passing source would trivially match since it IS the niche keyword.
-      if (!isAIRelevant(p.text)) { drop(p, 'niche_irrelevant'); return false; }
+      // Niche = AI + 接案/職涯/留學/英美生活 (broader than the AI-only hot zone).
+      if (!isNicheRelevant(p.text)) { drop(p, 'niche_irrelevant'); return false; }
       return true;
     }
     if (p.likeCount + p.replyCount < minEngagement) { result.belowFloor++; drop(p, 'below_floor'); return false; }

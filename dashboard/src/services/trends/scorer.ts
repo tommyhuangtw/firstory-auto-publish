@@ -36,6 +36,25 @@ export function isAIRelevant(text: string, source?: string): boolean {
   return AI_TOKEN.test(hay) || AI_PHRASE.test(hay);
 }
 
+// Reply-zone themes Tommy wants: AI / 接案 / 職涯 / 留學 / 英國生活 / 美國生活.
+// (職場 office-drama deliberately excluded — career *development* yes, workplace gossip no.)
+// Used as the niche relevance gate; like isAIRelevant it checks TEXT only (source = the
+// niche keyword itself would trivially match), and is intentionally broader than AI.
+const NICHE_FREELANCE = /(接案|外包|自由工作者|自由接案|freelance|soho|報價單|接案人生)/i;
+const NICHE_CAREER = /(職涯|轉職|跳槽|求職|找工作|換工作|面試|履歷|升遷|加薪|待業|應徵|career)/i;
+const NICHE_STUDY = /(留學|留學生|交換學生|獎學金|申請學校|研究所|碩士|博士|study ?abroad|出國唸書|出國讀書)/i;
+const ABROAD_COUNTRY = /(英國|美國|倫敦|曼徹斯特|矽谷|silicon ?valley|紐約|加州)/i;
+const ABROAD_LIFE = /(生活|工作|讀書|唸書|留學|搬|租屋|租房|簽證|物價|文化|定居|移民|打工度假)/i;
+
+/** True if a post fits the reply-zone niche (AI + 接案/職涯/留學/英美生活). */
+export function isNicheRelevant(text: string): boolean {
+  if (isAIRelevant(text)) return true;
+  if (NICHE_FREELANCE.test(text) || NICHE_CAREER.test(text) || NICHE_STUDY.test(text)) return true;
+  // Country alone (英國/美國) is too noisy (news); require a living/working/studying context.
+  if (ABROAD_COUNTRY.test(text) && ABROAD_LIFE.test(text)) return true;
+  return false;
+}
+
 export function clusterAndScore(topic: string, posts: RawThreadPost[], now = Date.now()): ScoredCluster {
   const withVel = posts
     .map((p) => ({ ...p, velocity: engagementVelocity(p, now) }))

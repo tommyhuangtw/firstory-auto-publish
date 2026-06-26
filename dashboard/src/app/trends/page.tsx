@@ -326,12 +326,12 @@ function ReplyZone() {
 
   if (loading) return <p className="text-sm text-zinc-500">Loading…</p>;
   if (posts.length === 0) {
-    return <p className="text-sm text-zinc-500">尚無 niche 貼文。按右上「立即掃描」爬一輪(會搜 AI 工具/接案/創業/AI 學習等關鍵詞,留讚≥30、近 2 天的)。</p>;
+    return <p className="text-sm text-zinc-500">尚無 niche 貼文。按右上「立即掃描」爬一輪(會搜 AI 應用/接案/職涯/留學/英國生活/美國生活等關鍵詞,留讚≥30、近 2 天的)。</p>;
   }
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500 mb-1">你的 niche(AI 工具/接案/創業/AI 學習)近 2 天、讚 ≥ 30 的貼文。生成一則你的口吻回覆 → 複製 → 點原文去貼。主動回覆是被陌生人看到、建立信任的關鍵。</p>
+      <p className="text-xs text-zinc-500 mb-1">你的 niche(AI 應用/接案/職涯/留學/英國生活/美國生活)近 2 天、讚 ≥ 30 的貼文。生成一則你的口吻回覆 → 複製 → 點原文去貼。主動回覆是被陌生人看到、建立信任的關鍵。</p>
       {posts.map((p) => (
         <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
           <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-1">

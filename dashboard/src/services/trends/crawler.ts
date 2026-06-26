@@ -185,8 +185,14 @@ export function getCuratedSeeds(): string[] {
 /** Niche keywords for the reply zone (settings JSON array; seeded default). Searched
  *  in FULL every scan (NOT rotated) — the niche set is small and focused. */
 const NICHE_SEED_DEFAULT = [
-  'AI 顧問', 'vibe coding', '接案', 'n8n', 'claude code',
-  'AI 學習', 'AI 焦慮', 'AI 工具', 'AI 應用', 'AI 接案', '創業',
+  // AI 應用
+  'AI 工具', 'AI 應用', 'vibe coding', 'claude code', 'n8n', 'AI 學習',
+  // 接案
+  '接案', 'AI 接案', '自由工作者',
+  // 職涯
+  '轉職', '職涯規劃', '求職',
+  // 留學 / 英國生活 / 美國生活
+  '留學', '英國生活', '美國生活',
 ];
 export function getNicheKeywords(): string[] {
   try {
