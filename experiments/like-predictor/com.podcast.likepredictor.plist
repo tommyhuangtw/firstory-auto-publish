@@ -14,7 +14,7 @@
   <string>com.podcast.likepredictor</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>/opt/anaconda3/bin/python3</string>
     <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/experiments/like-predictor/score_service.py</string>
     <string>--port</string>
     <string>8765</string>
