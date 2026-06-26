@@ -176,7 +176,7 @@ export async function publishToSoundOnPlatform(state: PipelineState): Promise<st
   // Assemble final description with ad content + footer (buymeacoffee)
   // Source links are already appended by generateMeta (deterministic, not LLM)
   const { assemblePodcastDescription } = await import('@/services/descriptionAssembler');
-  const finalDescription = assemblePodcastDescription(state.description);
+  const finalDescription = assemblePodcastDescription(state.description, state.episodeId);
 
   // Lazy import to avoid crash if playwright not installed
   const { publishToSoundOn } = await import('@/services/soundon');
@@ -290,7 +290,7 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
   // Source links are already appended by generateMeta (deterministic, not LLM)
   const ytDesc = state.youtubeDescription || state.description;
   const { assembleYoutubeDescription } = await import('@/services/descriptionAssembler');
-  const finalDescription = assembleYoutubeDescription(ytDesc, state.tags);
+  const finalDescription = assembleYoutubeDescription(ytDesc, state.tags, state.episodeId);
 
   // Step 5: Upload to YouTube with user-selected thumbnail (or composite) for metadata
   const { YouTubeService } = await import('@/services/youtube');

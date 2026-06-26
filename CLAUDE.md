@@ -542,7 +542,7 @@ Telegram 的 approve/reject 按鈕連結指向 `https://hub.ailanbao.org/api/tas
 2. **Fire-and-Forget** — `/pipeline/start` 立即回傳，pipeline 背景執行
 3. **Human Review Gate** — Pipeline 暫停在 `pending_review`，需 `/episodes/:id/approve`
 4. **State Snapshots** — 每個 node 輸出存 JSON，支援 `retryFromStage()` 從任意階段重跑
-5. **Sponsor Audio Merge** — Pipeline 完成後自動 merge 業配音檔（依 `scheduled_dates` 匹配）
+5. **Sponsor Audio Merge** — 在每集審核頁手動選擇業配口播（預設不使用），選定後即時 merge 到音檔前面。字幕＝業配口播字幕（每個 preset 用 Whisper 轉一次、快取在 `sponsor_audio_presets.srt_content`，跨集重用，不每次重轉）＋正片字幕（往後位移業配長+0.3s），拼成 combined SRT 給 YouTube 燒錄/CC。Description 業配文字優先取 episode 選定業配的 `ad_preset`；未選時退回全域唯一 active 的 `ad_preset`（供純文字業配：無口播但仍要 description）。SoundOn 描述用 `descriptionToQuillHtml()` 轉 HTML 再 paste 進 Quill（避免 fill() 爆換行/拆 URL）
 6. **Cost Tracking** — `llm_calls` + `service_costs` 兩張表，episodes 彙整 total cost
 7. **Quality Refinement** — 品質評分 < 85 分自動重寫，最多 2 次
 8. **Tool Memory** — 工具追蹤 + 家族分類 + 回顧語句自動注入腳本

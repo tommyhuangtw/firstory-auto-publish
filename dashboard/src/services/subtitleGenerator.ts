@@ -436,9 +436,43 @@ export function alignSentences(
 // ── 3. Subtitle Segmentation ──
 
 const CHINESE_PUNCTUATION = /[。，！？、；：「」（）【】《》〈〉…─—''""·]/g;
-const LINE_MAX_WIDTH = 18; // max display-width chars per subtitle line
+const LINE_MAX_WIDTH = 16; // max display-width chars per subtitle line
 const LINE_MIN_WIDTH = 4;  // min display-width chars (merge short fragments)
 const MAX_LINES = 2;       // max lines per subtitle cue
+
+/**
+ * Force-split text into chunks that each fit LINE_MAX_WIDTH, used for long
+ * sentences that have no comma/clause punctuation to break on. CJK splits at any
+ * char boundary; ASCII words/numbers are never split mid-token.
+ */
+function forceSplitByWidth(text: string, maxWidth: number): string[] {
+  const chars = [...text];
+  const out: string[] = [];
+  let cur = '';
+  let curW = 0;
+  let i = 0;
+  while (i < chars.length) {
+    let token = chars[i];
+    if (/[A-Za-z0-9]/.test(chars[i])) {
+      let j = i + 1;
+      while (j < chars.length && /[A-Za-z0-9'’.\-]/.test(chars[j])) { token += chars[j]; j++; }
+      i = j;
+    } else {
+      i++;
+    }
+    const tW = displayWidth(removePunctuation(token));
+    if (curW > 0 && curW + tW > maxWidth) {
+      out.push(cur);
+      cur = token;
+      curW = tW;
+    } else {
+      cur += token;
+      curW += tW;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 
 /** Remove all punctuation from text for subtitle display. */
 export function removePunctuation(text: string): string {
@@ -493,8 +527,16 @@ function breakLongSentence(item: AlignedSentence): AlignedSentence[] {
   }
   if (current) groups.push(current);
 
-  // Pass through all groups (no force-split at character boundaries)
-  const finalGroups = [...groups];
+  // Force-split any group still over width (e.g. a long run-on sentence with no
+  // comma to break on) at character boundaries.
+  const finalGroups: string[] = [];
+  for (const g of groups) {
+    if (displayWidth(removePunctuation(g)) > LINE_MAX_WIDTH) {
+      finalGroups.push(...forceSplitByWidth(g, LINE_MAX_WIDTH));
+    } else {
+      finalGroups.push(g);
+    }
+  }
 
   // Merge back any fragment that's under LINE_MIN_WIDTH (try prev, then next)
   for (let i = finalGroups.length - 1; i >= 0; i--) {
@@ -696,6 +738,59 @@ export function generateSRT(cues: SubtitleCue[]): string {
       ].join('\n')
     )
     .join('\n');
+}
+
+function srtTimeToSeconds(h: string, m: string, s: string, ms: string): number {
+  return Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+}
+
+/** Parse an SRT string back into cues (tolerates ',' or '.' ms separators). */
+export function parseSRT(srt: string): SubtitleCue[] {
+  const cues: SubtitleCue[] = [];
+  const blocks = srt.trim().split(/\n\s*\n/);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const tsIdx = lines.findIndex(l => l.includes('-->'));
+    if (tsIdx === -1) continue;
+    const m = lines[tsIdx].match(
+      /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/
+    );
+    if (!m) continue;
+    const startTime = srtTimeToSeconds(m[1], m[2], m[3], m[4]);
+    const endTime = srtTimeToSeconds(m[5], m[6], m[7], m[8]);
+    const textLines = lines.slice(tsIdx + 1).filter(l => l.trim() !== '');
+    cues.push({ index: cues.length + 1, startTime, endTime, lines: textLines });
+  }
+  return cues;
+}
+
+/**
+ * Shift every cue in an SRT by offsetSec (use when audio is prepended/removed).
+ * The episode portion is unchanged in content — only delayed — so this is exact
+ * and avoids re-running Whisper. The prepended sponsor segment is left
+ * un-subtitled (a short ad read), matching common podcast captioning.
+ */
+/**
+ * Concatenate multiple SRT strings (each already on the correct absolute
+ * timeline) into one, re-indexing cues sequentially. Empty inputs are skipped.
+ */
+export function mergeSRTSegments(...srtContents: (string | null | undefined)[]): string {
+  const cues = srtContents
+    .filter((s): s is string => !!s && s.trim() !== '')
+    .flatMap(s => parseSRT(s));
+  cues.forEach((c, i) => { c.index = i + 1; });
+  return generateSRT(cues);
+}
+
+export function shiftSRTContent(srt: string, offsetSec: number): string {
+  if (!srt?.trim()) return srt;
+  const shifted = parseSRT(srt).map((c, i) => ({
+    ...c,
+    index: i + 1,
+    startTime: Math.max(0, c.startTime + offsetSec),
+    endTime: Math.max(0, c.endTime + offsetSec),
+  }));
+  return generateSRT(shifted);
 }
 
 // ── Public API: Full Pipeline ──

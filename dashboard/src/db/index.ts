@@ -83,9 +83,14 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN hook_title_history TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_audio_id INTEGER REFERENCES sponsor_audio_presets(id)');
   safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_original_audio_path TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN sponsor_original_srt_content TEXT');
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN ad_preset_id INTEGER REFERENCES ad_presets(id)');
   safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN audio_merge_enabled INTEGER DEFAULT 1');
-  safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN scheduled_dates TEXT');
+  // Cached subtitles for the sponsor口播 (transcribed once per preset, reused across episodes)
+  safeAlter('ALTER TABLE sponsor_audio_presets ADD COLUMN srt_content TEXT');
+  // Sponsor selection is now per-episode at review time — drop the date/expiry auto-selection columns
+  safeAlter('ALTER TABLE sponsor_audio_presets DROP COLUMN scheduled_dates');
+  safeAlter('ALTER TABLE sponsor_audio_presets DROP COLUMN expires_at');
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_path TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_content TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN version_check TEXT');

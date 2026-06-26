@@ -38,9 +38,7 @@ import { generateSubtitlesNode } from './nodes/generateSubtitles';
 import { uploadAssets } from './nodes/uploadAssets';
 import { notify } from './nodes/notify';
 import { publish } from './nodes/publish';
-import { concatMp3s, generateSilence } from './nodes/tts';
 import { emitEvent } from '@/services/notificationHub';
-import fs from 'fs';
 
 const log = createChildLogger('pipeline');
 
@@ -192,45 +190,9 @@ export async function startPipeline(
     // Update episode
     updateEpisodeFromState(db, finalState, episodeId);
 
-    // Merge sponsor audio if active preset exists
-    const mergeResult = await mergeSponsorAudioForEpisode(db, episodeId, finalState.audioPath);
-
-    // Regenerate subtitles after sponsor audio merge so SRT timestamps match the merged audio
-    if (mergeResult.merged && mergeResult.sponsorId) {
-      try {
-        const updatedEp = db.prepare(
-          'SELECT audio_path, script_zh FROM episodes WHERE id = ?'
-        ).get(episodeId) as { audio_path: string; script_zh: string };
-
-        const sponsor = db.prepare(
-          'SELECT script_text FROM sponsor_audio_presets WHERE id = ?'
-        ).get(mergeResult.sponsorId) as { script_text: string } | undefined;
-
-        const fullScript = (sponsor?.script_text ? sponsor.script_text + '\n' : '') + (updatedEp.script_zh || finalState.scriptZh);
-
-        const { generateSubtitles } = await import('@/services/subtitleGenerator');
-        const result = await generateSubtitles(updatedEp.audio_path, fullScript);
-
-        const srtPath = updatedEp.audio_path.replace(/\.mp3$/, '.srt');
-        await fs.promises.writeFile(srtPath, result.srtContent, 'utf-8');
-
-        db.prepare('UPDATE episodes SET srt_path = ?, srt_content = ? WHERE id = ?')
-          .run(srtPath, result.srtContent, episodeId);
-
-        // Log Whisper cost
-        const durationMin = result.transcription.duration / 60;
-        const costUsd = durationMin * 0.006;
-        try {
-          db.prepare(
-            'INSERT INTO service_costs (episode_id, episode_number, service, model, units, cost_usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).run(episodeId, finalState.episodeNumber ?? null, 'openai_whisper', 'whisper-1', Math.ceil(durationMin), costUsd, 0);
-        } catch { /* ignore duplicate cost entry */ }
-
-        log.info({ episodeId, sponsorId: mergeResult.sponsorId, cues: result.cues.length }, 'Subtitles regenerated after sponsor merge');
-      } catch (err) {
-        log.warn({ episodeId, error: (err as Error).message }, 'Post-merge subtitle regeneration failed, SRT may be misaligned');
-      }
-    }
+    // Sponsor audio is no longer merged automatically — it's selected per-episode
+    // at review time (see /api/episodes/[id]/sponsor-audio). The pipeline produces
+    // a clean episode; description ad text still comes from the active ad_preset.
 
     // Mark selected videos as used (only on success)
     markVideosUsed(db, finalState, episodeId);
@@ -495,7 +457,6 @@ export async function retryFromStage(
     ).run(newRunId);
 
     updateEpisodeFromState(db, currentState, episodeId);
-    await mergeSponsorAudioForEpisode(db, episodeId, currentState.audioPath);
     markVideosUsed(db, currentState, episodeId);
 
     log.info({ newRunId, fromStage }, 'Retry completed');
@@ -569,97 +530,6 @@ function markVideosUsed(
     stmt.run(episodeId, vid);
   }
   log.info({ table, count: videoIds.length, episodeId }, 'Marked videos as used');
-}
-
-/**
- * Merge active sponsor audio with episode audio (prepend + 0.3s silence gap).
- * Called after pipeline completion. Stores original audio path for re-merge.
- */
-async function mergeSponsorAudioForEpisode(
-  db: ReturnType<typeof getDb>,
-  episodeId: number,
-  episodeAudioPath: string
-): Promise<{ merged: boolean; sponsorId: number | null }> {
-  try {
-    const activeSponsors = db.prepare(`
-      SELECT id, audio_path, audio_merge_enabled, scheduled_dates, expires_at FROM sponsor_audio_presets
-      WHERE is_active = 1
-    `).all() as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null; expires_at: string | null }[];
-
-    if (activeSponsors.length === 0) return { merged: false, sponsorId: null };
-
-    // Find the sponsor that matches today's date
-    const today = new Date().toISOString().slice(0, 10);
-    let activeSponsor: typeof activeSponsors[0] | undefined;
-
-    // Priority 1: preset whose scheduled_dates includes today
-    for (const s of activeSponsors) {
-      if (s.scheduled_dates) {
-        const dates: string[] = JSON.parse(s.scheduled_dates);
-        if (dates.includes(today)) {
-          activeSponsor = s;
-          break;
-        }
-      }
-    }
-
-    // Priority 2: fallback to a preset with no scheduled_dates (always active)
-    if (!activeSponsor) {
-      activeSponsor = activeSponsors.find(s => !s.scheduled_dates);
-    }
-
-    // Priority 3: check expires_at for legacy presets
-    if (activeSponsor && !activeSponsor.scheduled_dates && activeSponsor.expires_at && activeSponsor.expires_at <= new Date().toISOString()) {
-      log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor expired, skipping');
-      return { merged: false, sponsorId: null };
-    }
-
-    if (!activeSponsor) {
-      log.info({ episodeId, today }, 'No sponsor matches today, skipping');
-      return { merged: false, sponsorId: null };
-    }
-
-    // Always record sponsor_audio_id (so description assembler picks up the ad content)
-    db.prepare('UPDATE episodes SET sponsor_audio_id = ? WHERE id = ?').run(activeSponsor.id, episodeId);
-
-    // Skip audio merge if disabled
-    if (!activeSponsor.audio_merge_enabled) {
-      log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor active but audio merge disabled, description only');
-      return { merged: false, sponsorId: activeSponsor.id };
-    }
-
-    if (!activeSponsor.audio_path || !fs.existsSync(activeSponsor.audio_path)) {
-      return { merged: false, sponsorId: activeSponsor.id };
-    }
-
-    if (!episodeAudioPath || !fs.existsSync(episodeAudioPath)) {
-      log.warn({ episodeId }, 'Episode audio not found, skipping sponsor merge');
-      return { merged: false, sponsorId: activeSponsor.id };
-    }
-
-    const mergedPath = episodeAudioPath.replace(/\.mp3$/, '_sponsor.mp3');
-    const silencePath = episodeAudioPath.replace(/\.mp3$/, '_silence.mp3');
-
-    await generateSilence(silencePath, 0.3);
-    await concatMp3s([activeSponsor.audio_path, silencePath, episodeAudioPath], mergedPath);
-
-    // Clean up silence file
-    try { fs.unlinkSync(silencePath); } catch { /* ignore */ }
-
-    // Save original audio path and update to merged version
-    db.prepare(`
-      UPDATE episodes SET
-        sponsor_original_audio_path = ?,
-        audio_path = ?
-      WHERE id = ?
-    `).run(episodeAudioPath, mergedPath, episodeId);
-
-    log.info({ episodeId, sponsorId: activeSponsor.id }, 'Sponsor audio merged');
-    return { merged: true, sponsorId: activeSponsor.id };
-  } catch (err) {
-    log.warn({ episodeId, error: (err as Error).message }, 'Sponsor audio merge failed, continuing without');
-    return { merged: false, sponsorId: null };
-  }
 }
 
 /**

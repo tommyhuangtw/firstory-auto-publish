@@ -7,8 +7,7 @@ interface PresetOption {
   name: string;
   audio_duration_sec: number | null;
   is_active: number;
-  expires_at: string | null;
-  expired: boolean;
+  ad_content: string;
 }
 
 interface Props {
@@ -19,6 +18,7 @@ interface Props {
 export default function SponsorAudioSelector({ episodeId, initialSponsorId }: Props) {
   const [sponsorId, setSponsorId] = useState<number | null>(initialSponsorId);
   const [presets, setPresets] = useState<PresetOption[]>([]);
+  const [globalAdContent, setGlobalAdContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState(false);
   const [message, setMessage] = useState('');
@@ -29,6 +29,7 @@ export default function SponsorAudioSelector({ episodeId, initialSponsorId }: Pr
       const data = await res.json();
       setSponsorId(data.sponsorAudioId);
       setPresets(data.presets || []);
+      setGlobalAdContent(data.globalAdContent || '');
     } catch {
       // ignore
     } finally {
@@ -62,12 +63,11 @@ export default function SponsorAudioSelector({ episodeId, initialSponsorId }: Pr
     }
   }
 
-  const availablePresets = presets.filter(p => !p.expired);
-
-  if (loading) return null;
-  if (availablePresets.length === 0 && !sponsorId) return null;
-
+  const availablePresets = presets;
   const selectedPreset = presets.find(p => p.id === sponsorId);
+  // The ad text that will be inserted into the SoundOn/YouTube description:
+  // selected sponsor's ad content, or the globally active one when none is selected.
+  const resolvedAd = (sponsorId ? selectedPreset?.ad_content : globalAdContent) || '';
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
@@ -95,7 +95,7 @@ export default function SponsorAudioSelector({ episodeId, initialSponsorId }: Pr
           const val = e.target.value;
           handleChange(val === '' ? null : parseInt(val));
         }}
-        disabled={merging}
+        disabled={merging || loading}
         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 cursor-pointer disabled:opacity-50"
       >
         <option value="">不使用業配</option>
@@ -108,13 +108,38 @@ export default function SponsorAudioSelector({ episodeId, initialSponsorId }: Pr
         ))}
       </select>
 
-      {selectedPreset && (
+      {loading ? (
+        <p className="text-[11px] text-zinc-500 mt-1.5">載入業配清單中…</p>
+      ) : availablePresets.length === 0 ? (
+        <p className="text-[11px] text-zinc-500 mt-1.5">
+          尚無業配口播，請先到 <a href="/sponsor" className="text-brand hover:underline">業配口播</a> 頁面建立
+        </p>
+      ) : selectedPreset ? (
         <p className="text-[11px] text-zinc-500 mt-1.5">
           目前使用：{selectedPreset.name}
-          {selectedPreset.expired && (
-            <span className="text-red-400 ml-1">（已過期，publish 時不會合併）</span>
-          )}
         </p>
+      ) : (
+        <p className="text-[11px] text-zinc-500 mt-1.5">預設不使用業配；選擇後會即時合併到音檔前面</p>
+      )}
+
+      {!loading && (
+        <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
+            會加入 SoundOn / YouTube 描述開頭的業配文字
+            {!sponsorId && resolvedAd && <span className="ml-1 normal-case tracking-normal">（全域業配）</span>}
+          </p>
+          {resolvedAd.trim() ? (
+            <pre className="text-[12px] text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed max-h-48 overflow-y-auto">
+              {resolvedAd.trim()}
+            </pre>
+          ) : (
+            <p className="text-[11px] text-zinc-600 italic">
+              {sponsorId
+                ? '這個業配沒有 description 文字（只會合併口播音檔）。可到「業配口播」頁編輯。'
+                : '目前沒有業配 description 會被加入。'}
+            </p>
+          )}
+        </div>
       )}
 
       {message && (

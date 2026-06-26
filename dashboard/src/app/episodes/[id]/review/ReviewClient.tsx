@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { detectModelVersions, detectUngroundedVersions } from '@/services/llm/versionGuard';
 
@@ -60,6 +60,18 @@ export default function ReviewClient({
   // Track saved state for dirty detection
   const [savedTitle, setSavedTitle] = useState(initialTitle);
   const [savedDescription, setSavedDescription] = useState(initialDescription);
+
+  // Sponsor ad + footer for the "final description" preview (resolved per episode:
+  // selected sponsor's ad → else globally active ad). Refetched on mount, so it
+  // reflects the latest sponsor selection (the selector reloads the page on change).
+  const [previewAd, setPreviewAd] = useState('');
+  const [previewFooter, setPreviewFooter] = useState('');
+  useEffect(() => {
+    fetch(`/api/episodes/${episodeId}/description-preview`)
+      .then(r => r.json())
+      .then(d => { setPreviewAd(d.adContent || ''); setPreviewFooter(d.podcastFooter || ''); })
+      .catch(() => {});
+  }, [episodeId]);
 
   // Version-number guard: detect (client-side, instant) + web verdicts (from pipeline / on-demand)
   const [versionData, setVersionData] = useState<VersionCheckData | null>(() => {
@@ -494,6 +506,31 @@ export default function ReviewClient({
                 className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y"
               />
               <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">{description.length} 字</p>
+
+              {/* Final description preview (sponsor ad + body + footer, read-only) */}
+              <div className="mt-3">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">
+                  發布預覽（含業配 + footer · 唯讀）
+                </p>
+                <div className="rounded border border-zinc-800 bg-zinc-950/40 divide-y divide-zinc-800/70 max-h-72 overflow-y-auto">
+                  {previewAd.trim() && (
+                    <pre className="px-3 py-2 text-[12px] text-amber-300/90 whitespace-pre-wrap font-sans leading-relaxed">
+                      {previewAd.trim()}
+                    </pre>
+                  )}
+                  <pre className="px-3 py-2 text-[12px] text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed">
+                    {description.trim() || '（無描述內容）'}
+                  </pre>
+                  {previewFooter.trim() && (
+                    <pre className="px-3 py-2 text-[12px] text-zinc-500 whitespace-pre-wrap font-sans leading-relaxed">
+                      {previewFooter.trim()}
+                    </pre>
+                  )}
+                </div>
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  業配段落會在發布時自動加到描述最前面；YouTube 另會在結尾附上 hashtags。{!previewAd.trim() && '（目前未帶入業配）'}
+                </p>
+              </div>
             </div>
 
             {/* Tags */}

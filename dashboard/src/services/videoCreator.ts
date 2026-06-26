@@ -58,7 +58,7 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
     const vfParts = ['scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black'];
     if (hasSubs) {
       const escaped = escapeFFmpegSubPath(srtPath);
-      vfParts.push(`subtitles='${escaped}':force_style='FontName=Heiti TC,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
+      vfParts.push(`subtitles='${escaped}':force_style='FontName=Heiti TC,FontSize=21,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
     }
 
     args.push(
@@ -85,7 +85,7 @@ export async function createVideoFromAudio(params: CreateVideoParams): Promise<s
     const vfParts: string[] = [];
     if (hasSubs) {
       const escaped = escapeFFmpegSubPath(srtPath);
-      vfParts.push(`subtitles='${escaped}':force_style='FontName=Heiti TC,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
+      vfParts.push(`subtitles='${escaped}':force_style='FontName=Heiti TC,FontSize=21,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=1,BorderStyle=4,Alignment=2,MarginV=40'`);
     }
 
     args.push(

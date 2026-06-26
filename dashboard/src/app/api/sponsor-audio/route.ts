@@ -2,106 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs-extra';
 import path from 'path';
 import { getDb } from '@/db';
-import { concatMp3s, generateSilence, probeDuration } from '@/services/pipeline/nodes/tts';
-import { createChildLogger } from '@/lib/logger';
-
-const log = createChildLogger('sponsor-auto-apply');
-
-/** Check if activating a preset with given dates would conflict with other active presets */
-function checkDateConflict(db: ReturnType<typeof getDb>, presetId: number, scheduledDatesJson: string | null): string | null {
-  const others = db.prepare(
-    'SELECT id, name, scheduled_dates FROM sponsor_audio_presets WHERE is_active = 1 AND id != ?'
-  ).all(presetId) as { id: number; name: string; scheduled_dates: string | null }[];
-
-  if (others.length === 0) return null;
-
-  const myDates: string[] = scheduledDatesJson ? JSON.parse(scheduledDatesJson) : [];
-
-  // No scheduled_dates = "always active" — conflicts with any other active preset
-  if (myDates.length === 0) {
-    const otherNames = others.map(o => o.name).join('、');
-    return `不限日期的業配不能與其他已啟用的業配同時啟用（衝突：${otherNames}）`;
-  }
-
-  // Check if any other active preset has no dates (always active) or overlapping dates
-  for (const other of others) {
-    if (!other.scheduled_dates) {
-      return `「${other.name}」是不限日期的業配，請先停用或設定日期`;
-    }
-    const otherDates: string[] = JSON.parse(other.scheduled_dates);
-    const overlap = myDates.filter(d => otherDates.includes(d));
-    if (overlap.length > 0) {
-      const overlapStr = overlap.map(d => {
-        const [, m, day] = d.split('-');
-        return `${parseInt(m)}/${parseInt(day)}`;
-      }).join('、');
-      return `與「${other.name}」的日期衝突：${overlapStr}`;
-    }
-  }
-
-  return null;
-}
-
-/**
- * After activating a preset or updating its schedule, auto-apply sponsor audio
- * to any pending_review episodes whose created_at date matches the scheduled_dates.
- */
-async function applyToPendingEpisodes(db: ReturnType<typeof getDb>, presetId: number) {
-  const preset = db.prepare(
-    'SELECT id, audio_path, audio_merge_enabled, scheduled_dates FROM sponsor_audio_presets WHERE id = ?'
-  ).get(presetId) as { id: number; audio_path: string; audio_merge_enabled: number; scheduled_dates: string | null } | undefined;
-
-  if (!preset?.scheduled_dates) return;
-
-  const dates: string[] = JSON.parse(preset.scheduled_dates);
-  if (dates.length === 0) return;
-
-  // Find pending_review episodes without sponsor that match any of the scheduled dates
-  const pendingEpisodes = db.prepare(`
-    SELECT id, audio_path, sponsor_original_audio_path, created_at
-    FROM episodes
-    WHERE status = 'pending_review' AND sponsor_audio_id IS NULL
-  `).all() as { id: number; audio_path: string; sponsor_original_audio_path: string | null; created_at: string }[];
-
-  for (const ep of pendingEpisodes) {
-    const episodeDate = ep.created_at.slice(0, 10);
-    if (!dates.includes(episodeDate)) continue;
-
-    // Always record sponsor_audio_id (for description assembler)
-    db.prepare('UPDATE episodes SET sponsor_audio_id = ? WHERE id = ?').run(presetId, ep.id);
-    log.info({ episodeId: ep.id, presetId, episodeDate }, 'Auto-applied sponsor to pending episode');
-
-    // Skip audio merge if disabled or no audio file
-    if (!preset.audio_merge_enabled) continue;
-    if (!preset.audio_path || !fs.existsSync(preset.audio_path)) continue;
-
-    const originalAudioPath = ep.sponsor_original_audio_path || ep.audio_path;
-    if (!originalAudioPath || !fs.existsSync(originalAudioPath)) continue;
-
-    try {
-      const mergedPath = originalAudioPath.replace(/\.mp3$/, '_sponsor.mp3');
-      const silencePath = originalAudioPath.replace(/\.mp3$/, '_silence.mp3');
-
-      await generateSilence(silencePath, 0.3);
-      await concatMp3s([preset.audio_path, silencePath, originalAudioPath], mergedPath);
-      try { fs.unlinkSync(silencePath); } catch { /* ignore */ }
-
-      const durationSec = await probeDuration(mergedPath).catch(() => null);
-
-      db.prepare(`
-        UPDATE episodes SET
-          sponsor_original_audio_path = ?,
-          audio_path = ?,
-          audio_duration_sec = ?
-        WHERE id = ?
-      `).run(originalAudioPath, mergedPath, durationSec, ep.id);
-
-      log.info({ episodeId: ep.id, presetId }, 'Sponsor audio merged for pending episode');
-    } catch (err) {
-      log.warn({ episodeId: ep.id, error: (err as Error).message }, 'Failed to merge sponsor audio for pending episode');
-    }
-  }
-}
 
 interface SponsorPreset {
   id: number;
@@ -110,8 +10,6 @@ interface SponsorPreset {
   audio_path: string;
   audio_duration_sec: number | null;
   is_active: number;
-  expires_at: string | null;
-  scheduled_dates: string | null;
   ad_preset_id: number | null;
   created_at: string;
 }
@@ -125,20 +23,6 @@ export async function GET() {
     ORDER BY s.is_active DESC, s.id DESC
   `).all() as (SponsorPreset & { ad_content: string | null })[];
 
-  const now = new Date().toISOString();
-  const today = now.slice(0, 10);
-  const result = presets.map(p => {
-    // Check if all scheduled dates are in the past
-    let expired = false;
-    if (p.scheduled_dates) {
-      const dates: string[] = JSON.parse(p.scheduled_dates as unknown as string);
-      expired = dates.length > 0 && dates.every(d => d < today);
-    } else if (p.expires_at) {
-      expired = p.expires_at <= now;
-    }
-    return { ...p, expired };
-  });
-
   // Also return ad_presets that aren't linked to any sponsor_audio_preset
   const unlinkedAds = db.prepare(`
     SELECT a.* FROM ad_presets a
@@ -148,17 +32,16 @@ export async function GET() {
     ORDER BY a.is_active DESC, a.id ASC
   `).all() as { id: number; name: string; content: string; is_active: number }[];
 
-  return NextResponse.json({ presets: result, unlinkedAds });
+  return NextResponse.json({ presets, unlinkedAds });
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const { name, scriptText, audioPath, durationSec, scheduledDates, adContent } = body as {
+  const { name, scriptText, audioPath, durationSec, adContent } = body as {
     name?: string;
     scriptText?: string;
     audioPath?: string;
     durationSec?: number;
-    scheduledDates?: string[];
     adContent?: string;
   };
 
@@ -176,8 +59,6 @@ export async function POST(request: NextRequest) {
   const permanentPath = path.join(permanentDir, `sponsor_${Date.now()}${ext}`);
   await fs.copy(audioPath, permanentPath);
 
-  const scheduledDatesJson = scheduledDates?.length ? JSON.stringify(scheduledDates) : null;
-
   const db = getDb();
 
   // Create linked ad_preset
@@ -187,8 +68,8 @@ export async function POST(request: NextRequest) {
   const adPresetId = adResult.lastInsertRowid;
 
   const result = db.prepare(
-    'INSERT INTO sponsor_audio_presets (name, script_text, audio_path, audio_duration_sec, scheduled_dates, ad_preset_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name.trim(), scriptText.trim(), permanentPath, durationSec ?? null, scheduledDatesJson, adPresetId);
+    'INSERT INTO sponsor_audio_presets (name, script_text, audio_path, audio_duration_sec, ad_preset_id) VALUES (?, ?, ?, ?, ?)'
+  ).run(name.trim(), scriptText.trim(), permanentPath, durationSec ?? null, adPresetId);
 
   return NextResponse.json({
     id: result.lastInsertRowid,
@@ -197,7 +78,6 @@ export async function POST(request: NextRequest) {
     audio_path: permanentPath,
     audio_duration_sec: durationSec ?? null,
     is_active: 0,
-    scheduled_dates: scheduledDatesJson,
     ad_preset_id: adPresetId,
     ad_content: (adContent ?? '').trim(),
   });
@@ -205,7 +85,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const { id, action, adContent, scheduledDates } = body as { id?: number; action?: string; adContent?: string; scheduledDates?: string[] | null };
+  const { id, action, adContent } = body as { id?: number; action?: string; adContent?: string };
 
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
@@ -219,24 +99,19 @@ export async function PUT(request: NextRequest) {
   ).get(id) as { ad_preset_id: number | null } | undefined;
 
   if (action === 'activate') {
-    // Check date conflicts before activating
-    const thisPreset = db.prepare(
-      'SELECT scheduled_dates FROM sponsor_audio_presets WHERE id = ?'
-    ).get(id) as { scheduled_dates: string | null } | undefined;
+    // Exclusive: only one sponsor (and its ad text) is active at a time, so the
+    // description assembler's active ad_preset is deterministic. Audio is applied
+    // per-episode at review time, not on activation.
+    db.prepare('UPDATE sponsor_audio_presets SET is_active = 0').run();
+    db.prepare(`
+      UPDATE ad_presets SET is_active = 0
+      WHERE id IN (SELECT ad_preset_id FROM sponsor_audio_presets WHERE ad_preset_id IS NOT NULL)
+    `).run();
 
-    const conflict = checkDateConflict(db, id, thisPreset?.scheduled_dates ?? null);
-    if (conflict) {
-      return NextResponse.json({ error: conflict }, { status: 400 });
-    }
-
-    // Activate this sponsor and its linked ad_preset (don't deactivate others)
     db.prepare('UPDATE sponsor_audio_presets SET is_active = 1 WHERE id = ?').run(id);
     if (sponsor?.ad_preset_id) {
       db.prepare('UPDATE ad_presets SET is_active = 1 WHERE id = ?').run(sponsor.ad_preset_id);
     }
-
-    // Auto-apply to pending_review episodes matching scheduled dates
-    await applyToPendingEpisodes(db, id);
 
     return NextResponse.json({ message: 'activated' });
   }
@@ -247,38 +122,6 @@ export async function PUT(request: NextRequest) {
       db.prepare('UPDATE ad_presets SET is_active = 0 WHERE id = ?').run(sponsor.ad_preset_id);
     }
     return NextResponse.json({ message: 'deactivated' });
-  }
-
-  if (action === 'toggle_audio_merge') {
-    db.prepare(
-      'UPDATE sponsor_audio_presets SET audio_merge_enabled = CASE WHEN audio_merge_enabled = 1 THEN 0 ELSE 1 END WHERE id = ?'
-    ).run(id);
-    const updated = db.prepare('SELECT audio_merge_enabled FROM sponsor_audio_presets WHERE id = ?').get(id) as { audio_merge_enabled: number };
-    return NextResponse.json({ message: 'toggled', audio_merge_enabled: updated.audio_merge_enabled });
-  }
-
-  if (action === 'update_schedule') {
-    const json = scheduledDates?.length ? JSON.stringify(scheduledDates) : null;
-
-    // Check date conflicts if this preset is active
-    const thisPreset = db.prepare(
-      'SELECT is_active FROM sponsor_audio_presets WHERE id = ?'
-    ).get(id) as { is_active: number } | undefined;
-    if (thisPreset?.is_active) {
-      const conflict = checkDateConflict(db, id, json);
-      if (conflict) {
-        return NextResponse.json({ error: conflict }, { status: 400 });
-      }
-    }
-
-    db.prepare('UPDATE sponsor_audio_presets SET scheduled_dates = ? WHERE id = ?').run(json, id);
-
-    // Auto-apply to pending_review episodes if this preset is active
-    if (thisPreset?.is_active) {
-      await applyToPendingEpisodes(db, id);
-    }
-
-    return NextResponse.json({ message: 'schedule updated', scheduled_dates: json });
   }
 
   // Update ad content

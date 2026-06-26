@@ -224,7 +224,6 @@ CREATE TABLE IF NOT EXISTS sponsor_audio_presets (
   audio_path TEXT NOT NULL,
   audio_duration_sec REAL,
   is_active INTEGER DEFAULT 0,
-  expires_at TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 

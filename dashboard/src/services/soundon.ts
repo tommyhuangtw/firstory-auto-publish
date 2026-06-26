@@ -181,9 +181,67 @@ async function fillEpisodeInfo(page: import('playwright').Page, title: string, d
   const descEditor = page.locator('.ql-editor');
   await descEditor.waitFor({ timeout: 10000 });
   await descEditor.clear();
-  await descEditor.fill(description);
 
-  log.info('Episode info filled');
+  // SoundOn's description field is a Quill editor. Plain `fill()` lets Quill mangle
+  // the text (blank lines doubled, URLs split mid-word). Instead, convert to clean
+  // HTML and inject via Quill's paste API; fall back to fill() if anything fails.
+  const html = descriptionToQuillHtml(description);
+  let pasted = false;
+  try {
+    pasted = await page.evaluate((htmlContent) => {
+      const root = document.querySelector('.ql-editor');
+      if (!root) return false;
+      const container = root.closest('.ql-container') || root.parentElement;
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const W = window as any;
+      let quill: any = null;
+      try {
+        if (W.Quill && typeof W.Quill.find === 'function') {
+          quill = W.Quill.find(container) || W.Quill.find(root);
+        }
+      } catch { /* ignore */ }
+      if (!quill) quill = (container as any)?.__quill || (root as any)?.__quill || null;
+      if (quill?.clipboard && typeof quill.clipboard.dangerouslyPasteHTML === 'function') {
+        quill.setContents([]);
+        quill.clipboard.dangerouslyPasteHTML(htmlContent);
+        return true;
+      }
+      (root as HTMLElement).innerHTML = htmlContent;
+      root.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    }, html);
+  } catch (err) {
+    log.warn({ error: (err as Error).message }, 'Quill paste failed, falling back to fill()');
+  }
+  if (!pasted) {
+    await descEditor.fill(description);
+  }
+
+  log.info({ method: pasted ? 'quill-paste' : 'fill' }, 'Episode info filled');
+}
+
+/**
+ * Convert a plain-text description (with \n) into Quill-friendly HTML.
+ *
+ * Quill normalises each line to its own <p>, so we author exactly that — one <p>
+ * per source line, empty lines as <p><br></p>. This mirrors the source layout
+ * predictably (instead of letting fill() amplify blank lines) and wraps URLs in
+ * <a> so Quill keeps them intact (fixes the "ht/tps" split). 3+ consecutive
+ * blank lines collapse to a single blank line.
+ */
+export function descriptionToQuillHtml(text: string): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const linkify = (s: string) =>
+    s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .split('\n')
+    .map((line) => (line.trim() === '' ? '<p><br></p>' : `<p>${linkify(esc(line))}</p>`))
+    .join('');
 }
 
 async function selectEpisodeType(page: import('playwright').Page) {

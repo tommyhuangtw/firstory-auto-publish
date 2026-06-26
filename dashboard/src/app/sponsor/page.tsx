@@ -9,12 +9,8 @@ interface SponsorPreset {
   audio_path: string;
   audio_duration_sec: number | null;
   is_active: number;
-  expires_at: string | null;
-  scheduled_dates: string | null;
-  expired: boolean;
   ad_preset_id: number | null;
   ad_content: string | null;
-  audio_merge_enabled: number;
   created_at: string;
 }
 
@@ -23,16 +19,6 @@ interface AdOnlyPreset {
   name: string;
   content: string;
   is_active: number;
-}
-
-function parseScheduledDates(raw: string | null): string[] {
-  if (!raw) return [];
-  try { return JSON.parse(raw); } catch { return []; }
-}
-
-function formatDateShort(d: string) {
-  const [, m, day] = d.split('-');
-  return `${parseInt(m)}/${parseInt(day)}`;
 }
 
 export default function SponsorPage() {
@@ -47,8 +33,6 @@ export default function SponsorPage() {
 
   // Save preset state
   const [presetName, setPresetName] = useState('');
-  const [scheduledDates, setScheduledDates] = useState<string[]>([]);
-  const [newDate, setNewDate] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Presets list
@@ -68,11 +52,6 @@ export default function SponsorPage() {
   const [editingUnlinkedId, setEditingUnlinkedId] = useState<number | null>(null);
   const [editUnlinkedContent, setEditUnlinkedContent] = useState('');
   const [expandedUnlinkedId, setExpandedUnlinkedId] = useState<number | null>(null);
-
-  // Schedule editing for existing presets
-  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null);
-  const [editScheduleDates, setEditScheduleDates] = useState<string[]>([]);
-  const [editNewDate, setEditNewDate] = useState('');
 
   const loadPresets = useCallback(async () => {
     try {
@@ -128,7 +107,6 @@ export default function SponsorPage() {
           scriptText,
           audioPath: testAudioPath,
           durationSec: testDuration,
-          scheduledDates: scheduledDates.length ? scheduledDates : undefined,
           adContent,
         }),
       });
@@ -138,7 +116,6 @@ export default function SponsorPage() {
       setTestDuration(null);
       setScriptText('');
       setAdContent('');
-      setScheduledDates([]);
       setMessage('業配口播已儲存');
       await loadPresets();
     } catch {
@@ -161,8 +138,10 @@ export default function SponsorPage() {
         const err = await res.json().catch(() => ({ error: '啟用失敗' }));
         throw new Error(err.error || '啟用失敗');
       }
-      setPresets(prev => prev.map(p => p.id === id ? { ...p, is_active: 1 } : p));
-      setMessage('已啟用（口播 + Description 已同步）');
+      // Activation is exclusive — only this sponsor (+ its description) stays active
+      setPresets(prev => prev.map(p => ({ ...p, is_active: p.id === id ? 1 : 0 })));
+      setUnlinkedAds(prev => prev.map(a => ({ ...a, is_active: 0 })));
+      setMessage('已啟用（口播 + Description 已同步，其他業配已停用）');
     } catch (err) {
       setMessage((err as Error).message);
     } finally {
@@ -186,48 +165,6 @@ export default function SponsorPage() {
       setMessage('停用失敗');
     } finally {
       setActivating(false);
-    }
-  }
-
-  async function handleToggleAudioMerge(id: number) {
-    setMessage('');
-    try {
-      const res = await fetch('/api/sponsor-audio', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, action: 'toggle_audio_merge' }),
-      });
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
-      setPresets(prev => prev.map(p =>
-        p.id === id ? { ...p, audio_merge_enabled: data.audio_merge_enabled } : p
-      ));
-      setMessage(data.audio_merge_enabled ? '口播音檔將合併到 Podcast' : '僅 Description，不合併口播');
-    } catch {
-      setMessage('切換失敗');
-    }
-  }
-
-  async function handleSaveSchedule(id: number) {
-    setMessage('');
-    try {
-      const res = await fetch('/api/sponsor-audio', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, action: 'update_schedule', scheduledDates: editScheduleDates.length ? editScheduleDates : null }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '更新失敗' }));
-        throw new Error(err.error || '更新失敗');
-      }
-      const json = editScheduleDates.length ? JSON.stringify(editScheduleDates) : null;
-      setPresets(prev => prev.map(p =>
-        p.id === id ? { ...p, scheduled_dates: json } : p
-      ));
-      setEditingScheduleId(null);
-      setMessage('排程已更新');
-    } catch (err) {
-      setMessage((err as Error).message);
     }
   }
 
@@ -350,19 +287,6 @@ export default function SponsorPage() {
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   }
 
-  function formatSchedule(scheduledDates: string | null, expiresAt: string | null) {
-    if (scheduledDates) {
-      const dates = parseScheduledDates(scheduledDates);
-      if (dates.length === 0) return '不限日期';
-      return dates.map(formatDateShort).join(', ');
-    }
-    if (expiresAt) {
-      const d = new Date(expiresAt);
-      return `到期：${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-    }
-    return '不限日期';
-  }
-
   return (
     <div className="p-6 md:p-8 max-w-3xl">
       <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
@@ -470,45 +394,6 @@ export default function SponsorPage() {
               />
             </div>
 
-            <div className="mb-3">
-              <label className="text-[11px] text-zinc-400 mb-1.5 block">排程日期（不選 = 不限日期，一直生效）</label>
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
-                />
-                <button
-                  onClick={() => {
-                    if (newDate && !scheduledDates.includes(newDate)) {
-                      setScheduledDates(prev => [...prev, newDate].sort());
-                      setNewDate('');
-                    }
-                  }}
-                  disabled={!newDate}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 transition-colors cursor-pointer"
-                >
-                  新增
-                </button>
-              </div>
-              {scheduledDates.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {scheduledDates.map(d => (
-                    <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand/15 text-brand text-[11px] font-medium">
-                      {formatDateShort(d)}
-                      <button
-                        onClick={() => setScheduledDates(prev => prev.filter(x => x !== d))}
-                        className="hover:text-red-400 cursor-pointer"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <button
               onClick={handleSavePreset}
               disabled={saving || !presetName.trim()}
@@ -525,7 +410,7 @@ export default function SponsorPage() {
             <div>
               <h2 className="text-sm font-medium text-zinc-200">業配 Presets</h2>
               <p className="text-[11px] text-zinc-500 mt-0.5">
-                啟用的 preset 會自動合併口播到音檔前面，並在 Description 加入業配文案
+                啟用的 preset 會把業配文案加入 Description；口播音檔則在每集審核頁手動選擇是否合併
               </p>
             </div>
           </div>
@@ -548,9 +433,7 @@ export default function SponsorPage() {
                   <div
                     key={preset.id}
                     className={`rounded-xl border transition-colors ${
-                      preset.expired
-                        ? 'border-zinc-800/50 bg-zinc-900/50 opacity-60'
-                        : isActive
+                      isActive
                         ? 'border-brand/40 bg-brand/5'
                         : 'border-zinc-800 bg-zinc-900 hover:border-brand/20'
                     }`}
@@ -563,19 +446,16 @@ export default function SponsorPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (preset.expired) return;
                           if (isActive) {
                             handleDeactivate(preset.id);
                           } else {
                             handleActivate(preset.id);
                           }
                         }}
-                        disabled={activating || preset.expired}
+                        disabled={activating}
                         className={`shrink-0 w-4 h-4 rounded-full border-2 transition-colors cursor-pointer ${
                           isActive
                             ? 'border-brand bg-brand'
-                            : preset.expired
-                            ? 'border-zinc-700'
                             : 'border-zinc-600 hover:border-zinc-400'
                         }`}
                         aria-label={`Activate ${preset.name}`}
@@ -595,18 +475,10 @@ export default function SponsorPage() {
                               使用中
                             </span>
                           )}
-                          {preset.expired && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">
-                              已過期
-                            </span>
-                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[11px] text-zinc-500 font-mono">
                             {formatDuration(preset.audio_duration_sec)}
-                          </span>
-                          <span className="text-[10px] text-zinc-600">
-                            {formatSchedule(preset.scheduled_dates, preset.expires_at)}
                           </span>
                           {preset.ad_content?.trim() ? (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
@@ -617,33 +489,7 @@ export default function SponsorPage() {
                               無 Description
                             </span>
                           )}
-                          {isActive && !preset.audio_merge_enabled && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500">
-                              口播已關閉
-                            </span>
-                          )}
                         </div>
-                        {/* Audio merge toggle — only show for active preset */}
-                        {isActive && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleAudioMerge(preset.id);
-                            }}
-                            className="flex items-center gap-1.5 mt-1 group cursor-pointer"
-                          >
-                            <div className={`relative w-7 h-4 rounded-full transition-colors ${
-                              preset.audio_merge_enabled ? 'bg-brand' : 'bg-zinc-700'
-                            }`}>
-                              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                                preset.audio_merge_enabled ? 'translate-x-3.5' : 'translate-x-0.5'
-                              }`} />
-                            </div>
-                            <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors">
-                              合併口播音檔
-                            </span>
-                          </button>
-                        )}
                       </div>
 
                       {/* Actions */}
@@ -684,87 +530,6 @@ export default function SponsorPage() {
                           src={`/api/audio${preset.audio_path}`}
                           preload="metadata"
                         />
-
-                        {/* Schedule dates */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[11px] text-zinc-500 font-medium">排程日期</span>
-                            {editingScheduleId !== preset.id && (
-                              <button
-                                onClick={() => {
-                                  setEditingScheduleId(preset.id);
-                                  setEditScheduleDates(parseScheduledDates(preset.scheduled_dates));
-                                  setEditNewDate('');
-                                }}
-                                className="p-1 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-                                aria-label="Edit schedule"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                          {editingScheduleId === preset.id ? (
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <input
-                                  type="date"
-                                  value={editNewDate}
-                                  onChange={(e) => setEditNewDate(e.target.value)}
-                                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
-                                />
-                                <button
-                                  onClick={() => {
-                                    if (editNewDate && !editScheduleDates.includes(editNewDate)) {
-                                      setEditScheduleDates(prev => [...prev, editNewDate].sort());
-                                      setEditNewDate('');
-                                    }
-                                  }}
-                                  disabled={!editNewDate}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:text-zinc-600 text-zinc-300 transition-colors cursor-pointer"
-                                >
-                                  新增
-                                </button>
-                              </div>
-                              {editScheduleDates.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5 mb-2">
-                                  {editScheduleDates.map(d => (
-                                    <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand/15 text-brand text-[11px] font-medium">
-                                      {formatDateShort(d)}
-                                      <button
-                                        onClick={() => setEditScheduleDates(prev => prev.filter(x => x !== d))}
-                                        className="hover:text-red-400 cursor-pointer"
-                                      >
-                                        ×
-                                      </button>
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-[11px] text-zinc-600 mb-2">不限日期（一直生效）</p>
-                              )}
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleSaveSchedule(preset.id)}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand hover:bg-brand-light text-white transition-colors cursor-pointer"
-                                >
-                                  儲存
-                                </button>
-                                <button
-                                  onClick={() => setEditingScheduleId(null)}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 transition-colors cursor-pointer"
-                                >
-                                  取消
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <p className="text-[12px] text-zinc-400">
-                              {formatSchedule(preset.scheduled_dates, preset.expires_at)}
-                            </p>
-                          )}
-                        </div>
 
                         {/* Description content */}
                         <div>
