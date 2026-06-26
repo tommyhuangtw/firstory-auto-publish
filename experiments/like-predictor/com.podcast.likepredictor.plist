@@ -15,12 +15,12 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/.worktrees/feat-like-predictor/experiments/like-predictor/score_service.py</string>
+    <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/experiments/like-predictor/score_service.py</string>
     <string>--port</string>
     <string>8765</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/.worktrees/feat-like-predictor/experiments/like-predictor</string>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/experiments/like-predictor</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
