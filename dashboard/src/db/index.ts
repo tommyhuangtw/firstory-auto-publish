@@ -320,6 +320,9 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE trend_posts ADD COLUMN embedding TEXT');           // OpenAI vector (JSON)
   safeAlter('ALTER TABLE trend_posts ADD COLUMN interested INTEGER DEFAULT 0'); // 👍 想留
   safeAlter('ALTER TABLE trend_posts ADD COLUMN scan_run_id INTEGER');         // which scan recorded it
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN niche INTEGER DEFAULT 0');      // 回覆專區命中(niche keyword + 讚≥30 + 近2天)
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN reply_draft TEXT');             // AI 生成的回覆草稿
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_niche ON trend_posts(niche)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_interested ON trend_posts(interested)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_topic ON trend_posts(topic_id)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_permalink ON trend_posts(permalink)');

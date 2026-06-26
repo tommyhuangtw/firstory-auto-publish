@@ -34,6 +34,7 @@ export default function TrendsPage() {
   const [showAll, setShowAll] = useState(false);
   const [showDisliked, setShowDisliked] = useState(false);
   const [sortMode, setSortMode] = useState<'interest' | 'newest' | 'heat'>('interest');
+  const [tab, setTab] = useState<'hot' | 'reply'>('hot');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,6 +148,14 @@ export default function TrendsPage() {
           </button>
         </div>
       </div>
+
+      {/* Tabs: 熱點(寫新貼文) vs 回覆專區(回別人的 niche 貼文) */}
+      <div className="flex gap-1 mb-4 border-b border-zinc-800">
+        <button onClick={() => setTab('hot')} className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === 'hot' ? 'border-brand text-brand' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>🔥 熱點</button>
+        <button onClick={() => setTab('reply')} className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === 'reply' ? 'border-brand text-brand' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>💬 回覆專區</button>
+      </div>
+
+      {tab === 'reply' ? <ReplyZone /> : (<>
       <p className="text-xs text-zinc-500 mb-3">
         爬 Threads「為你推薦」+ 你的同溫層話題的近期熱點。按 👍 標「想留」、👎 標「不要」，系統會學你的口味、把語意類似的貼文排前面、把你不要的壓下去（累積到 15 篇 👍 後自動切換）。每則可直接點去回覆，或按「✍️ 讓 AI 寫成貼文」生成草稿。
       </p>
@@ -261,6 +270,95 @@ export default function TrendsPage() {
           ))}
         </div>
       )}
+      </>)}
+    </div>
+  );
+}
+
+interface NichePost {
+  id: number;
+  author?: string;
+  text: string;
+  like_count: number;
+  reply_count: number;
+  permalink?: string;
+  posted_at?: string;
+  topic?: string;
+  reply_draft?: string | null;
+}
+
+/** 💬 回覆專區 — niche posts (讚≥30, 近2天) to reply to, with AI-generated reply drafts. */
+function ReplyZone() {
+  const [posts, setPosts] = useState<NichePost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [genBusy, setGenBusy] = useState<number | null>(null);
+  const [replies, setReplies] = useState<Record<number, string>>({});
+  const [copied, setCopied] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await fetch('/api/trends/niche').then(r => r.json()).catch(() => ({ posts: [] }));
+    const list: NichePost[] = d.posts || [];
+    setPosts(list);
+    const seed: Record<number, string> = {};
+    for (const p of list) if (p.reply_draft) seed[p.id] = p.reply_draft;
+    setReplies(seed);
+    setLoading(false);
+  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, [load]);
+
+  const genReply = async (id: number) => {
+    setGenBusy(id);
+    try {
+      const res = await fetch('/api/trends/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.reply_draft) { alert(data.error || '生成失敗'); return; }
+      setReplies((p) => ({ ...p, [id]: data.reply_draft }));
+    } finally {
+      setGenBusy(null);
+    }
+  };
+
+  if (loading) return <p className="text-sm text-zinc-500">Loading…</p>;
+  if (posts.length === 0) {
+    return <p className="text-sm text-zinc-500">尚無 niche 貼文。按右上「立即掃描」爬一輪(會搜 AI 工具/接案/創業/AI 學習等關鍵詞,留讚≥30、近 2 天的)。</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-zinc-500 mb-1">你的 niche(AI 工具/接案/創業/AI 學習)近 2 天、讚 ≥ 30 的貼文。生成一則你的口吻回覆 → 複製 → 點原文去貼。主動回覆是被陌生人看到、建立信任的關鍵。</p>
+      {posts.map((p) => (
+        <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-1">
+            {p.author && <span className="text-zinc-300">@{p.author}</span>}
+            <span>❤️ {p.like_count}</span><span>💬 {p.reply_count}</span>
+            {p.topic && <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{p.topic}</span>}
+            <span>{(p.posted_at || '').slice(0, 10)}</span>
+          </div>
+          <p className="text-sm text-zinc-200 whitespace-pre-wrap line-clamp-5">{p.text}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={() => genReply(p.id)} disabled={genBusy === p.id}
+              className="px-2.5 py-1 text-xs rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
+              {genBusy === p.id ? '生成中…' : (replies[p.id] ? '↻ 重新生成回覆' : '✍️ 生成回覆')}
+            </button>
+            {p.permalink && (
+              <a href={p.permalink} target="_blank" rel="noreferrer" className="px-2.5 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">去看原文 →</a>
+            )}
+          </div>
+          {replies[p.id] && (
+            <div className="mt-2 rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+              <p className="text-sm text-zinc-200 whitespace-pre-wrap">{replies[p.id]}</p>
+              <button onClick={() => { navigator.clipboard.writeText(replies[p.id]); setCopied(p.id); setTimeout(() => setCopied(null), 1500); }}
+                className="mt-2 px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">
+                {copied === p.id ? '已複製 ✓' : '複製回覆'}
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
