@@ -101,7 +101,13 @@ export default function InspirationPage() {
       body: JSON.stringify({ userNote: draftNote[id] || '', useStories: !!draftStories[id], viral: !!draftViral[id] }),
     });
     const data = await res.json();
-    setDraftText((p) => ({ ...p, [id]: data.draft_text || data.error || '產生失敗' }));
+    if (!res.ok || !data.draft_text) {
+      // Don't render an error as if it were a draft (it would get copy + post buttons).
+      alert(data.error || '產生失敗');
+      setGenBusy(null);
+      return;
+    }
+    setDraftText((p) => ({ ...p, [id]: data.draft_text }));
     setGenBusy(null);
   };
 

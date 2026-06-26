@@ -68,7 +68,13 @@ const RULES = `寫作規則(嚴格遵守):
 
 export async function writeThreadsPost(req: WriteRequest): Promise<WriteResult> {
   const bio = activeAsset('bio');
-  const style = activeAsset('style');
+  let style = activeAsset('style');
+  // Fallback: if the personal style asset hasn't been generated yet (corpus not
+  // synced, or all assets hidden), use the brand voice so drafts are never voiceless.
+  if (!style) {
+    const { AUTHOR_VOICE, WRITING_RULES } = await import('@/services/brandVoice');
+    style = `${AUTHOR_VOICE}\n\n${WRITING_RULES}`;
+  }
 
   const query = req.idea.trim() || 'AI 接案 企業 AI 導入 自動化';
   const stories = req.useStories ? await retrieveStories(query) : [];
@@ -112,12 +118,13 @@ ${VERSION_GUARD_ZH}`;
 
   let draft = result.content.trim();
   // Hard guarantee on the Threads length limit: the model often overshoots the
-  // prompt's target, so compress in one pass if it's still over.
-  if (draft.length > MAX_LEN) {
+  // prompt's target, so compress in one pass if it's still over. Count by code
+  // points (not UTF-16 units) so emoji aren't double-counted vs Threads' limit.
+  if (codePointLen(draft) > MAX_LEN) {
     draft = await compressToLimit(draft, llm);
   }
 
-  log.info({ mode: req.mode, stories: stories.length, len: draft.length }, 'Draft generated');
+  log.info({ mode: req.mode, stories: stories.length, len: codePointLen(draft) }, 'Draft generated');
   return {
     draft,
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
@@ -138,6 +145,13 @@ async function compressToLimit(draft: string, llm: ReturnType<typeof getLLMServi
     options: { preferredModel: MODEL, maxTokens: 1024, temperature: 0.3 },
   });
   const out = (r.success && r.content) ? r.content.trim() : draft;
-  // Last-resort hard cut if the compressor still overshot.
-  return out.length > MAX_LEN ? out.slice(0, MAX_LEN) : out;
+  // Last-resort hard cut if the compressor still overshot. Slice by code points
+  // so we never split an emoji's surrogate pair (which would emit a broken char).
+  const cps = [...out];
+  return cps.length > MAX_LEN ? cps.slice(0, MAX_LEN).join('') : out;
+}
+
+/** Character count by code point (emoji = 1), matching Threads' limit better than UTF-16 .length. */
+function codePointLen(s: string): number {
+  return [...s].length;
 }

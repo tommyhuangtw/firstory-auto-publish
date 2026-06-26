@@ -72,7 +72,8 @@ export default function WritePage() {
     }
   }
 
-  const over = draft.length > 500;
+  const draftLen = [...draft].length; // count by code point (emoji = 1), like Threads
+  const over = draftLen > 500;
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -160,7 +161,7 @@ export default function WritePage() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-medium text-zinc-200">草稿</h2>
             <div className="flex items-center gap-3 text-xs">
-              <span className={over ? 'text-red-400' : 'text-zinc-500'}>{draft.length}/500 字</span>
+              <span className={over ? 'text-red-400' : 'text-zinc-500'}>{draftLen}/500 字</span>
               <button onClick={copyDraft} className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
                 {copied ? '已複製 ✓' : '複製'}
               </button>
