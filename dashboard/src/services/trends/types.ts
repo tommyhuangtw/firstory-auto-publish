@@ -14,6 +14,8 @@ export interface RawThreadPost {
   author?: string;
   /** Where this post came from: '為你推薦' or a seed topic like 'AI應用'. */
   source?: string;
+  /** True if found via the niche-keyword pass (reply zone candidate). */
+  niche?: boolean;
 }
 
 export type FormatSuggestion = 'text' | 'video' | 'webapp' | 'interactive';

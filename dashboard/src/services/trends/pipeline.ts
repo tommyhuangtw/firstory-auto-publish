@@ -26,6 +26,9 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
   const db = getDb();
   const recencyDays = parseInt(getSetting('trend_recency_days', '2'), 10);
   const minEngagement = parseInt(getSetting('trend_min_engagement', '80'), 10);
+  // Reply-zone (niche) gate is independent of the main floor: likes >= 30 + recent.
+  const nicheMinLikes = parseInt(getSetting('trend_niche_min_likes', '30'), 10);
+  const nicheRecencyDays = parseInt(getSetting('trend_niche_recency_days', '2'), 10);
 
   // Open an audit-log row immediately so even a failed scrape is recorded.
   const t0 = Date.now();
@@ -67,7 +70,17 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
   // recent. Posts that fail here are dropped BEFORE embedding — we never spend an embedding
   // call on a post we won't display.
   const cutoff = Date.now() - recencyDays * 86_400_000;
+  const nicheCutoff = Date.now() - nicheRecencyDays * 86_400_000;
   const recent = feed.filter((p) => {
+    if (p.niche) {
+      // Reply-zone gate: likes >= 30 + recent, independent of the main 80 floor.
+      if (p.likeCount < nicheMinLikes) { result.belowFloor++; drop(p, 'niche_below_likes'); return false; }
+      if (p.timestamp && new Date(p.timestamp).getTime() < nicheCutoff) { result.stale++; drop(p, 'niche_stale'); return false; }
+      // Relevance: keyword search is noisy (搜「接案」會撈到「案件」). Check the TEXT
+      // only — passing source would trivially match since it IS the niche keyword.
+      if (!isAIRelevant(p.text)) { drop(p, 'niche_irrelevant'); return false; }
+      return true;
+    }
     if (p.likeCount + p.replyCount < minEngagement) { result.belowFloor++; drop(p, 'below_floor'); return false; }
     if (p.timestamp && new Date(p.timestamp).getTime() < cutoff) { result.stale++; drop(p, 'stale'); return false; }
     return true;
@@ -94,14 +107,14 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
 
   // Record every fresh post — this IS the deliverable (hot posts to reply to / draft from).
   const insertPost = db.prepare(`
-    INSERT INTO trend_posts (topic_id, topic, source, author, text, like_count, reply_count, velocity, posted_at, permalink, relevant, embedding, scan_run_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trend_posts (topic_id, topic, source, author, text, like_count, reply_count, velocity, posted_at, permalink, relevant, embedding, scan_run_id, niche)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   ranked.forEach(({ p, v, rel }, i) => {
     insertPost.run(
       null, null, p.source ?? null, p.author ?? null, p.text, p.likeCount, p.replyCount,
       Math.round(v), p.timestamp ?? null, p.permalink ?? null, rel ? 1 : 0,
-      vecs[i] ? JSON.stringify(vecs[i]) : null, runId,
+      vecs[i] ? JSON.stringify(vecs[i]) : null, runId, p.niche ? 1 : 0,
     );
     result.postsRecorded++;
   });

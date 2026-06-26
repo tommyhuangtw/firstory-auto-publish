@@ -66,7 +66,8 @@ export interface BestOfNResult {
   scored: boolean;
 }
 
-function activeAsset(type: 'bio' | 'style'): string {
+/** The active (pinned-first, non-hidden) bio or style asset, or '' if none. Shared with the niche reply writer. */
+export function activeAsset(type: 'bio' | 'style'): string {
   const row = getDb().prepare(
     `SELECT content FROM voice_assets WHERE type = ? AND status != 'hidden' ORDER BY pinned DESC, id DESC LIMIT 1`,
   ).get(type) as { content: string } | undefined;

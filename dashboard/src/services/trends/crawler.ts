@@ -182,6 +182,24 @@ export function getCuratedSeeds(): string[] {
   return [];
 }
 
+/** Niche keywords for the reply zone (settings JSON array; seeded default). Searched
+ *  in FULL every scan (NOT rotated) — the niche set is small and focused. */
+const NICHE_SEED_DEFAULT = [
+  'AI 顧問', 'vibe coding', '接案', 'n8n', 'claude code',
+  'AI 學習', 'AI 焦慮', 'AI 工具', 'AI 應用', 'AI 接案', '創業',
+];
+export function getNicheKeywords(): string[] {
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_niche_keywords') as
+      { value: string } | undefined;
+    if (row) {
+      const arr = JSON.parse(row.value);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string' && x.trim());
+    }
+  } catch { /* not set */ }
+  return NICHE_SEED_DEFAULT;
+}
+
 /**
  * Rotate seed topics so each scan only searches a SUBSET (window = `trend_topics_per_scan`,
  * default 5), cycling through all of them across runs. Halves the per-scan search footprint
@@ -283,12 +301,14 @@ export async function scrapeTopicPosts(
   topic: string,
   max = 12,
   sort: 'recent' | 'top' = 'recent',
+  scrolls?: number,
 ): Promise<RawThreadPost[]> {
   const serp = sort === 'recent' ? 'recent' : 'default';
   const url = `${SEARCH_URL}?q=${encodeURIComponent(topic)}&serp_type=${serp}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await humanPause(page, 2500, 5000);
-  for (let i = 0, n = rand(1, 2); i < n; i++) {
+  // Default 1-2 scrolls (anti-detection); callers can ask for a deeper crawl.
+  for (let i = 0, n = scrolls ?? rand(1, 2); i < n; i++) {
     await page.mouse.wheel(0, rand(1200, 2600));
     await humanPause(page, 1200, 2800);
   }
@@ -321,9 +341,11 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
   });
 
   const byKey = new Map<string, RawThreadPost>();
-  const add = (p: RawThreadPost, source: string) => {
+  const add = (p: RawThreadPost, source: string, niche = false) => {
     const key = p.permalink || p.text.slice(0, 40);
-    if (!byKey.has(key)) byKey.set(key, { ...p, source });
+    const existing = byKey.get(key);
+    if (existing) { if (niche) existing.niche = true; return; }
+    byKey.set(key, { ...p, source, niche: niche || undefined });
   };
   const page = browser.pages()[0] || await browser.newPage();
   const topicsSearched: string[] = ['為你推薦'];
@@ -345,6 +367,20 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
         log.warn({ topic: seeds[i], err: (err as Error).message }, 'Failed scraping a seed topic — continuing');
       }
       if (i < seeds.length - 1) await humanPause(page, 4000, 9000);
+    }
+
+    // 3) Niche keywords for the reply zone — searched in FULL (not rotated), tagged niche.
+    const niche = getNicheKeywords();
+    topicsSearched.push(...niche);
+    log.info({ niche }, 'Niche keywords this scan (full, for reply zone)');
+    for (let i = 0; i < niche.length; i++) {
+      try {
+        // Deeper crawl for the reply zone — more posts + more scrolls per keyword.
+        for (const p of await scrapeTopicPosts(page, niche[i], 30, 'recent', 4)) add(p, niche[i], true);
+      } catch (err) {
+        log.warn({ keyword: niche[i], err: (err as Error).message }, 'Failed scraping a niche keyword — continuing');
+      }
+      if (i < niche.length - 1) await humanPause(page, 4000, 9000);
     }
   } finally {
     await browser.close();
