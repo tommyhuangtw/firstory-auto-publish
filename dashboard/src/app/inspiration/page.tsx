@@ -26,6 +26,7 @@ export default function InspirationPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'visible' | 'saved'>('visible');
   const [sort, setSort] = useState<'resonance' | 'newest' | 'published' | 'random'>('resonance');
+  const [within, setWithin] = useState<'all' | 'month' | 'week' | '3day'>('all');
   const [q, setQ] = useState('');
   const [channel, setChannel] = useState('');
   const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
@@ -49,9 +50,10 @@ export default function InspirationPage() {
     if (q.trim()) params.set('q', q.trim());
     if (channel) params.set('channel', channel);
     if (theme) params.set('theme', theme);
+    if (within !== 'all') params.set('within', within);
     if (cur) params.set('cursor', cur);
     return params;
-  }, [statusFilter, sort, q, channel, theme]);
+  }, [statusFilter, sort, q, channel, theme, within]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,6 +77,9 @@ export default function InspirationPage() {
   }, [hasMore, loadingMore, cursor, buildParams]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Opening the library = seen → clears the sidebar red dot.
+  useEffect(() => { void fetch('/api/inspiration/unread', { method: 'POST' }).catch(() => {}); }, []);
 
   useEffect(() => {
     fetch('/api/inspiration/channels').then((r) => r.json()).then((d) => setChannels(d.channels || [])).catch(() => {});
@@ -163,6 +168,11 @@ export default function InspirationPage() {
         <select value={sort} onChange={(e) => setSort(e.target.value as 'resonance' | 'newest' | 'published' | 'random')}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
           <option value="resonance">共鳴排序</option><option value="published">最新發布</option><option value="newest">最近攝取</option><option value="random">隨機</option>
+        </select>
+        <select value={within} onChange={(e) => setWithin(e.target.value as 'all' | 'month' | 'week' | '3day')}
+          title="只看最近發布的內容（依原始發布日）"
+          className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
+          <option value="all">不限時間</option><option value="month">最新一個月</option><option value="week">最新一週</option><option value="3day">最新三天</option>
         </select>
         <button onClick={shuffle}
           className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25">🎲 給我靈感</button>

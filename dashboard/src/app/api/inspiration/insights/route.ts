@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
   const channel = sp.get('channel');
   const category = sp.get('category');
   const theme = sp.get('theme');
+  const within = sp.get('within'); // month | week | 3day — by source publish date
   const cursor = sp.get('cursor');
   const db = getDb();
 
@@ -38,6 +39,12 @@ export async function GET(request: NextRequest) {
   if (channel) { conds.push('c.channel_id = ?'); params.push(Number(channel)); }
   if (category) { conds.push('i.category = ?'); params.push(category); }
   if (theme) { conds.push('i.id IN (SELECT insight_id FROM insight_themes WHERE theme_id = ?)'); params.push(Number(theme)); }
+  // Date-range filter by source publish date (source_ts). datetime() normalizes the ISO
+  // string for a correct comparison; null source_ts (no publish date) is excluded.
+  const WITHIN_DAYS: Record<string, number> = { month: 30, week: 7, '3day': 3 };
+  if (within && WITHIN_DAYS[within]) {
+    conds.push(`i.source_ts IS NOT NULL AND datetime(i.source_ts) >= datetime('now', '-${WITHIN_DAYS[within]} days')`);
+  }
 
   // semantic search: sqlite-vec KNN → filter → preserve KNN order.
   // If the embedding service or vec index is unavailable, fall THROUGH to the normal browse

@@ -201,20 +201,26 @@ export default function Navigation() {
   const [showMore, setShowMore] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [trendsUnread, setTrendsUnread] = useState(0);
+  const [inspirationUnread, setInspirationUnread] = useState(0);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
-  // Red dot on 社群熱點 when newly-crawled reply-zone posts haven't been viewed yet.
+  // Red dot on 社群熱點 / 靈感庫 when newly-crawled items haven't been viewed yet.
   // Re-check on navigation (so it clears right after visiting the tab) and every 60s.
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
       try {
-        const d = await fetch('/api/trends/niche/unread').then(r => r.json());
-        if (!cancelled) setTrendsUnread(d.count ?? 0);
+        const [t, i] = await Promise.all([
+          fetch('/api/trends/niche/unread').then(r => r.json()).catch(() => null),
+          fetch('/api/inspiration/unread').then(r => r.json()).catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (t) setTrendsUnread(t.count ?? 0);
+        if (i) setInspirationUnread(i.count ?? 0);
       } catch {
-        /* offline / dev — leave count as-is */
+        /* offline / dev — leave counts as-is */
       }
     };
     void check();
@@ -298,6 +304,9 @@ export default function Navigation() {
                           {item.href === '/trends' && trendsUnread > 0 && (
                             <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新貼文可回覆" />
                           )}
+                          {item.href === '/inspiration' && inspirationUnread > 0 && (
+                            <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新爬到的靈感" />
+                          )}
                         </Link>
                       ))}
                     </div>
@@ -317,6 +326,9 @@ export default function Navigation() {
                     {item.label}
                     {item.href === '/trends' && trendsUnread > 0 && (
                       <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新貼文可回覆" />
+                    )}
+                    {item.href === '/inspiration' && inspirationUnread > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新爬到的靈感" />
                     )}
                   </Link>
                 ))}
@@ -341,13 +353,19 @@ export default function Navigation() {
                   key={item.href}
                   href={item.href}
                   onClick={() => setShowMore(false)}
-                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-lg text-xs transition-colors ${
+                  className={`relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-lg text-xs transition-colors ${
                     isActive(item.href)
                       ? 'bg-brand/15 text-brand'
                       : 'text-zinc-400 hover:text-brand-cream hover:bg-zinc-800'
                   }`}
                 >
                   {item.icon}
+                  {item.href === '/trends' && trendsUnread > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+                  )}
+                  {item.href === '/inspiration' && inspirationUnread > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+                  )}
                   <span className="truncate max-w-full">{item.label}</span>
                 </Link>
               ))}
@@ -370,6 +388,9 @@ export default function Navigation() {
             >
               {item.icon}
               {item.href === '/trends' && trendsUnread > 0 && (
+                <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
+              )}
+              {item.href === '/inspiration' && inspirationUnread > 0 && (
                 <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
               )}
               <span className="mt-1">{item.label}</span>
