@@ -304,6 +304,8 @@ function ReplyZone() {
     for (const p of list) if (p.reply_draft) seed[p.id] = p.reply_draft;
     setReplies(seed);
     setLoading(false);
+    // Opening the reply zone = seen → clears the sidebar red dot.
+    void fetch('/api/trends/niche/unread', { method: 'POST' }).catch(() => {});
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);

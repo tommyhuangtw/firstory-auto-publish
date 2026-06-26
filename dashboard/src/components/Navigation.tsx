@@ -200,9 +200,27 @@ export default function Navigation() {
   const pathname = usePathname();
   const [showMore, setShowMore] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [trendsUnread, setTrendsUnread] = useState(0);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
+
+  // Red dot on 社群熱點 when newly-crawled reply-zone posts haven't been viewed yet.
+  // Re-check on navigation (so it clears right after visiting the tab) and every 60s.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const d = await fetch('/api/trends/niche/unread').then(r => r.json());
+        if (!cancelled) setTrendsUnread(d.count ?? 0);
+      } catch {
+        /* offline / dev — leave count as-is */
+      }
+    };
+    void check();
+    const id = setInterval(check, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [pathname]);
 
   // Restore the advanced section's collapsed state; auto-open if on an advanced page.
   useEffect(() => {
@@ -277,6 +295,9 @@ export default function Navigation() {
                         <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
                           {item.icon}
                           {item.label}
+                          {item.href === '/trends' && trendsUnread > 0 && (
+                            <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新貼文可回覆" />
+                          )}
                         </Link>
                       ))}
                     </div>
@@ -294,6 +315,9 @@ export default function Navigation() {
                   <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
                     {item.icon}
                     {item.label}
+                    {item.href === '/trends' && trendsUnread > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新貼文可回覆" />
+                    )}
                   </Link>
                 ))}
               </div>
@@ -340,11 +364,14 @@ export default function Navigation() {
               key={item.href}
               href={item.href}
               onClick={() => setShowMore(false)}
-              className={`flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
+              className={`relative flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
                 isActive(item.href) ? 'text-brand' : 'text-zinc-400'
               }`}
             >
               {item.icon}
+              {item.href === '/trends' && trendsUnread > 0 && (
+                <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
+              )}
               <span className="mt-1">{item.label}</span>
             </Link>
           ))}
