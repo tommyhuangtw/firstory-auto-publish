@@ -76,6 +76,9 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
       // Reply-zone gate: likes >= 30 + recent, independent of the main 80 floor.
       if (p.likeCount < nicheMinLikes) { result.belowFloor++; drop(p, 'niche_below_likes'); return false; }
       if (p.timestamp && new Date(p.timestamp).getTime() < nicheCutoff) { result.stale++; drop(p, 'niche_stale'); return false; }
+      // Relevance: keyword search is noisy (搜「接案」會撈到「案件」). Check the TEXT
+      // only — passing source would trivially match since it IS the niche keyword.
+      if (!isAIRelevant(p.text)) { drop(p, 'niche_irrelevant'); return false; }
       return true;
     }
     if (p.likeCount + p.replyCount < minEngagement) { result.belowFloor++; drop(p, 'below_floor'); return false; }

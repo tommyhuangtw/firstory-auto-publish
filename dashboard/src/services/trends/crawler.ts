@@ -301,12 +301,14 @@ export async function scrapeTopicPosts(
   topic: string,
   max = 12,
   sort: 'recent' | 'top' = 'recent',
+  scrolls?: number,
 ): Promise<RawThreadPost[]> {
   const serp = sort === 'recent' ? 'recent' : 'default';
   const url = `${SEARCH_URL}?q=${encodeURIComponent(topic)}&serp_type=${serp}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await humanPause(page, 2500, 5000);
-  for (let i = 0, n = rand(1, 2); i < n; i++) {
+  // Default 1-2 scrolls (anti-detection); callers can ask for a deeper crawl.
+  for (let i = 0, n = scrolls ?? rand(1, 2); i < n; i++) {
     await page.mouse.wheel(0, rand(1200, 2600));
     await humanPause(page, 1200, 2800);
   }
@@ -373,7 +375,8 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
     log.info({ niche }, 'Niche keywords this scan (full, for reply zone)');
     for (let i = 0; i < niche.length; i++) {
       try {
-        for (const p of await scrapeTopicPosts(page, niche[i], 12, 'recent')) add(p, niche[i], true);
+        // Deeper crawl for the reply zone — more posts + more scrolls per keyword.
+        for (const p of await scrapeTopicPosts(page, niche[i], 30, 'recent', 4)) add(p, niche[i], true);
       } catch (err) {
         log.warn({ keyword: niche[i], err: (err as Error).message }, 'Failed scraping a niche keyword — continuing');
       }
