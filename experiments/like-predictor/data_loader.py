@@ -25,6 +25,9 @@ VIRAL_PERCENTILE = 90
 MIN_POSTS_PER_AUTHOR = 8
 TEST_FRACTION = 0.20
 
+# Tommy's own account — his 521 posts in threads_posts have no author column.
+PERSONAL_AUTHOR = "ai.lanrenbao"
+
 
 @dataclass
 class Dataset:
@@ -79,12 +82,41 @@ def _load_trend_posts() -> pd.DataFrame:
     })
 
 
-def load_raw(include_trend: bool = True) -> pd.DataFrame:
+def _load_personal_posts() -> pd.DataFrame:
+    """Tommy's own 521 posts (threads_posts). All his, so author is fixed."""
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame()
+    con = sqlite3.connect(DB_PATH)
+    try:
+        df = pd.read_sql_query(
+            "SELECT text, likes, posted_at, media_type FROM threads_posts "
+            "WHERE text IS NOT NULL AND is_repost = 0",
+            con,
+        )
+    finally:
+        con.close()
+    if df.empty:
+        return df
+    return pd.DataFrame({
+        "author": PERSONAL_AUTHOR,
+        "text": df["text"].astype(str),
+        "posted_at": pd.to_datetime(df["posted_at"], errors="coerce", utc=True),
+        "likes": pd.to_numeric(df["likes"], errors="coerce"),
+        "has_media": df["media_type"].astype(str).str.upper().isin(["IMAGE", "VIDEO", "CAROUSEL_ALBUM"]),
+        "source": "personal",
+    })
+
+
+def load_raw(include_trend: bool = True, include_personal: bool = False) -> pd.DataFrame:
     frames = [_load_csv()]
     if include_trend:
         t = _load_trend_posts()
         if not t.empty:
             frames.append(t)
+    if include_personal:
+        p = _load_personal_posts()
+        if not p.empty:
+            frames.append(p)
     df = pd.concat(frames, ignore_index=True)
     # Clean.
     df = df.dropna(subset=["likes", "posted_at"])
@@ -120,8 +152,8 @@ def time_split(df: pd.DataFrame, test_fraction: float = TEST_FRACTION) -> tuple[
     return df.iloc[:cut].copy(), df.iloc[cut:].copy()
 
 
-def build_dataset(include_trend: bool = True) -> Dataset:
-    raw = load_raw(include_trend=include_trend)
+def build_dataset(include_trend: bool = True, include_personal: bool = False) -> Dataset:
+    raw = load_raw(include_trend=include_trend, include_personal=include_personal)
     enriched = add_author_baseline(raw)
     train, test = time_split(enriched)
     # Author baseline must be computed from TRAIN only to avoid leaking test

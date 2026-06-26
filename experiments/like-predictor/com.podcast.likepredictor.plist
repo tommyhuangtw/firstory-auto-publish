@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd service for the like-predictor scoring service.
+  Install:
+    cp com.podcast.likepredictor.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.podcast.likepredictor.plist
+  Logs: /tmp/like-predictor.{out,err}.log
+  Edit the python path / project path below if your layout differs.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast.likepredictor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/.worktrees/feat-like-predictor/experiments/like-predictor/score_service.py</string>
+    <string>--port</string>
+    <string>8765</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/.worktrees/feat-like-predictor/experiments/like-predictor</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/like-predictor.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/like-predictor.err.log</string>
+</dict>
+</plist>

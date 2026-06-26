@@ -1,4 +1,5 @@
 results/emb_cache/
 results/llm_scores.json
+model/bundle.joblib
 __pycache__/
 *.pyc

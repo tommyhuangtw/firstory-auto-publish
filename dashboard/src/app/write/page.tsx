@@ -2,9 +2,21 @@
 
 import { useState, useCallback } from 'react';
 
+interface DraftScore {
+  viralProb: number;
+  relativeScore: number;
+  authorMedianLikes: number | null;
+  authorP90Likes: number | null;
+}
 interface WriteResult {
   draft: string;
   stories: { content: string; sim: number }[];
+  score?: DraftScore | null;
+}
+interface BestOfNResult {
+  best: WriteResult;
+  candidates: WriteResult[];
+  scored: boolean;
 }
 
 export default function WritePage() {
@@ -12,14 +24,19 @@ export default function WritePage() {
   const [idea, setIdea] = useState('');
   const [useStories, setUseStories] = useState(false);
   const [viral, setViral] = useState(false);
+  const [scoreMode, setScoreMode] = useState(true); // 生 N 版挑最爆
   const [loading, setLoading] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [diceCategory, setDiceCategory] = useState('');
   const [insightSrc, setInsightSrc] = useState('');
   const [result, setResult] = useState<WriteResult | null>(null);
+  const [candidates, setCandidates] = useState<WriteResult[]>([]);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [predictorOff, setPredictorOff] = useState(false);
   const [draft, setDraft] = useState('');
   const [copied, setCopied] = useState(false);
   const [showRefs, setShowRefs] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(false);
   const [error, setError] = useState('');
 
   const switchMode = useCallback((m: 'rewrite' | 'autonomous') => {
@@ -27,20 +44,38 @@ export default function WritePage() {
     setUseStories(m === 'autonomous'); // story default per mode
   }, []);
 
+  function showCandidate(idx: number, list: WriteResult[]) {
+    setSelectedIdx(idx);
+    setResult(list[idx]);
+    setDraft(list[idx].draft);
+  }
+
   async function generate() {
     setError('');
     setLoading(true);
     setResult(null);
+    setCandidates([]);
+    setPredictorOff(false);
     try {
       const res = await fetch('/api/voice/write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, idea, useStories, viral }),
+        body: JSON.stringify({ mode, idea, useStories, viral, bestOf: scoreMode ? 5 : 0 }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || '生成失敗'); return; }
-      setResult(data);
-      setDraft(data.draft);
+      // best-of-N response has `candidates`; single-draft response is a WriteResult.
+      if (Array.isArray(data.candidates)) {
+        const list = data.candidates as WriteResult[];
+        setCandidates(list);
+        setPredictorOff(!data.scored);
+        showCandidate(0, list);
+      } else {
+        setCandidates([]);
+        setResult(data);
+        setDraft(data.draft);
+        setSelectedIdx(0);
+      }
     } catch {
       setError('生成失敗,請重試');
     } finally {
@@ -141,6 +176,10 @@ export default function WritePage() {
             <input type="checkbox" checked={viral} onChange={e => setViral(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
             <span className={viral ? 'text-brand' : 'text-zinc-400'}>🔥 爆文模式（套用高流量寫法：狠 hook、一句一行、具體數字、互惠 CTA）</span>
           </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={scoreMode} onChange={e => setScoreMode(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+            <span className={scoreMode ? 'text-brand' : 'text-zinc-400'}>🎯 爆文評分（生 5 版、用 AI 模型挑「最可能爆」的那版）</span>
+          </label>
         </div>
 
         <div className="flex items-center gap-3">
@@ -149,7 +188,7 @@ export default function WritePage() {
             disabled={loading}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white disabled:opacity-50 transition-colors"
           >
-            {loading ? '生成中…（約 15-20 秒）' : '生成草稿'}
+            {loading ? (scoreMode ? '生成 5 版並評分中…（約 20-30 秒）' : '生成中…（約 15-20 秒）') : '生成草稿'}
           </button>
           {error && <span className="text-xs text-red-400">{error}</span>}
         </div>
@@ -159,7 +198,13 @@ export default function WritePage() {
       {result && (
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium text-zinc-200">草稿</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-zinc-200">草稿</h2>
+              {result.score && <ViralBadge score={result.score} />}
+              {predictorOff && candidates.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500" title="評分服務未啟動,已回傳第一版未評分草稿">評分服務離線</span>
+              )}
+            </div>
             <div className="flex items-center gap-3 text-xs">
               <span className={over ? 'text-red-400' : 'text-zinc-500'}>{draftLen}/500 字</span>
               <button onClick={copyDraft} className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
@@ -180,6 +225,33 @@ export default function WritePage() {
             rows={12}
             className={`w-full bg-zinc-950 border rounded-lg p-3 text-sm text-zinc-200 whitespace-pre-wrap focus:border-brand outline-none ${over ? 'border-red-500/50' : 'border-zinc-700'}`}
           />
+
+          {/* Candidate ranking (best-of-N) */}
+          {candidates.length > 1 && (
+            <div className="mt-3">
+              <button onClick={() => setShowCandidates(v => !v)} className="text-xs text-zinc-500 hover:text-zinc-300">
+                {showCandidates ? '▾' : '▸'} 全部 {candidates.length} 版（依爆文機率排序，點擊切換）
+              </button>
+              {showCandidates && (
+                <div className="mt-2 space-y-1.5">
+                  {candidates.map((c, i) => (
+                    <button
+                      key={i}
+                      onClick={() => showCandidate(i, candidates)}
+                      className={`w-full text-left rounded-lg border p-2.5 transition-colors ${i === selectedIdx ? 'border-brand/60 bg-brand/5' : 'border-zinc-800 bg-zinc-950/50 hover:border-zinc-700'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`shrink-0 w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold ${i === 0 ? 'bg-brand/20 text-brand' : 'bg-zinc-800 text-zinc-500'}`}>{i + 1}</span>
+                        {c.score && <ViralBadge score={c.score} small />}
+                        {i === 0 && <span className="text-[10px] text-brand">★ 推薦</span>}
+                      </div>
+                      <p className="text-[11px] text-zinc-400 line-clamp-2 whitespace-pre-wrap">{c.draft}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Transparency */}
           <button onClick={() => setShowRefs(v => !v)} className="mt-3 text-xs text-zinc-500 hover:text-zinc-300">
@@ -202,5 +274,19 @@ export default function WritePage() {
 function Seg({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${active ? 'bg-brand/20 text-brand' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}>{children}</button>
+  );
+}
+
+/** Viral-probability badge. Colour ramps with the predicted chance of beating the author's P90. */
+function ViralBadge({ score, small }: { score: DraftScore; small?: boolean }) {
+  const pct = Math.round(score.viralProb * 100);
+  const tone = pct >= 25 ? 'bg-red-500/20 text-red-300' : pct >= 12 ? 'bg-amber-500/20 text-amber-300' : 'bg-zinc-700/40 text-zinc-400';
+  const title = score.authorP90Likes != null
+    ? `預估超越你 P90（≈${Math.round(score.authorP90Likes)} 讚）的機率。相對分 ${score.relativeScore >= 0 ? '+' : ''}${score.relativeScore.toFixed(2)}`
+    : '預估爆文機率';
+  return (
+    <span title={title} className={`${small ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5'} rounded font-semibold ${tone}`}>
+      🔥 爆文機率 {pct}%
+    </span>
   );
 }

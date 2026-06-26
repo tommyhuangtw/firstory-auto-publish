@@ -14,6 +14,10 @@ import { createChildLogger } from '@/lib/logger';
 import { getLLMService } from '@/services/llmService';
 import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
 import { retrieveStories } from './retrieval';
+import { scoreDrafts, type DraftScore } from './predictorClient';
+
+// Tommy's own account handle — anchors the predictor to his personal baseline.
+const PERSONAL_AUTHOR = 'ai.lanrenbao';
 
 const log = createChildLogger('voice:writer');
 const MODEL = 'google/gemini-3.1-flash-lite-preview';
@@ -49,6 +53,17 @@ const VIRAL_PLAYBOOK = `🔥 爆文模式 — 套用高流量 Threads 寫法,但
 export interface WriteResult {
   draft: string;
   stories: { content: string; sim: number }[];
+  /** Predictor score for this draft (null if the scoring service is offline). */
+  score?: DraftScore | null;
+}
+
+/** A best-of-N result: the chosen (highest-scoring) draft plus the ranked rest. */
+export interface BestOfNResult {
+  best: WriteResult;
+  /** All candidates, ranked best→worst by viral_prob. Includes `best` at [0]. */
+  candidates: WriteResult[];
+  /** False when the predictor was offline and we fell back to the first draft. */
+  scored: boolean;
 }
 
 function activeAsset(type: 'bio' | 'style'): string {
@@ -66,7 +81,7 @@ const RULES = `寫作規則(嚴格遵守):
 - 不要 hashtag、不要連結、不要 markdown 語法(**粗體** 等)
 - 直接輸出貼文純文字,不要任何前後說明`;
 
-export async function writeThreadsPost(req: WriteRequest): Promise<WriteResult> {
+export async function writeThreadsPost(req: WriteRequest, nudgeIndex?: number): Promise<WriteResult> {
   const bio = activeAsset('bio');
   let style = activeAsset('style');
   // Fallback: if the personal style asset hasn't been generated yet (corpus not
@@ -96,7 +111,11 @@ ${RULES}
 ${req.viral ? `\n${VIRAL_PLAYBOOK}\n` : ''}
 ${VERSION_GUARD_ZH}`;
 
-  const nudge = VARIETY_NUDGES[Math.floor(Math.random() * VARIETY_NUDGES.length)];
+  // best-of-N passes an explicit index so each candidate gets a distinct angle;
+  // single-draft calls (nudgeIndex undefined) stay random for freshness.
+  const nudge = nudgeIndex == null
+    ? VARIETY_NUDGES[Math.floor(Math.random() * VARIETY_NUDGES.length)]
+    : VARIETY_NUDGES[nudgeIndex % VARIETY_NUDGES.length];
   const base = req.mode === 'rewrite'
     ? `這是我想分享的重點 / mindset:\n\n${req.idea}\n\n請用我的口吻,聚焦這 1-2 個重點,延伸寫成一篇 Threads 貼文。`
     : `請用我的口吻寫一篇 Threads 貼文。${req.idea.trim() ? `這是今天想寫的 mindset / 角度:\n${req.idea}` : '從我的主軸(AI 接案 / 企業 AI 導入)挑一個我會有感、對讀者有價值的點切入。'}`;
@@ -129,6 +148,41 @@ ${VERSION_GUARD_ZH}`;
     draft,
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
   };
+}
+
+/**
+ * Generate N drafts (distinct angles), score each with the like-predictor, and
+ * return the highest-scoring one plus the ranked alternatives. This is the
+ * agent "self-tune" loop: write several, keep the one most likely to 爆.
+ *
+ * Ranking key = viral_prob (primary), relative_score (tiebreaker). If the
+ * scoring service is offline, falls back to the first draft (scored=false).
+ */
+export async function writeBestOfN(req: WriteRequest, n = 5): Promise<BestOfNResult> {
+  const count = Math.max(1, Math.min(n, VARIETY_NUDGES.length));
+  // Generate candidates concurrently, each with its own angle.
+  const drafts = await Promise.all(
+    Array.from({ length: count }, (_, i) => writeThreadsPost(req, i)),
+  );
+
+  const scores = await scoreDrafts(drafts.map((d) => d.draft), PERSONAL_AUTHOR);
+  if (!scores) {
+    log.warn('predictor offline — returning first draft unscored');
+    return { best: drafts[0], candidates: drafts, scored: false };
+  }
+
+  const ranked = drafts
+    .map((d, i) => ({ ...d, score: scores[i] }))
+    .sort((a, b) => {
+      const dv = (b.score!.viralProb) - (a.score!.viralProb);
+      return dv !== 0 ? dv : (b.score!.relativeScore) - (a.score!.relativeScore);
+    });
+
+  log.info(
+    { n: count, bestViral: ranked[0].score?.viralProb, worstViral: ranked[count - 1].score?.viralProb },
+    'best-of-N scored',
+  );
+  return { best: ranked[0], candidates: ranked, scored: true };
 }
 
 /** Compress an over-length draft to ≤480 chars, preserving hook/point/ending. */
