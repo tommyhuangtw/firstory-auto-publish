@@ -28,7 +28,7 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
   const minEngagement = parseInt(getSetting('trend_min_engagement', '80'), 10);
   // Reply-zone (niche) gate is independent of the main floor: likes >= 30 + recent.
   const nicheMinLikes = parseInt(getSetting('trend_niche_min_likes', '80'), 10);
-  const nicheRecencyDays = parseInt(getSetting('trend_niche_recency_days', '2'), 10);
+  const nicheRecencyDays = parseFloat(getSetting('trend_niche_recency_days', '1.5'));
 
   // Open an audit-log row immediately so even a failed scrape is recorded.
   const t0 = Date.now();

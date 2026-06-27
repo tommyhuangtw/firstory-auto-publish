@@ -8,11 +8,14 @@ export async function GET() {
   const db = getDb();
   const lastSeen = (db.prepare('SELECT value FROM settings WHERE key = ?').get(SEEN_KEY) as
     { value: string } | undefined)?.value || '1970-01-01';
+  // Mirror the reply-zone feed window (posts published within the last 1.5 days) so the
+  // badge never counts posts that won't actually appear in the tab.
   const row = db.prepare(`
     SELECT COUNT(*) AS n
     FROM trend_posts
     WHERE niche = 1
-      AND scraped_at > datetime('now', '-3 days')
+      AND posted_at IS NOT NULL
+      AND datetime(posted_at) > datetime('now', '-1.5 days')
       AND scraped_at > ?
   `).get(lastSeen) as { n: number };
   return NextResponse.json({ count: row.n });
