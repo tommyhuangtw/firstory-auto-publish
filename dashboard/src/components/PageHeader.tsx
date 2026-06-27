@@ -22,15 +22,15 @@ export default function PageHeader({
     <div
       className={`mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${className}`}
     >
-      <div className="min-w-0">
+      <div className="sm:shrink-0">
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
           <span className="w-1 h-6 rounded-full bg-brand shrink-0" />
-          <span className="min-w-0 break-words">{title}</span>
+          {title}
         </h1>
         {subtitle && <p className="text-sm text-zinc-500 mt-1.5 ml-3">{subtitle}</p>}
       </div>
       {actions && (
-        <div className="flex items-center gap-2 flex-wrap sm:shrink-0">{actions}</div>
+        <div className="flex items-center gap-2 flex-wrap min-w-0">{actions}</div>
       )}
     </div>
   );
