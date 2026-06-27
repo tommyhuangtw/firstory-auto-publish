@@ -9,7 +9,8 @@
 import { createChildLogger } from '@/lib/logger';
 import { getLLMService } from '@/services/llmService';
 import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
-import { activeAsset } from '@/services/voice/writer';
+import { ANTI_AI_VOICE } from '@/services/brandVoice';
+import { activeAsset, cleanAIVoice } from '@/services/voice/writer';
 
 const log = createChildLogger('trend-reply');
 const MODEL = 'google/gemini-3.1-flash-lite-preview';
@@ -47,6 +48,8 @@ ${style || '(無)'}
 - **絕不推銷、不自我宣傳、不要 hashtag / 連結 / markdown**
 - 直接輸出回覆純文字,不要任何前後說明
 
+${ANTI_AI_VOICE}
+
 ${VERSION_GUARD_ZH}`;
 
   const userPrompt = `對方的貼文${post.author ? `(@${post.author})` : ''}:\n\n${post.text}\n\n請寫一則你會留在這則貼文底下的回覆。`;
@@ -61,6 +64,7 @@ ${VERSION_GUARD_ZH}`;
     options: { preferredModel: MODEL, maxTokens: 1024, temperature: 0.8 },
   });
   if (!r.success || !r.content) throw new Error(r.error || 'reply generation failed');
+  const reply = await cleanAIVoice(r.content.trim(), llm);
   log.info({ author: post.author }, 'Niche reply generated');
-  return r.content.trim();
+  return reply;
 }

@@ -187,18 +187,10 @@ ${VERSION_GUARD_ZH}`;
     draft = await compressToLimit(draft, llm);
   }
 
-  // Deterministic AI-voice filter (the prompt blocklist isn't airtight at high temp):
-  // always strip Unicode emoji; if any high-confidence banned term/phrase survived,
-  // run ONE targeted repair pass (only fires when needed, so cost stays low).
-  draft = scrubEmoji(draft);
-  const banned = findBannedTerms(draft);
-  if (banned.length) {
-    draft = scrubEmoji(await repairBanned(draft, banned, llm));
-    const still = findBannedTerms(draft);
-    if (still.length) log.warn({ still }, 'Banned AI-voice terms persisted after repair');
-  }
+  // Deterministic AI-voice filter (the prompt blocklist isn't airtight at high temp).
+  draft = await cleanAIVoice(draft, llm);
 
-  log.info({ mode: req.mode, stories: stories.length, len: codePointLen(draft), scrubbed: banned }, 'Draft generated');
+  log.info({ mode: req.mode, stories: stories.length, len: codePointLen(draft) }, 'Draft generated');
   return {
     draft,
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
@@ -238,6 +230,22 @@ export async function writeBestOfN(req: WriteRequest, n = 5): Promise<BestOfNRes
     'best-of-N scored',
   );
   return { best: ranked[0], candidates: ranked, scored: true };
+}
+
+/**
+ * Deterministic AI-voice cleanup, shared by the post writer and the reply writer:
+ * always strip Unicode emoji; if any high-confidence banned term survived the prompt
+ * blocklist, run ONE targeted repair pass (only fires on a hit, so cost stays low).
+ */
+export async function cleanAIVoice(text: string, llm: ReturnType<typeof getLLMService>): Promise<string> {
+  let out = scrubEmoji(text);
+  const banned = findBannedTerms(out);
+  if (banned.length) {
+    out = scrubEmoji(await repairBanned(out, banned, llm));
+    const still = findBannedTerms(out);
+    if (still.length) log.warn({ still }, 'Banned AI-voice terms persisted after repair');
+  }
+  return out;
 }
 
 /** Strip Unicode emoji / pictographs (brand voice = no emoji; XD & text emoticons stay). */
