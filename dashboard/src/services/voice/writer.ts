@@ -232,6 +232,49 @@ export async function writeBestOfN(req: WriteRequest, n = 5): Promise<BestOfNRes
   return { best: ranked[0], candidates: ranked, scored: true };
 }
 
+/** Post-hoc draft transforms triggered by the 短/中/長 + 潤稿 buttons on /write. */
+export type RefineOp = 'short' | 'medium' | 'long' | 'smooth';
+const LENGTH_TARGETS: Record<'short' | 'medium' | 'long', number> = { short: 150, medium: 280, long: 450 };
+
+/**
+ * Rewrite an EXISTING draft in place: change its length (短/中/長) or smooth its
+ * wording (更通順自然), keeping Tommy's voice, stance, and the hook/CTA shape. Always
+ * runs through cleanAIVoice() afterwards so a refine can't reintroduce AI-voice tells.
+ */
+export async function refineDraft(draft: string, op: RefineOp): Promise<string> {
+  const text = draft.trim();
+  if (!text) return draft;
+  const llm = getLLMService();
+  const style = activeAsset('style');
+  const voiceBlock = style ? `\n\n── 我的口吻（改寫時要維持） ──\n${style}` : '';
+
+  let instruction: string;
+  if (op === 'smooth') {
+    instruction = '你是這篇貼文作者的潤稿編輯。把下面這篇 Threads 貼文改得更通順、更自然、更像真人在講話,讀起來順、不卡。**完全保留原本的意思、立場、語氣、長度與換行節奏**,只動詞句的流暢度:拿掉拗口、翻譯腔、重複與贅字,把句子接得更順。不要新增觀點、不要改 hook 或結尾的 CTA/提問。直接輸出改寫後的純文字,不要任何說明。';
+  } else {
+    const target = LENGTH_TARGETS[op];
+    const verb = op === 'short' ? '精簡' : op === 'long' ? '擴寫' : '調整';
+    const hint = op === 'short'
+      ? '寧短勿長,只留最有力的部分'
+      : op === 'long'
+        ? '用更具體的細節、場景、數字把論點講透,不要硬湊字數、灌水或重複'
+        : '自然就好';
+    instruction = `你是這篇貼文作者的編輯。把下面這篇 Threads 貼文${verb}成大約 **${target} 字**(${hint}),保留開頭的 hook、核心觀點、結尾的 CTA/提問,維持一句一行的口語節奏與作者的立場語氣。直接輸出改寫後的純文字,不要任何說明。`;
+  }
+
+  const r = await llm.call({
+    stage: 'voice_write_refine',
+    messages: [
+      { role: 'system', content: `${instruction}${voiceBlock}\n\n${ANTI_AI_VOICE}` },
+      { role: 'user', content: text },
+    ],
+    options: { preferredModel: MODEL, maxTokens: 2048, temperature: op === 'smooth' ? 0.5 : 0.6 },
+  });
+  let out = (r.success && r.content) ? r.content.trim() : text;
+  out = await cleanAIVoice(out, llm);
+  return trimToSentence(out, MAX_LEN);
+}
+
 /**
  * Deterministic AI-voice cleanup, shared by the post writer and the reply writer:
  * always strip Unicode emoji; if any high-confidence banned term survived the prompt

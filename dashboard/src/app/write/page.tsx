@@ -18,6 +18,7 @@ interface BestOfNResult {
   candidates: WriteResult[];
   scored: boolean;
 }
+type RefineOp = 'short' | 'medium' | 'long' | 'smooth';
 
 export default function WritePage() {
   const [mode, setMode] = useState<'rewrite' | 'autonomous'>('rewrite');
@@ -34,6 +35,7 @@ export default function WritePage() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [predictorOff, setPredictorOff] = useState(false);
   const [draft, setDraft] = useState('');
+  const [refining, setRefining] = useState<RefineOp | null>(null);
   const [copied, setCopied] = useState(false);
   const [showRefs, setShowRefs] = useState(false);
   const [showCandidates, setShowCandidates] = useState(false);
@@ -80,6 +82,28 @@ export default function WritePage() {
       setError('生成失敗,請重試');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Post-hoc rewrite of the current draft: change length (短/中/長) or smooth wording.
+  async function refine(op: RefineOp) {
+    if (!draft.trim() || refining) return;
+    setRefining(op);
+    setError('');
+    try {
+      const res = await fetch('/api/voice/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft, op }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || '改寫失敗'); return; }
+      setDraft(data.draft);
+      setResult(r => (r ? { ...r, draft: data.draft } : r));
+    } catch {
+      setError('改寫失敗,請重試');
+    } finally {
+      setRefining(null);
     }
   }
 
@@ -226,6 +250,17 @@ export default function WritePage() {
             className={`w-full bg-zinc-950 border rounded-lg p-3 text-sm text-zinc-200 whitespace-pre-wrap focus:border-brand outline-none ${over ? 'border-red-500/50' : 'border-zinc-700'}`}
           />
 
+          {/* Refine toolbar — rewrite the current draft in place */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] text-zinc-500">調整長度</span>
+            <RefineBtn onClick={() => refine('short')} busy={refining === 'short'} disabled={!!refining}>短</RefineBtn>
+            <RefineBtn onClick={() => refine('medium')} busy={refining === 'medium'} disabled={!!refining}>中</RefineBtn>
+            <RefineBtn onClick={() => refine('long')} busy={refining === 'long'} disabled={!!refining}>長</RefineBtn>
+            <span className="w-px h-4 bg-zinc-700 mx-1" />
+            <RefineBtn onClick={() => refine('smooth')} busy={refining === 'smooth'} disabled={!!refining} accent>✨ 更通順自然</RefineBtn>
+            {refining && <span className="text-[11px] text-zinc-500">改寫中…</span>}
+          </div>
+
           {/* Candidate ranking (best-of-N) */}
           {candidates.length > 1 && (
             <div className="mt-3">
@@ -274,6 +309,20 @@ export default function WritePage() {
 function Seg({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${active ? 'bg-brand/20 text-brand' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}>{children}</button>
+  );
+}
+
+function RefineBtn({ onClick, busy, disabled, accent, children }: {
+  onClick: () => void; busy?: boolean; disabled?: boolean; accent?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-2.5 py-1 text-xs rounded-lg transition-colors disabled:opacity-50 ${accent ? 'bg-brand/15 text-brand hover:bg-brand/25' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}
+    >
+      {busy ? '…' : children}
+    </button>
   );
 }
 
