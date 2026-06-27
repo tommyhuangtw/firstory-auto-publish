@@ -35,6 +35,30 @@ export const ANTI_AI_VOICE = `## 禁用句式和詞彙（絕對不能出現）
 - 真實感來源：具體 > 抽象、用口語動詞（弄、搞、debug、ship、跑）、自嘲 > 宣告
 - 不要用文藝腔或詩意化描述日常事物；要用比喻就用台灣人日常會說的`;
 
+/**
+ * High-confidence AI-voice patterns for the DETERMINISTIC post-generation filter
+ * (the prompt blocklist reduces these but doesn't eliminate them at high temp).
+ * Conservative on purpose: only near-certain buzzwords + the 不是X而是Y reframe +
+ * staged openers. Ambiguous words (本質/到位/迭代/對齊…) stay as soft prompt rules
+ * only — hard-rewriting them would mangle legitimate text. Emoji handled separately.
+ */
+export const BANNED_PATTERNS: { label: string; re: RegExp }[] = [
+  { label: '不是X而是Y句式', re: /不是[^。！？\n]{1,18}[，,]\s*(而是|就是)/ },
+  { label: '假開場', re: /(分享一個觀察|你有沒有發現|說個我以前[^。\n]{0,8}的事)/ },
+  { label: 'AI買詞', re: /(賦能|底層邏輯|頂層設計|抓手|閉環|賽道|風口|降維|護城河|長期主義|核心競爭力|儀式感|無縫|一站式|全方位|生態系|種草|破圈|觸達|鏈路|卡位|複利|All-?in|革命性|顛覆|game ?changer|next ?level|深度解析|一文看懂|乾貨滿滿|看完秒懂|超到位)/i },
+];
+
+/** Actual banned substrings present in `text` (for feeding the repair pass). */
+export function findBannedTerms(text: string): string[] {
+  const hits: string[] = [];
+  for (const p of BANNED_PATTERNS) {
+    const g = new RegExp(p.re.source, p.re.flags.includes('g') ? p.re.flags : p.re.flags + 'g');
+    const m = text.match(g);
+    if (m) hits.push(...m.map((s) => s.trim()));
+  }
+  return [...new Set(hits)];
+}
+
 export const WRITING_RULES = `## 寫作規則
 - 繁體中文，口語化，像真人在 Threads 上講話
 - 每則 180-280 字，精簡有力（最多不超過 360 字，寧可精簡也不要冗長）

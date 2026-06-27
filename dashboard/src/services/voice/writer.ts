@@ -13,7 +13,7 @@ import { getDb } from '@/db';
 import { createChildLogger } from '@/lib/logger';
 import { getLLMService } from '@/services/llmService';
 import { VERSION_GUARD_ZH } from '@/services/llm/versionGuard';
-import { ANTI_AI_VOICE } from '@/services/brandVoice';
+import { ANTI_AI_VOICE, findBannedTerms } from '@/services/brandVoice';
 import { retrieveStories } from './retrieval';
 import { scoreDrafts, type DraftScore } from './predictorClient';
 
@@ -187,7 +187,18 @@ ${VERSION_GUARD_ZH}`;
     draft = await compressToLimit(draft, llm);
   }
 
-  log.info({ mode: req.mode, stories: stories.length, len: codePointLen(draft) }, 'Draft generated');
+  // Deterministic AI-voice filter (the prompt blocklist isn't airtight at high temp):
+  // always strip Unicode emoji; if any high-confidence banned term/phrase survived,
+  // run ONE targeted repair pass (only fires when needed, so cost stays low).
+  draft = scrubEmoji(draft);
+  const banned = findBannedTerms(draft);
+  if (banned.length) {
+    draft = scrubEmoji(await repairBanned(draft, banned, llm));
+    const still = findBannedTerms(draft);
+    if (still.length) log.warn({ still }, 'Banned AI-voice terms persisted after repair');
+  }
+
+  log.info({ mode: req.mode, stories: stories.length, len: codePointLen(draft), scrubbed: banned }, 'Draft generated');
   return {
     draft,
     stories: stories.map((s) => ({ content: s.content, sim: s.sim })),
@@ -227,6 +238,33 @@ export async function writeBestOfN(req: WriteRequest, n = 5): Promise<BestOfNRes
     'best-of-N scored',
   );
   return { best: ranked[0], candidates: ranked, scored: true };
+}
+
+/** Strip Unicode emoji / pictographs (brand voice = no emoji; XD & text emoticons stay). */
+function scrubEmoji(s: string): string {
+  return s
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Targeted rewrite: swap the flagged AI-voice terms for concrete colloquial wording,
+ *  changing nothing else. Only called when findBannedTerms() actually hit. */
+async function repairBanned(draft: string, hits: string[], llm: ReturnType<typeof getLLMService>): Promise<string> {
+  const r = await llm.call({
+    stage: 'voice_write_scrub',
+    messages: [
+      {
+        role: 'system',
+        content: `這篇 Threads 貼文用到了 AI 味很重、很假的詞或句式:「${hits.join('」「')}」。請在**完全不改變意思、立場、語氣、長度、換行**的前提下,只把這些詞/句式換成具體、口語、台灣人日常會講的說法,其他一個字都不要動。直接輸出修好的純文字,不要任何說明。`,
+      },
+      { role: 'user', content: draft },
+    ],
+    options: { preferredModel: MODEL, maxTokens: 1024, temperature: 0.4 },
+  });
+  return (r.success && r.content) ? r.content.trim() : draft;
 }
 
 /** Compress an over-length draft to 中短 (~230), preserving hook/point/ending. */
