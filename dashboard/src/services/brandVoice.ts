@@ -36,16 +36,16 @@ export const ANTI_AI_VOICE = `## 禁用句式和詞彙（絕對不能出現）
 - 不要用文藝腔或詩意化描述日常事物；要用比喻就用台灣人日常會說的`;
 
 /**
- * High-confidence AI-voice patterns for the DETERMINISTIC post-generation filter
- * (the prompt blocklist reduces these but doesn't eliminate them at high temp).
- * Conservative on purpose: only near-certain buzzwords + the 不是X而是Y reframe +
- * staged openers. Ambiguous words (本質/到位/迭代/對齊…) stay as soft prompt rules
- * only — hard-rewriting them would mangle legitimate text. Emoji handled separately.
+ * AI-voice patterns for the DETERMINISTIC post-generation filter (the prompt
+ * blocklist reduces these but doesn't eliminate them at high temp). A hit triggers
+ * a targeted repair pass that swaps the term for concrete wording (meaning unchanged),
+ * so even occasionally-legit words (本質/到位/迭代/對齊) are safe to hard-enforce.
+ * Emoji handled separately (scrubEmoji).
  */
 export const BANNED_PATTERNS: { label: string; re: RegExp }[] = [
   { label: '不是X而是Y句式', re: /不是[^。！？\n]{1,18}[，,]\s*(而是|就是)/ },
   { label: '假開場', re: /(分享一個觀察|你有沒有發現|說個我以前[^。\n]{0,8}的事)/ },
-  { label: 'AI買詞', re: /(賦能|底層邏輯|頂層設計|抓手|閉環|賽道|風口|降維|護城河|長期主義|核心競爭力|儀式感|無縫|一站式|全方位|生態系|種草|破圈|觸達|鏈路|卡位|複利|All-?in|革命性|顛覆|game ?changer|next ?level|深度解析|一文看懂|乾貨滿滿|看完秒懂|超到位)/i },
+  { label: 'AI買詞', re: /(賦能|底層邏輯|頂層設計|抓手|閉環|賽道|風口|降維|護城河|長期主義|核心競爭力|儀式感|無縫|一站式|全方位|生態系|種草|破圈|觸達|鏈路|卡位|複利|本質|到位|迭代|對齊|All-?in|革命性|顛覆|game ?changer|next ?level|深度解析|一文看懂|乾貨滿滿|看完秒懂|超到位)/i },
 ];
 
 /** Actual banned substrings present in `text` (for feeding the repair pass). */
