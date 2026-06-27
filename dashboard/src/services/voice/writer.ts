@@ -21,7 +21,9 @@ const PERSONAL_AUTHOR = 'ai.lanrenbao';
 
 const log = createChildLogger('voice:writer');
 const MODEL = 'google/gemini-3.1-flash-lite-preview';
-const MAX_LEN = 500; // Threads hard limit (characters)
+const MAX_LEN = 500; // Threads hard limit (characters / code points)
+const COMPRESS_TRIGGER = 290; // over this → compress down (keep drafts 中短, ~180-280)
+const COMPRESS_TARGET = 200; // ask the compressor for this; the model always overshoots ~50-60, so undershoot lands ~中短
 
 // Rotating "angle" nudges so re-generating the same idea yields fresh drafts.
 const VARIETY_NUDGES = [
@@ -78,7 +80,7 @@ const RULES = `寫作規則(嚴格遵守):
 - **一篇只聚焦 1-2 個重點 / mindset**,講深、不貪多,不要塞一堆主題
 - 用他的「語氣與思考方式」表達,但要**延伸出一個『新的』觀點/角度**,不是重組他寫過的東西
 - **絕不重用**他過去的開場白、口頭禪、招牌金句、或具體故事;讀者看過他的舊文,任何似曾相識的套路都會讓人膩
-- **目標 350-450 字,絕對不可超過 500 字**(Threads 硬上限);寧可精簡也不要超字
+- **目標 180-280 字,精簡有力**;最多不要超過 360 字,寧可精簡也不要冗長(Threads 上限 500 字)
 - 不要 hashtag、不要連結、不要 markdown 語法(**粗體** 等)
 - 直接輸出貼文純文字,不要任何前後說明`;
 
@@ -137,10 +139,11 @@ ${VERSION_GUARD_ZH}`;
   }
 
   let draft = result.content.trim();
-  // Hard guarantee on the Threads length limit: the model often overshoots the
-  // prompt's target, so compress in one pass if it's still over. Count by code
-  // points (not UTF-16 units) so emoji aren't double-counted vs Threads' limit.
-  if (codePointLen(draft) > MAX_LEN) {
+  // Keep drafts 中短: the model often overshoots the prompt's target, so if it ran
+  // long, compress it down to TARGET_MAX in one pass (rather than shipping a wall of
+  // text or chopping it mid-sentence). Count by code points (not UTF-16 units) so
+  // emoji aren't double-counted vs Threads' limit.
+  if (codePointLen(draft) > COMPRESS_TRIGGER) {
     draft = await compressToLimit(draft, llm);
   }
 
@@ -186,24 +189,36 @@ export async function writeBestOfN(req: WriteRequest, n = 5): Promise<BestOfNRes
   return { best: ranked[0], candidates: ranked, scored: true };
 }
 
-/** Compress an over-length draft to ≤480 chars, preserving hook/point/ending. */
+/** Compress an over-length draft to 中短 (~230), preserving hook/point/ending. */
 async function compressToLimit(draft: string, llm: ReturnType<typeof getLLMService>): Promise<string> {
   const r = await llm.call({
     stage: 'voice_write_compress',
     messages: [
       {
         role: 'system',
-        content: '你是文字編輯。把這篇 Threads 貼文精簡到 **480 字以內**(務必),保留開頭的 hook、核心觀點、和結尾的 CTA/提問,維持一句一行的口語節奏。不要新增內容、不要改變立場或語氣。直接輸出精簡後的純文字,不要任何說明。',
+        content: `你是文字編輯。把這篇 Threads 貼文精簡到 **${COMPRESS_TARGET} 字以內**(務必,寧短勿長),保留開頭的 hook、核心觀點、和結尾的 CTA/提問,維持一句一行的口語節奏。不要新增內容、不要改變立場或語氣。直接輸出精簡後的純文字,不要任何說明。`,
       },
       { role: 'user', content: draft },
     ],
     options: { preferredModel: MODEL, maxTokens: 1024, temperature: 0.3 },
   });
   const out = (r.success && r.content) ? r.content.trim() : draft;
-  // Last-resort hard cut if the compressor still overshot. Slice by code points
-  // so we never split an emoji's surrogate pair (which would emit a broken char).
-  const cps = [...out];
-  return cps.length > MAX_LEN ? cps.slice(0, MAX_LEN).join('') : out;
+  // Last-resort safety net (compressor still overshot the Threads hard limit):
+  // trim at a sentence boundary so we never ship a half-sentence ("喀掉").
+  return trimToSentence(out, MAX_LEN);
+}
+
+/**
+ * Trim to ≤ `limit` code points WITHOUT cutting mid-sentence: fall back to the
+ * last sentence boundary (。！？.!?… or newline) before the limit. Only hard-cuts
+ * (by code point, so emoji surrogate pairs stay intact) if there's no boundary at all.
+ */
+function trimToSentence(text: string, limit: number): string {
+  const cps = [...text];
+  if (cps.length <= limit) return text;
+  const head = cps.slice(0, limit).join('');
+  const m = head.match(/^[\s\S]*[。！？!?…\n]/);
+  return (m ? m[0] : head).trim();
 }
 
 /** Character count by code point (emoji = 1), matching Threads' limit better than UTF-16 .length. */
