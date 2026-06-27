@@ -26,7 +26,7 @@ export default function InspirationPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'visible' | 'saved'>('visible');
   const [sort, setSort] = useState<'resonance' | 'newest' | 'published' | 'random'>('resonance');
-  const [within, setWithin] = useState<'all' | 'month' | 'week' | '3day'>('all');
+  const [within, setWithin] = useState<'all' | 'month' | 'week' | '3day'>('3day');
   const [q, setQ] = useState('');
   const [channel, setChannel] = useState('');
   const [channels, setChannels] = useState<{ id: number; title: string | null; handle: string | null }[]>([]);
