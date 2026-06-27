@@ -52,7 +52,7 @@ export default function VoicePage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [total, setTotal] = useState(0);
-  const [sort, setSort] = useState<'engagement' | 'recent'>('engagement');
+  const [sort, setSort] = useState<'like_comment' | 'likes' | 'engagement' | 'recent'>('like_comment');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -157,7 +157,7 @@ export default function VoicePage() {
 
       {total === 0 ? (
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-8 text-center text-sm text-zinc-400">
-          尚無語料。請先到 <a href="/settings" className="text-brand underline">設定</a> 連結 Threads,再點「立即同步」。
+          尚無貼文。請先到 <a href="/settings" className="text-brand underline">設定</a> 連結 Threads,再點「立即同步」。
         </div>
       ) : (
         <>
@@ -171,12 +171,14 @@ export default function VoicePage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-xs text-zinc-500">排序：</span>
-                <SortBtn active={sort === 'engagement'} onClick={() => setSort('engagement')}>互動率（觀眾最買單）</SortBtn>
+                <SortBtn active={sort === 'like_comment'} onClick={() => setSort('like_comment')}>讚+留言（觀眾最買單）</SortBtn>
+                <SortBtn active={sort === 'likes'} onClick={() => setSort('likes')}>純讚數</SortBtn>
+                <SortBtn active={sort === 'engagement'} onClick={() => setSort('engagement')}>互動率</SortBtn>
                 <SortBtn active={sort === 'recent'} onClick={() => setSort('recent')}>最新</SortBtn>
               </div>
               <div className="space-y-2">
                 {posts.map((p, i) => (
-                  <PostRow key={p.post_id} post={p} rank={sort === 'engagement' ? i + 1 : undefined} />
+                  <PostRow key={p.post_id} post={p} rank={sort === 'recent' ? undefined : i + 1} />
                 ))}
               </div>
             </div>
@@ -217,7 +219,7 @@ function Header() {
   return (
     <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
       <span className="w-1 h-6 rounded-full bg-brand" />
-      我的語料
+      我的風格
     </h1>
   );
 }
