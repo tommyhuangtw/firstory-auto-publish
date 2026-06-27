@@ -129,21 +129,21 @@ export default function TrendsPage() {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto pb-24">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto pb-20">
       <PageHeader title="社群熱點" actions={
         <div className="flex gap-2 flex-wrap">
           <button onClick={scan} disabled={busy === 'scan'}
-            className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
+            className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
             {busy === 'scan' ? '掃描中…' : '立即掃描'}
           </button>
-          <button onClick={() => load()} className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">重新整理</button>
-          <a href="/trends/scans" className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">📋 掃描紀錄</a>
+          <button onClick={() => load()} className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">重新整理</button>
+          <a href="/trends/scans" className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700">📋 掃描紀錄</a>
           <button onClick={pushTelegram} disabled={busy === 'tg'}
-            className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
+            className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
             {busy === 'tg' ? '推播中…' : '推 Telegram'}
           </button>
           <button onClick={openSession} disabled={busy === 'session'} title="開啟爬蟲帳號的 Chrome，自己滑來訓練演算法"
-            className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
+            className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50">
             {busy === 'session' ? '開啟中…' : '🌐 開爬蟲 Chrome'}
           </button>
         </div>
@@ -161,15 +161,15 @@ export default function TrendsPage() {
       </p>
 
       <div className="flex items-center gap-3 mb-5 text-xs flex-wrap">
-        <span className="text-zinc-400">口味檔案 <span className="text-emerald-400 font-semibold">👍{likedCount}</span> <span className="text-rose-400 font-semibold">👎{dislikedCount}</span>{filtered ? ' ·已依口味過濾' : profileSize === 0 ? ' ·尚無，先去標註' : ''}</span>
+        <span className="text-zinc-400 break-words">口味檔案 <span className="text-emerald-400 font-semibold">👍{likedCount}</span> <span className="text-rose-400 font-semibold">👎{dislikedCount}</span>{filtered ? ' ·已依口味過濾' : profileSize === 0 ? ' ·尚無，先去標註' : ''}</span>
         {profileSize > 0 && (
           <button onClick={toggleShowAll}
             className={`px-2.5 py-1 rounded-lg ${showAll ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
             {showAll ? '✓ 看全部（含不符合）' : '看全部'}
           </button>
         )}
-        <span className="inline-flex items-center rounded-lg bg-zinc-800/60 p-0.5">
-          <span className="text-zinc-500 px-1.5">排序</span>
+        <span className="grid grid-cols-3 md:inline-flex md:items-center rounded-lg bg-zinc-800/60 p-0.5">
+          <span className="col-span-3 md:col-auto text-zinc-500 px-1.5">排序</span>
           {([['interest', '符合度'], ['newest', '最新'], ['heat', '熱度']] as const).map(([m, label]) => (
             <button key={m} onClick={() => setSortMode(m)}
               disabled={m === 'interest' && profileSize === 0}
@@ -200,10 +200,10 @@ export default function TrendsPage() {
             <div key={p.id}
               onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
               className={`rounded-xl border bg-zinc-900/40 p-4 transition-colors ${hoverId === p.id ? 'border-orange-500/40 bg-zinc-900/70' : 'border-zinc-800'}`}>
-              <div className="flex items-center gap-2 mb-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-2 min-w-0">
                 {p.author && <span className="font-semibold text-zinc-100 truncate">@{p.author}</span>}
-                {p.relevant ? <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">AI/科技</span> : null}
-                {typeof p.interest_score === 'number' && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300" title="跟你 👍 的貼文相似、扣掉跟 👎 的相似後的口味分數">符合 {Math.max(0, Math.round(p.interest_score * 100))}%</span>}
+                {p.relevant ? <span className="shrink-0 text-[11px] md:text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">AI/科技</span> : null}
+                {typeof p.interest_score === 'number' && <span className="shrink-0 text-[11px] md:text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300" title="跟你 👍 的貼文相似、扣掉跟 👎 的相似後的口味分數">符合 {Math.max(0, Math.round(p.interest_score * 100))}%</span>}
                 {p.source && <span className="shrink-0 text-xs text-zinc-500">{p.source}</span>}
                 {p.posted_at && <span className="shrink-0 ml-auto text-xs text-zinc-500">{new Date(p.posted_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
               </div>
@@ -211,7 +211,7 @@ export default function TrendsPage() {
                 style={hoverId === p.id ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {p.text}
               </p>
-              <div className="flex items-center gap-4 mt-3">
+              <div className="flex flex-wrap items-center gap-4 mt-3">
                 <span className="flex items-center gap-1.5 text-rose-400 text-sm font-semibold tabular-nums">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-10-9.3C.5 8.5 2 5 5.5 5 7.7 5 9 6.3 12 9c3-2.7 4.3-4 6.5-4C22 5 23.5 8.5 22 11.7 19.5 16.4 12 21 12 21z" /></svg>
                   {(p.like_count ?? 0).toLocaleString()}
@@ -222,7 +222,7 @@ export default function TrendsPage() {
                 </span>
                 <span className="flex items-center gap-1 text-orange-400/90 text-xs tabular-nums">🔥 {Math.round(p.velocity ?? 0)}/hr</span>
               </div>
-              <div className="flex items-center gap-2 mt-3">
+              <div className="flex flex-wrap items-center gap-2 mt-3">
                 {p.permalink && (
                   <a href={p.permalink} target="_blank" rel="noopener noreferrer"
                     className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">↗ 去 Threads 回覆</a>
@@ -231,11 +231,11 @@ export default function TrendsPage() {
                   className="text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25">✍️ 讓 AI 寫成貼文</button>
                 <div className="ml-auto flex items-center gap-2">
                   <button onClick={() => toggleInterest(p.id, -1)} title="不想看到這類，往後壓低"
-                    className={`text-xs px-3 py-1.5 rounded-lg ${p.interested === -1 ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                    className={`text-xs px-3 py-2 md:py-1.5 rounded-lg ${p.interested === -1 ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
                     {p.interested === -1 ? '👎 已排除' : '👎 不要'}
                   </button>
                   <button onClick={() => toggleInterest(p.id, 1)} title="想多看這類，往前排"
-                    className={`text-xs px-3 py-1.5 rounded-lg ${p.interested === 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                    className={`text-xs px-3 py-2 md:py-1.5 rounded-lg ${p.interested === 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
                     {p.interested === 1 ? '👍 已留' : '👍 想留'}
                   </button>
                 </div>
@@ -335,7 +335,7 @@ function ReplyZone() {
       <p className="text-xs text-zinc-500 mb-1">你的 niche(AI 應用/接案/職涯/留學/英國生活/美國生活)近 2 天、讚 ≥ 80 的貼文。生成一則你的口吻回覆 → 複製 → 點原文去貼。主動回覆是被陌生人看到、建立信任的關鍵。</p>
       {posts.map((p) => (
         <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs md:text-[11px] text-zinc-500 mb-1">
             {p.author && <span className="text-zinc-300">@{p.author}</span>}
             <span>❤️ {p.like_count}</span><span>💬 {p.reply_count}</span>
             {p.topic && <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{p.topic}</span>}

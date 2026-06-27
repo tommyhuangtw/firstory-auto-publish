@@ -133,7 +133,7 @@ export default function InspirationPage() {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto pb-24">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto pb-20">
       <PageHeader title="靈感庫" actions={
         <a href="/inspiration/channels" className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">頻道來源 →</a>
       } />
@@ -153,7 +153,7 @@ export default function InspirationPage() {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 語意搜尋"
-          className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100" />
+          className="w-full sm:w-auto sm:flex-1 px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100" />
         <select value={theme} onChange={(e) => setTheme(e.target.value)}
           className="px-2 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100">
           <option value="">全部主題</option>
@@ -185,7 +185,7 @@ export default function InspirationPage() {
         : insights.length === 0 ? <p className="text-zinc-400">還沒有靈感，貼個連結開始吧。</p>
         : insights.map((it) => (
           <div key={it.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-3 transition-colors">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               {it.resonance != null && <span className="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">🔥 共鳴 {it.resonance}</span>}
               {it.category && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300">{it.category}</span>}
               {it.channel_title && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-brand/10 text-brand truncate max-w-[40%]">{it.channel_title}</span>}
@@ -199,17 +199,17 @@ export default function InspirationPage() {
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-1">{it.idea}</p>
             {it.why_share && <p className="text-xs text-zinc-500 mb-2">💬 {it.why_share}</p>}
             <div className="flex gap-3">
-              {it.source_url && <a href={it.source_url} target="_blank" className="text-xs text-brand hover:underline">📺 {it.source_title || it.source_type} ↗</a>}
+              {it.source_url && <a href={it.source_url} target="_blank" className="text-xs text-brand hover:underline break-words">📺 {it.source_title || it.source_type} ↗</a>}
               <a href={`/inspiration/source/${it.source_id}`} className="text-xs text-brand hover:underline">📄 講稿</a>
             </div>
 
             <div className="flex gap-2 mt-3">
               <button onClick={() => setStatus(it.id, it.status === 'saved' ? 'new' : 'saved')} disabled={busy === `s${it.id}`}
-                className="px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50">{it.status === 'saved' ? '已存' : '💡 存'}</button>
+                className="px-3 py-2 text-xs md:px-2 md:py-1 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50">{it.status === 'saved' ? '已存' : '💡 存'}</button>
               <button onClick={() => setStatus(it.id, 'hidden')} disabled={busy === `s${it.id}`}
-                className="px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50">🗑 藏</button>
+                className="px-3 py-2 text-xs md:px-2 md:py-1 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50">🗑 藏</button>
               <button onClick={() => setDraftOpen((p) => ({ ...p, [it.id]: !p[it.id] }))}
-                className="px-2 py-1 text-xs rounded-lg bg-brand/15 text-brand hover:bg-brand/25">✍️ 改寫</button>
+                className="px-3 py-2 text-xs md:px-2 md:py-1 rounded-lg bg-brand/15 text-brand hover:bg-brand/25">✍️ 改寫</button>
             </div>
 
             {draftOpen[it.id] && (
@@ -217,12 +217,12 @@ export default function InspirationPage() {
                 <textarea value={draftNote[it.id] || ''} onChange={(e) => setDraftNote((p) => ({ ...p, [it.id]: e.target.value }))}
                   placeholder="加入你的經驗/角度（貼文的靈魂）" rows={2}
                   className="w-full px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-100 mb-2" />
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
-                  <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+                <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-4 gap-y-1 mb-2">
+                  <label className="flex items-start gap-2 text-xs text-zinc-400 cursor-pointer select-none">
                     <input type="checkbox" checked={!!draftStories[it.id]} onChange={(e) => setDraftStories((p) => ({ ...p, [it.id]: e.target.checked }))} className="accent-[var(--brand,#e0a96d)]" />
                     帶入個人故事
                   </label>
-                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                  <label className="flex items-start gap-2 text-xs cursor-pointer select-none">
                     <input type="checkbox" checked={!!draftViral[it.id]} onChange={(e) => setDraftViral((p) => ({ ...p, [it.id]: e.target.checked }))} className="accent-[var(--brand,#e0a96d)]" />
                     <span className={draftViral[it.id] ? 'text-brand' : 'text-zinc-400'}>🔥 爆文模式</span>
                   </label>
@@ -236,10 +236,10 @@ export default function InspirationPage() {
                     <p className="text-sm text-zinc-200 whitespace-pre-wrap bg-zinc-800/50 rounded-lg p-3">{draftText[it.id]}</p>
                     <div className="mt-2 flex items-center gap-2">
                       <button onClick={() => navigator.clipboard.writeText(draftText[it.id])}
-                        className="px-2 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">複製</button>
+                        className="px-3 py-2 text-xs md:px-2 md:py-1 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">複製</button>
                       <a href={`https://www.threads.net/intent/post?text=${encodeURIComponent(draftText[it.id])}`}
                         target="_blank" rel="noreferrer"
-                        className="px-2 py-1 text-xs rounded-lg bg-brand/90 hover:bg-brand text-white">去 Threads 發文 →</a>
+                        className="px-3 py-2 text-xs md:px-2 md:py-1 rounded-lg bg-brand/90 hover:bg-brand text-white">去 Threads 發文 →</a>
                     </div>
                   </div>
                 )}

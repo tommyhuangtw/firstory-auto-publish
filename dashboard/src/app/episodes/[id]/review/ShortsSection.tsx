@@ -486,7 +486,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
           {step === 'select_avatar' && (
             <div className="pt-4 space-y-3">
               <p className="text-xs text-zinc-400">選擇樹懶形象：</p>
-              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                 {avatars.map((a) => (
                   <button
                     key={a.filename}
@@ -635,7 +635,7 @@ export default function ShortsSection({ episodeId, initialShorts, segmentType }:
                           setCustomHeadline(headline);
                         }
                       }}
-                      className="flex-1 bg-transparent text-sm text-zinc-300 focus:outline-none focus:text-zinc-100 cursor-text"
+                      className="flex-1 min-w-0 bg-transparent text-sm text-zinc-300 focus:outline-none focus:text-zinc-100 cursor-text"
                     />
                   </div>
                 ))}

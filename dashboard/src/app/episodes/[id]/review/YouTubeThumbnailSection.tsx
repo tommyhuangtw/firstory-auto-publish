@@ -351,7 +351,7 @@ export default function YouTubeThumbnailSection({
           <div className="text-xs text-zinc-500">
             共 {allThumbnails.length} 張 — 點選任一張即可儲存
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {allThumbnails.map((t) => (
               <div key={t.path} className="space-y-1">
                 <button

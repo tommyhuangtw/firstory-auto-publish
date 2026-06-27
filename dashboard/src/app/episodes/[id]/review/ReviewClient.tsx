@@ -157,9 +157,9 @@ export default function ReviewClient({
       if (!res.ok) throw new Error(data.error);
       if (data.publishErrors?.length) {
         setPublishErrors(data.publishErrors);
-        setMessage('Published with partial failures — email notification sent');
+        setMessage('部分平台發布失敗 — 已寄送 Email 通知');
       } else {
-        setMessage('Approved! Published successfully.');
+        setMessage('已核准並成功發布！');
       }
       router.refresh();
     } catch (err) {
@@ -180,7 +180,7 @@ export default function ReviewClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMessage('Episode rejected.');
+      setMessage('已退回此集');
       router.refresh();
     } catch (err) {
       setMessage(`Error: ${(err as Error).message}`);
@@ -392,21 +392,21 @@ export default function ReviewClient({
 
       {/* Approve / Reject Actions — placed right after title for quick workflow */}
       {canReview && (
-        <section className="fixed bottom-16 inset-x-0 z-40 bg-zinc-900/95 backdrop-blur-sm border-t border-zinc-800 px-4 py-3 md:static md:bg-transparent md:backdrop-blur-none md:border-0 md:px-0 md:py-0 space-y-3">
+        <section className="fixed bottom-16 inset-x-0 z-40 max-h-[70vh] overflow-y-auto bg-zinc-900/95 backdrop-blur-sm border-t border-zinc-800 px-4 py-3 md:static md:max-h-none md:overflow-visible md:bg-transparent md:backdrop-blur-none md:border-0 md:px-0 md:py-0 space-y-3">
           <div className="flex gap-3">
             <button
               onClick={handleApprove}
               disabled={loading || !title}
               className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors cursor-pointer"
             >
-              {loading ? 'Processing...' : 'Approve & Publish'}
+              {loading ? '處理中…' : '核准並發布'}
             </button>
             <button
               onClick={() => setShowReject(!showReject)}
               disabled={loading}
               className="px-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium py-3 rounded-lg transition-colors cursor-pointer"
             >
-              Reject
+              退回
             </button>
           </div>
 
@@ -415,7 +415,7 @@ export default function ReviewClient({
               <textarea
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Reason for rejection (optional)..."
+                placeholder="退回原因（選填）…"
                 rows={3}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 resize-y mb-3"
               />
@@ -424,7 +424,7 @@ export default function ReviewClient({
                 disabled={loading}
                 className="bg-red-600 hover:bg-red-500 disabled:bg-zinc-700 text-white font-medium px-6 py-2 rounded-lg transition-colors cursor-pointer"
               >
-                Confirm Reject
+                確認退回
               </button>
             </div>
           )}
@@ -444,7 +444,7 @@ export default function ReviewClient({
 
       {/* Status message */}
       {message && (
-        <p className={`text-sm ${message.startsWith('Error') || message.includes('failures') ? 'text-amber-400' : 'text-green-400'}`}>
+        <p className={`text-sm ${message.startsWith('錯誤') || message.includes('部分') ? 'text-amber-400' : 'text-green-400'}`}>
           {message}
         </p>
       )}

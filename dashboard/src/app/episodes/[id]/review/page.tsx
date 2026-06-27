@@ -225,24 +225,26 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>
-          Episodes
+          節目
         </Link>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-2xl font-semibold tracking-tight">{headerLabel}</h1>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
-            {segmentLabels[episode.segment_type] || episode.segment_type}
-          </span>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${sc.color}`}>
-            {sc.label}
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-semibold tracking-tight">{headerLabel}</h1>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${seg}`}>
+              {segmentLabels[episode.segment_type] || episode.segment_type}
+            </span>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${sc.color}`}>
+              {sc.label}
+            </span>
+          </div>
           <Link
             href={`/episodes/${episode.id}/debug`}
-            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors ml-auto"
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors shrink-0"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152-6.135 3.001 3.001 0 00-2.833-2.805 24.919 24.919 0 00-8.444 0 3.001 3.001 0 00-2.833 2.805A23.978 23.978 0 016.207 14.19C8.353 13.258 11.117 12.75 12 12.75zm0 0V8.25" />
             </svg>
-            Debug
+            除錯
           </Link>
         </div>
         {episode.selected_title && (

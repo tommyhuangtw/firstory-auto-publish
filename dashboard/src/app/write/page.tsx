@@ -136,20 +136,22 @@ export default function WritePage() {
   const over = draftLen > 500;
 
   return (
-    <div className="p-6 md:p-8 max-w-3xl">
+    <div className="p-4 md:p-8 max-w-3xl">
       <PageHeader title="寫文章" />
 
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-6 space-y-4">
         {/* Mode */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-500 w-16">模式</span>
-          <Seg active={mode === 'rewrite'} onClick={() => switchMode('rewrite')}>改寫我的想法</Seg>
-          <Seg active={mode === 'autonomous'} onClick={() => switchMode('autonomous')}>讓 AI 自己寫</Seg>
+          <div className="flex-1 grid grid-cols-2 gap-2 md:flex md:flex-none">
+            <Seg active={mode === 'rewrite'} onClick={() => switchMode('rewrite')}>改寫我的想法</Seg>
+            <Seg active={mode === 'autonomous'} onClick={() => switchMode('autonomous')}>讓 AI 自己寫</Seg>
+          </div>
         </div>
 
         {/* Idea */}
         <div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 items-start md:flex-row md:items-center md:justify-between">
             <label className="text-xs text-zinc-500">
               {mode === 'rewrite' ? '你的想法 / mindset（會用你的口吻延伸）' : '主題／角度（可留空，讓 AI 自由發揮）'}
             </label>
@@ -190,16 +192,16 @@ export default function WritePage() {
 
         {/* Toggles */}
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
-            <input type="checkbox" checked={useStories} onChange={e => setUseStories(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+          <label className="flex items-start gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+            <input type="checkbox" checked={useStories} onChange={e => setUseStories(e.target.checked)} className="accent-[var(--brand,#e0a96d)] mt-0.5 shrink-0" />
             帶入個人故事（只在主題相關時才會用，不會硬塞）
           </label>
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-            <input type="checkbox" checked={viral} onChange={e => setViral(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+          <label className="flex items-start gap-2 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={viral} onChange={e => setViral(e.target.checked)} className="accent-[var(--brand,#e0a96d)] mt-0.5 shrink-0" />
             <span className={viral ? 'text-brand' : 'text-zinc-400'}>🔥 爆文模式（套用高流量寫法：狠 hook、一句一行、具體數字、互惠 CTA）</span>
           </label>
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-            <input type="checkbox" checked={scoreMode} onChange={e => setScoreMode(e.target.checked)} className="accent-[var(--brand,#e0a96d)]" />
+          <label className="flex items-start gap-2 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={scoreMode} onChange={e => setScoreMode(e.target.checked)} className="accent-[var(--brand,#e0a96d)] mt-0.5 shrink-0" />
             <span className={scoreMode ? 'text-brand' : 'text-zinc-400'}>🎯 爆文評分（生 5 版、用 AI 模型挑「最可能爆」的那版）</span>
           </label>
         </div>
@@ -208,7 +210,7 @@ export default function WritePage() {
           <button
             onClick={generate}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white disabled:opacity-50 transition-colors"
+            className="w-full md:w-auto text-center px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white disabled:opacity-50 transition-colors"
           >
             {loading ? (scoreMode ? '生成 5 版並評分中…（約 20-30 秒）' : '生成中…（約 15-20 秒）') : '生成草稿'}
           </button>
@@ -219,7 +221,7 @@ export default function WritePage() {
       {/* Draft */}
       {result && (
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-2">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-medium text-zinc-200">草稿</h2>
               {result.score && <ViralBadge score={result.score} />}
@@ -227,9 +229,9 @@ export default function WritePage() {
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500" title="評分服務未啟動,已回傳第一版未評分草稿">評分服務離線</span>
               )}
             </div>
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-3 flex-wrap text-xs">
               <span className={over ? 'text-red-400' : 'text-zinc-500'}>{draftLen}/500 字</span>
-              <button onClick={copyDraft} className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
+              <button onClick={copyDraft} className="px-3 py-2 md:px-2.5 md:py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
                 {copied ? '已複製 ✓' : '複製'}
               </button>
               <a
@@ -317,7 +319,7 @@ function RefineBtn({ onClick, busy, disabled, accent, children }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`px-2.5 py-1 text-xs rounded-lg transition-colors disabled:opacity-50 ${accent ? 'bg-brand/15 text-brand hover:bg-brand/25' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}
+      className={`px-3 py-2 md:px-2.5 md:py-1 text-xs rounded-lg transition-colors disabled:opacity-50 ${accent ? 'bg-brand/15 text-brand hover:bg-brand/25' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}
     >
       {busy ? '…' : children}
     </button>
