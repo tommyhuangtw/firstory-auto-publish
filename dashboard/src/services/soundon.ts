@@ -183,12 +183,16 @@ async function fillEpisodeInfo(page: import('playwright').Page, title: string, d
   await descEditor.clear();
 
   // SoundOn's description field is a Quill editor. Plain `fill()` lets Quill mangle
-  // the text (blank lines doubled, URLs split mid-word). Instead, convert to clean
-  // HTML and inject via Quill's paste API; fall back to fill() if anything fails.
-  const html = descriptionToQuillHtml(description);
+  // the text (blank lines doubled, URLs split mid-word). `dangerouslyPasteHTML` also
+  // mangled URLs because it runs SoundOn's Quill clipboard matchers / autolink, which
+  // re-parse the pasted HTML and shred long URLs into fragments. Instead we build an
+  // explicit Quill Delta and `setContents()` it — Delta writes straight into Quill's
+  // document model, bypassing all clipboard matchers, so URLs stay intact and links
+  // land on the full URL. Fall back to fill() if the Quill instance can't be reached.
+  const ops = descriptionToQuillOps(description);
   let pasted = false;
   try {
-    pasted = await page.evaluate((htmlContent) => {
+    pasted = await page.evaluate((deltaOps) => {
       const root = document.querySelector('.ql-editor');
       if (!root) return false;
       const container = root.closest('.ql-container') || root.parentElement;
@@ -201,18 +205,16 @@ async function fillEpisodeInfo(page: import('playwright').Page, title: string, d
         }
       } catch { /* ignore */ }
       if (!quill) quill = (container as any)?.__quill || (root as any)?.__quill || null;
-      if (quill?.clipboard && typeof quill.clipboard.dangerouslyPasteHTML === 'function') {
-        quill.setContents([]);
-        quill.clipboard.dangerouslyPasteHTML(htmlContent);
+      if (quill && typeof quill.setContents === 'function' && W.Quill?.import) {
+        const Delta = W.Quill.import('delta');
+        quill.setContents(new Delta(deltaOps));
         return true;
       }
-      (root as HTMLElement).innerHTML = htmlContent;
-      root.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
+      return false;
       /* eslint-enable @typescript-eslint/no-explicit-any */
-    }, html);
+    }, ops);
   } catch (err) {
-    log.warn({ error: (err as Error).message }, 'Quill paste failed, falling back to fill()');
+    log.warn({ error: (err as Error).message }, 'Quill setContents failed, falling back to fill()');
   }
   if (!pasted) {
     await descEditor.fill(description);
@@ -222,26 +224,43 @@ async function fillEpisodeInfo(page: import('playwright').Page, title: string, d
 }
 
 /**
- * Convert a plain-text description (with \n) into Quill-friendly HTML.
+ * Convert a plain-text description (with \n) into Quill Delta ops.
  *
- * Quill normalises each line to its own <p>, so we author exactly that — one <p>
- * per source line, empty lines as <p><br></p>. This mirrors the source layout
- * predictably (instead of letting fill() amplify blank lines) and wraps URLs in
- * <a> so Quill keeps them intact (fixes the "ht/tps" split). 3+ consecutive
- * blank lines collapse to a single blank line.
+ * Each source line becomes its own block, terminated by a "\n" insert (Quill uses
+ * "\n" as the block delimiter). Blank lines are a bare "\n". URL substrings are
+ * emitted as their own insert with a `link` attribute spanning the FULL URL, so the
+ * whole link stays clickable and intact. The trailing "\n" carries no attribute, so
+ * the link never bleeds into the next line. 3+ consecutive blank lines collapse to
+ * one. Feeding this to `quill.setContents(new Delta(ops))` bypasses Quill's clipboard
+ * matchers entirely, which is what previously shredded URLs ("ht/tps/://w").
  */
-export function descriptionToQuillHtml(text: string): string {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const linkify = (s: string) =>
-    s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-  return text
+export function descriptionToQuillOps(
+  text: string,
+): Array<{ insert: string; attributes?: { link: string } }> {
+  const ops: Array<{ insert: string; attributes?: { link: string } }> = [];
+  const urlRe = /(https?:\/\/[^\s]+)/g;
+  const lines = text
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-    .split('\n')
-    .map((line) => (line.trim() === '' ? '<p><br></p>' : `<p>${linkify(esc(line))}</p>`))
-    .join('');
+    .split('\n');
+  for (const line of lines) {
+    if (line.trim() === '') {
+      ops.push({ insert: '\n' });
+      continue;
+    }
+    let last = 0;
+    let m: RegExpExecArray | null;
+    urlRe.lastIndex = 0;
+    while ((m = urlRe.exec(line)) !== null) {
+      if (m.index > last) ops.push({ insert: line.slice(last, m.index) });
+      ops.push({ insert: m[0], attributes: { link: m[0] } });
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) ops.push({ insert: line.slice(last) });
+    ops.push({ insert: '\n' });
+  }
+  return ops;
 }
 
 async function selectEpisodeType(page: import('playwright').Page) {
