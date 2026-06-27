@@ -5,6 +5,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart,
 } from 'recharts';
+import PageHeader from '@/components/PageHeader';
 
 interface CostPerEpisode {
   episode_number: number;
@@ -109,50 +110,44 @@ export default function MetricsClient() {
   }, []);
 
   if (loading) {
-    return <div className="p-8 text-zinc-500">Loading metrics...</div>;
+    return <div className="p-8 text-zinc-500">載入指標中...</div>;
   }
 
   if (!data) {
-    return <div className="p-8 text-red-400">Failed to load metrics.</div>;
+    return <div className="p-8 text-red-400">指標載入失敗。</div>;
   }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'cost', label: 'Cost Analysis' },
-    { key: 'quality', label: 'Quality & Performance' },
-    { key: 'history', label: 'Pipeline History' },
+    { key: 'cost', label: '成本分析' },
+    { key: 'quality', label: '品質與效能' },
+    { key: 'history', label: '執行紀錄' },
   ];
 
   return (
     <div className="p-6 md:p-8">
       {/* Header */}
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <span className="w-1 h-6 rounded-full bg-brand" />
-          Pipeline Metrics
-        </h1>
-        <p className="text-brand-taupe text-sm mt-1">Cost tracking, quality trends, and pipeline analytics</p>
-      </header>
+      <PageHeader title="成本指標" subtitle="成本追蹤、品質趨勢與流程分析" />
 
       {/* Hero Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
-          label="Total Pipeline Cost"
+          label="總營運成本"
           value={`$${data.summary.totalCost.toFixed(2)}`}
           subtitle={`LLM $${data.summary.llmCost.toFixed(2)} / TTS $${data.summary.ttsCost.toFixed(2)} / Media $${data.summary.imageCost.toFixed(2)}`}
         />
         <StatCard
-          label="Avg Cost / Episode"
+          label="單集平均成本"
           value={`$${data.summary.avgCostPerEpisode.toFixed(3)}`}
         />
         <StatCard
-          label="Avg Quality"
+          label="平均品質"
           value={data.summary.avgQuality ? data.summary.avgQuality.toFixed(1) : '-'}
           subtitle={data.summary.avgQuality ? `/ 100` : undefined}
         />
         <StatCard
-          label="Cost Efficiency"
+          label="成本效益"
           value={data.summary.costPerQualityPoint > 0 ? `$${data.summary.costPerQualityPoint.toFixed(4)}` : '-'}
-          subtitle="per quality point"
+          subtitle="每分品質"
         />
       </div>
 
@@ -192,7 +187,7 @@ function CostTab({ data }: { data: MetricsData }) {
       {/* Stacked Cost per Episode Chart */}
       {hasEpisodeCosts && (
         <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Cost per Episode</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">每集成本</h2>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={data.costPerEpisode}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -223,29 +218,29 @@ function CostTab({ data }: { data: MetricsData }) {
       {/* Insight Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-1">Most Expensive Stage</p>
+          <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-1">成本最高階段</p>
           <p className="text-lg font-semibold">{STAGE_LABELS[data.summary.mostExpensiveStage] || data.summary.mostExpensiveStage}</p>
         </div>
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-1">Episodes Produced</p>
+          <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-1">已製作節目數</p>
           <p className="text-lg font-semibold">{data.summary.totalEpisodes}</p>
-          <p className="text-xs text-zinc-500">{data.summary.totalCalls} total LLM calls</p>
+          <p className="text-xs text-zinc-500">{data.summary.totalCalls} 總 LLM 呼叫次數</p>
         </div>
       </div>
 
       {/* Cost Breakdown Table */}
       {data.costByStage.length > 0 && (
         <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Cost Breakdown</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">成本明細</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-zinc-400 border-b border-zinc-800">
-                  <th className="text-left py-2 pr-4">Category</th>
-                  <th className="text-left py-2 pr-4">Stage</th>
-                  <th className="text-right py-2 pr-4">Calls</th>
-                  <th className="text-right py-2 pr-4">Total Cost</th>
-                  <th className="text-right py-2">% of Total</th>
+                  <th className="text-left py-2 pr-4">類別</th>
+                  <th className="text-left py-2 pr-4">階段</th>
+                  <th className="text-right py-2 pr-4">呼叫次數</th>
+                  <th className="text-right py-2 pr-4">總成本</th>
+                  <th className="text-right py-2">佔比</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,7 +274,7 @@ function CostTab({ data }: { data: MetricsData }) {
 
       {!hasEpisodeCosts && data.costByStage.length === 0 && (
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
-          <p className="text-zinc-400">No cost data yet. Run a pipeline to start collecting metrics.</p>
+          <p className="text-zinc-400">尚無成本資料，執行流程後開始收集指標。</p>
         </div>
       )}
     </>
@@ -294,7 +289,7 @@ function QualityTab({ data }: { data: MetricsData }) {
       {/* Dual-axis: Quality Score vs Cost */}
       {data.qualityTrend.length > 0 && (
         <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Quality vs Cost Trend</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">品質與成本趨勢</h2>
           <ResponsiveContainer width="100%" height={280}>
             <ComposedChart data={data.qualityTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -307,10 +302,10 @@ function QualityTab({ data }: { data: MetricsData }) {
                 labelFormatter={(v) => `EP #${v}`}
                 formatter={(value, name) => [
                   name === 'quality_score' ? Number(value).toFixed(1) : `$${Number(value).toFixed(4)}`,
-                  name === 'quality_score' ? 'Quality' : 'Cost',
+                  name === 'quality_score' ? '品質' : '成本',
                 ]}
               />
-              <Legend formatter={(value) => value === 'quality_score' ? 'Quality Score' : 'Total Cost'} />
+              <Legend formatter={(value) => value === 'quality_score' ? '品質評分' : '總成本'} />
               <Line yAxisId="quality" type="monotone" dataKey="quality_score" stroke="#e8c66a" strokeWidth={2} dot={{ fill: '#e8c66a', r: 4 }} />
               <Bar yAxisId="cost" dataKey="total_cost_usd" fill="#3b82f6" opacity={0.3} radius={[4, 4, 0, 0]} />
             </ComposedChart>
@@ -321,7 +316,7 @@ function QualityTab({ data }: { data: MetricsData }) {
       {/* Latency by Stage */}
       {data.latencyByStage.length > 0 && (
         <section className="mb-6 bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Avg Latency by Stage</h2>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">各階段平均延遲</h2>
           <ResponsiveContainer width="100%" height={Math.max(200, data.latencyByStage.length * 36)}>
             <BarChart data={data.latencyByStage} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -335,7 +330,7 @@ function QualityTab({ data }: { data: MetricsData }) {
               />
               <Tooltip
                 contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8 }}
-                formatter={(value) => [`${(Number(value) / 1000).toFixed(2)}s`, 'Avg Latency']}
+                formatter={(value) => [`${(Number(value) / 1000).toFixed(2)}s`, '平均延遲']}
               />
               <Bar dataKey="avg_latency" fill="#06b6d4" radius={[0, 4, 4, 0]} />
             </BarChart>
@@ -346,17 +341,17 @@ function QualityTab({ data }: { data: MetricsData }) {
       {/* Model Selection Table */}
       {data.costByStage.filter(r => r.category === 'LLM').length > 0 && (
         <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Model Selection</h2>
-          <p className="text-xs text-zinc-500 mb-3">Demonstrates intentional model routing — cheap models for simple tasks, powerful models for complex ones.</p>
+          <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">模型選擇</h2>
+          <p className="text-xs text-zinc-500 mb-3">展示有意的模型路由：簡單任務用便宜模型，複雜任務用強大模型。</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-zinc-400 border-b border-zinc-800">
-                  <th className="text-left py-2 pr-4">Stage</th>
-                  <th className="text-left py-2 pr-4">Model</th>
-                  <th className="text-right py-2 pr-4">Calls</th>
-                  <th className="text-right py-2 pr-4">Avg Cost</th>
-                  <th className="text-right py-2">Avg Latency</th>
+                  <th className="text-left py-2 pr-4">階段</th>
+                  <th className="text-left py-2 pr-4">模型</th>
+                  <th className="text-right py-2 pr-4">呼叫次數</th>
+                  <th className="text-right py-2 pr-4">平均成本</th>
+                  <th className="text-right py-2">平均延遲</th>
                 </tr>
               </thead>
               <tbody>
@@ -377,7 +372,7 @@ function QualityTab({ data }: { data: MetricsData }) {
 
       {data.qualityTrend.length === 0 && data.latencyByStage.length === 0 && (
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
-          <p className="text-zinc-400">No quality data yet. Run a pipeline to start collecting metrics.</p>
+          <p className="text-zinc-400">尚無品質資料，執行流程後開始收集指標。</p>
         </div>
       )}
     </>
@@ -389,21 +384,21 @@ function QualityTab({ data }: { data: MetricsData }) {
 function HistoryTab({ data }: { data: MetricsData }) {
   return (
     <section className="bg-zinc-900 rounded-lg border border-zinc-800 p-4">
-      <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">Pipeline Runs</h2>
+      <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wider mb-4">執行紀錄</h2>
       {data.pipelineRuns.length === 0 ? (
-        <p className="text-zinc-400 text-sm">No pipeline runs yet.</p>
+        <p className="text-zinc-400 text-sm">尚無執行紀錄。</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-zinc-400 border-b border-zinc-800">
-                <th className="text-left py-2 pr-4">Episode</th>
-                <th className="text-left py-2 pr-4">Type</th>
-                <th className="text-left py-2 pr-4">Status</th>
-                <th className="text-left py-2 pr-4">Stage</th>
-                <th className="text-right py-2 pr-4">Cost</th>
-                <th className="text-right py-2 pr-4">Duration</th>
-                <th className="text-right py-2">Started</th>
+                <th className="text-left py-2 pr-4">節目</th>
+                <th className="text-left py-2 pr-4">類型</th>
+                <th className="text-left py-2 pr-4">狀態</th>
+                <th className="text-left py-2 pr-4">階段</th>
+                <th className="text-right py-2 pr-4">成本</th>
+                <th className="text-right py-2 pr-4">時長</th>
+                <th className="text-right py-2">開始時間</th>
               </tr>
             </thead>
             <tbody>

@@ -5,6 +5,7 @@ import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import PageHeader from '@/components/PageHeader';
 
 // ---------- Types ----------
 
@@ -253,15 +254,8 @@ export default function AnalyticsClient() {
   return (
     <div className="space-y-6">
       {/* Header + Upload */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <span className="w-1 h-6 rounded-full bg-brand" />
-            節目分析
-          </h1>
-          <p className="text-brand-taupe text-sm mt-1">SoundOn 下載數據分析</p>
-        </div>
-        <div className="flex items-center gap-3">
+      <PageHeader title="節目分析" subtitle="SoundOn 下載數據分析" actions={
+        <>
           <input
             ref={fileInputRef}
             type="file"
@@ -281,8 +275,8 @@ export default function AnalyticsClient() {
           >
             {uploading ? '上傳中...' : '上傳 CSV'}
           </label>
-        </div>
-      </div>
+        </>
+      } />
 
       {uploadResult && (
         <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-300 whitespace-pre-line">

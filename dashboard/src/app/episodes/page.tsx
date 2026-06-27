@@ -4,6 +4,7 @@ import { formatLocalDate, getLocalDayOfWeek } from '@/lib/formatDate';
 import NewEpisodeForm from './NewEpisodeForm';
 import ActivePipelines from './ActivePipelines';
 import DeleteButton from './DeleteButton';
+import PageHeader from '@/components/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,20 +93,11 @@ export default function EpisodesPage() {
   return (
     <div className="p-4 md:p-8 max-w-5xl">
       {/* Header */}
-      <header className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-              <span className="w-1 h-6 rounded-full bg-brand" />
-              Episodes
-            </h1>
-            <p className="text-zinc-400 text-sm mt-1">
-              {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <NewEpisodeForm />
-        </div>
-      </header>
+      <PageHeader
+        title="節目"
+        subtitle={`${episodes.length} episode${episodes.length !== 1 ? 's' : ''}`}
+        actions={<NewEpisodeForm />}
+      />
 
       {/* Active Pipelines — client component with live polling */}
       {activePipelines.length > 0 && (

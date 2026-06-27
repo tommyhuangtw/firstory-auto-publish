@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import WeeklyScheduleEditor from './WeeklyScheduleEditor';
+import PageHeader from '@/components/PageHeader';
 
 interface Job {
   name: string;
@@ -98,13 +99,7 @@ export default function SchedulerClient() {
 
   return (
     <div className="p-6 md:p-8">
-      <header className="mb-5">
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <span className="w-1 h-5 rounded-full bg-brand" />
-          排程管理
-        </h1>
-        <p className="text-zinc-500 text-xs mt-1">管理播客自動化排程</p>
-      </header>
+      <PageHeader title="排程" subtitle="管理播客自動化排程" />
 
       <WeeklyScheduleEditor onSaved={fetchJobs} />
 

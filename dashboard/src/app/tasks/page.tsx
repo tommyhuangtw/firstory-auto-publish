@@ -20,6 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { TaskDrawer } from '@/components/TaskDrawer';
 import type { Task as DrawerTask } from '@/components/TaskDrawer';
+import PageHeader from '@/components/PageHeader';
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
 type Status = 'todo' | 'in_progress' | 'blocked' | 'review' | 'done' | 'cancelled';
@@ -44,12 +45,12 @@ interface Task {
 }
 
 const COLUMNS: { key: Status; label: string; dot: string; border: string; bg: string }[] = [
-  { key: 'todo',        label: 'Todo',        dot: 'bg-zinc-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
-  { key: 'in_progress', label: 'In Progress', dot: 'bg-blue-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
-  { key: 'blocked',     label: 'Blocked',     dot: 'bg-red-500',    border: 'border-red-500/30',    bg: 'bg-red-500/5' },
-  { key: 'review',      label: 'Review',      dot: 'bg-amber-400',  border: 'border-amber-500/30',  bg: 'bg-amber-500/5' },
-  { key: 'done',        label: 'Done',        dot: 'bg-green-500',  border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
-  { key: 'cancelled',   label: 'Cancelled',   dot: 'bg-zinc-700',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/30' },
+  { key: 'todo',        label: '待處理', dot: 'bg-zinc-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
+  { key: 'in_progress', label: '進行中', dot: 'bg-blue-500',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
+  { key: 'blocked',     label: '受阻',   dot: 'bg-red-500',    border: 'border-red-500/30',    bg: 'bg-red-500/5' },
+  { key: 'review',      label: '待審核', dot: 'bg-amber-400',  border: 'border-amber-500/30',  bg: 'bg-amber-500/5' },
+  { key: 'done',        label: '已完成', dot: 'bg-green-500',  border: 'border-zinc-700/50',   bg: 'bg-zinc-900/50' },
+  { key: 'cancelled',   label: '已取消', dot: 'bg-zinc-700',   border: 'border-zinc-700/50',   bg: 'bg-zinc-900/30' },
 ];
 
 const PRIORITY_DOT: Record<Priority, string> = {
@@ -123,14 +124,14 @@ function TaskFormFields({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-xs text-zinc-500 mb-1 block">Priority</label>
+          <label className="text-xs text-zinc-500 mb-1 block">優先度</label>
           <select value={form.priority} onChange={e => onChange({ priority: e.target.value as Priority })}
             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none">
             {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-zinc-500 mb-1 block">Category</label>
+          <label className="text-xs text-zinc-500 mb-1 block">分類</label>
           <select value={form.category} onChange={e => onChange({ category: e.target.value as Category })}
             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none">
             {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
@@ -210,14 +211,14 @@ function NewTaskModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-zinc-900 border border-zinc-700/60 rounded-xl w-full max-w-md p-5 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-zinc-100">新增 Task</h2>
+          <h2 className="text-base font-semibold text-zinc-100">新增任務</h2>
           <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-xs">
             <button onClick={() => setMode('ai')}
-              className={`px-3 py-1.5 transition-colors ${mode === 'ai' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}>
+              className={`px-3 py-1.5 transition-colors ${mode === 'ai' ? 'bg-brand text-white' : 'text-zinc-400 hover:text-zinc-200'}`}>
               ✨ AI 填寫
             </button>
             <button onClick={() => setMode('manual')}
-              className={`px-3 py-1.5 transition-colors ${mode === 'manual' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}>
+              className={`px-3 py-1.5 transition-colors ${mode === 'manual' ? 'bg-brand text-white' : 'text-zinc-400 hover:text-zinc-200'}`}>
               手動
             </button>
           </div>
@@ -238,7 +239,7 @@ function NewTaskModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
             <div className="flex gap-2">
               <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-400 transition-colors">取消</button>
               <button onClick={handleRefine} disabled={refining || !aiInput.trim()}
-                className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+                className="flex-1 py-2 rounded-lg bg-brand text-white hover:bg-brand/90 text-sm font-medium transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
                 {refining ? (<><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>AI 整理中...</>) : '✨ AI 整理成 Ticket'}
               </button>
             </div>
@@ -256,7 +257,7 @@ function NewTaskModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
             <div className="flex gap-2 pt-1">
               <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-400 transition-colors">取消</button>
               <button onClick={submit} disabled={loading || !form.title.trim()}
-                className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-40">
+                className="flex-1 py-2 rounded-lg bg-brand text-white hover:bg-brand/90 text-sm font-medium transition-colors disabled:opacity-40">
                 {loading ? '建立中...' : '建立'}
               </button>
             </div>
@@ -294,14 +295,14 @@ function EditTaskModal({ task, onClose, onUpdated }: { task: Task; onClose: () =
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-zinc-900 border border-zinc-700/60 rounded-xl w-full max-w-md p-5 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-zinc-100">編輯 Task</h2>
+          <h2 className="text-base font-semibold text-zinc-100">編輯任務</h2>
           <span className="text-xs text-zinc-600">#{task.id}</span>
         </div>
         <TaskFormFields form={form} onChange={updates => setForm(f => ({ ...f, ...updates }))} />
         <div className="flex gap-2 pt-1">
           <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-400 transition-colors">取消</button>
           <button onClick={submit} disabled={loading || !form.title.trim()}
-            className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-40">
+            className="flex-1 py-2 rounded-lg bg-brand text-white hover:bg-brand/90 text-sm font-medium transition-colors disabled:opacity-40">
             {loading ? '儲存中...' : '儲存'}
           </button>
         </div>
@@ -552,32 +553,33 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1011] text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
       {showModal && <NewTaskModal onClose={() => setShowModal(false)} onCreated={fetchTasks} />}
       {editingTask && <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onUpdated={fetchTasks} />}
       <TaskDrawer task={drawerTask} onClose={() => setDrawerTask(null)} onTaskUpdated={fetchTasks} />
 
       {/* Header */}
       <div className="border-b border-zinc-800/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-              🦥 懶懶 Task Board
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              任務
               {pendingReview > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium animate-pulse">
                   🌙 {pendingReview} 個待確認
                 </span>
               )}
-            </h1>
-            <p className="text-xs text-zinc-600 mt-0.5">
-              {counts.open} open · {counts.inProgress} in progress
-            </p>
-          </div>
-          <button onClick={() => setShowModal(true)}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5">
-            <span className="text-base leading-none">+</span> New Task
-          </button>
-        </div>
+            </span>
+          }
+          subtitle={`${counts.open} 待處理 · ${counts.inProgress} 進行中`}
+          actions={
+            <button onClick={() => setShowModal(true)}
+              className="px-3 py-1.5 bg-brand text-white hover:bg-brand/90 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5">
+              <span className="text-base leading-none">+</span> 新增任務
+            </button>
+          }
+          className="mb-3"
+        />
 
         {/* Category filter */}
         <div className="flex gap-1.5 mt-3 flex-wrap">

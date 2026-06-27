@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import PageHeader from '@/components/PageHeader';
 
 interface TtsResult {
   ok: boolean;
@@ -153,7 +154,7 @@ function DebugPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-brand-cream">Debug Tools</h1>
+      <PageHeader title="除錯" />
 
       {/* OAuth callback message */}
       {oauthMessage && (

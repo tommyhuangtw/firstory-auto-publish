@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface FbStatus {
   connected: boolean;
@@ -156,10 +157,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="p-6 md:p-8 max-w-3xl">
-        <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-          <span className="w-1 h-6 rounded-full bg-brand" />
-          Settings
-        </h1>
+        <PageHeader title="設定" />
         <p className="text-zinc-400 text-sm">Loading...</p>
       </div>
     );
@@ -167,10 +165,7 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-        <span className="w-1 h-6 rounded-full bg-brand" />
-        Settings
-      </h1>
+      <PageHeader title="設定" />
 
       <div className="space-y-8">
         {/* Facebook Page Connection */}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface Post {
   post_id: string;
@@ -216,12 +217,7 @@ export default function VoicePage() {
 }
 
 function Header() {
-  return (
-    <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-      <span className="w-1 h-6 rounded-full bg-brand" />
-      我的風格
-    </h1>
-  );
+  return <PageHeader title="我的風格" />;
 }
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {

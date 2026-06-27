@@ -303,7 +303,7 @@ function ReviewSummaryPanel({ task, data }: { task: Task; data: ReviewSummaryDat
           <a href={data.prUrl} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-500/20 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors">
             <span className="text-indigo-400 text-sm">🔀</span>
-            <span className="text-xs text-indigo-300 font-medium">View PR</span>
+            <span className="text-xs text-indigo-300 font-medium">查看 PR</span>
             {data.prStatus && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto ${PR_STATUS_BADGE[data.prStatus] || ''}`}>
                 {data.prStatus}
@@ -316,11 +316,11 @@ function ReviewSummaryPanel({ task, data }: { task: Task; data: ReviewSummaryDat
       {/* Meta */}
       <section className="space-y-2 text-xs text-zinc-500 border-t border-zinc-800/60 pt-3">
         <div className="flex justify-between">
-          <span>Priority</span>
+          <span>優先度</span>
           <span className="text-zinc-300">{task.priority}</span>
         </div>
         <div className="flex justify-between">
-          <span>Category</span>
+          <span>分類</span>
           <span className="text-zinc-300">{task.category.replace('_', ' ')}</span>
         </div>
         {task.auto_execute === 1 && (
@@ -386,11 +386,11 @@ function DefaultLeftPanel({ task }: { task: Task }) {
       {/* Meta fields */}
       <div className="space-y-2 text-xs text-zinc-500 border-t border-zinc-800/60 pt-3">
         <div className="flex justify-between">
-          <span>Priority</span>
+          <span>優先度</span>
           <span className="text-zinc-300">{task.priority}</span>
         </div>
         <div className="flex justify-between">
-          <span>Category</span>
+          <span>分類</span>
           <span className="text-zinc-300">{task.category.replace('_', ' ')}</span>
         </div>
         {task.auto_execute === 1 && (
@@ -712,7 +712,7 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
         body: JSON.stringify({
           author: 'tommy',
           type: 'review',
-          content: action === 'approve' ? 'Approved via Dashboard' : 'Rejected via Dashboard — 退回 agent 重做',
+          content: action === 'approve' ? '已透過儀表板核准' : '已透過儀表板拒絕——退回 Agent 重做',
         }),
       });
       onTaskUpdated();
@@ -772,7 +772,7 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
           {/* Right: activity / comments */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="px-6 pt-4 pb-2 shrink-0">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Activity</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">活動紀錄</p>
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 pb-4">
@@ -798,14 +798,14 @@ export function TaskDrawer({ task, onClose, onTaskUpdated }: TaskDrawerProps) {
                     disabled={!!actionLoading}
                     className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
                   >
-                    {actionLoading === 'approve' ? '處理中...' : '✅ Approve'}
+                    {actionLoading === 'approve' ? '處理中...' : '✅ 核准'}
                   </button>
                   <button
                     onClick={() => handleQuickAction('reject')}
                     disabled={!!actionLoading}
                     className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm font-medium transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
                   >
-                    {actionLoading === 'reject' ? '處理中...' : '❌ Reject'}
+                    {actionLoading === 'reject' ? '處理中...' : '❌ 拒絕'}
                   </button>
                 </div>
               )}

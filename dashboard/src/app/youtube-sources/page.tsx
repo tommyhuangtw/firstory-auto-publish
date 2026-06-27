@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface YouTubeSource {
   id: number;
@@ -105,7 +106,7 @@ export default function YouTubeSourcesPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4 text-brand-cream">YouTube Sources</h1>
+      <PageHeader title="YouTube 來源" />
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">

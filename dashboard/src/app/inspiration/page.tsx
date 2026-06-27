@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface Insight {
   id: number; source_id: number; hook: string; idea: string; why_share: string | null; category: string | null;
@@ -133,10 +134,9 @@ export default function InspirationPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto pb-24">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-brand">靈感庫</h1>
+      <PageHeader title="靈感庫" actions={
         <a href="/inspiration/channels" className="px-3 py-1.5 text-sm rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700">頻道來源 →</a>
-      </div>
+      } />
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-6">
         <input value={ingestUrl} onChange={(e) => setIngestUrl(e.target.value)}

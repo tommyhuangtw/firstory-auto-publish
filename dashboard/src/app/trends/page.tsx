@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface HotPost {
   id: number;
@@ -129,8 +130,7 @@ export default function TrendsPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto pb-24">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <h1 className="text-xl font-bold text-brand">社群熱點</h1>
+      <PageHeader title="社群熱點" actions={
         <div className="flex gap-2 flex-wrap">
           <button onClick={scan} disabled={busy === 'scan'}
             className="px-3 py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
@@ -147,7 +147,7 @@ export default function TrendsPage() {
             {busy === 'session' ? '開啟中…' : '🌐 開爬蟲 Chrome'}
           </button>
         </div>
-      </div>
+      } />
 
       {/* Tabs: 熱點(寫新貼文) vs 回覆專區(回別人的 niche 貼文) */}
       <div className="flex gap-1 mb-4 border-b border-zinc-800">

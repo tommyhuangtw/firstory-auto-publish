@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface DraftScore {
   viralProb: number;
@@ -136,10 +137,7 @@ export default function WritePage() {
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-        <span className="w-1 h-6 rounded-full bg-brand" />
-        寫文章
-      </h1>
+      <PageHeader title="寫文章" />
 
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-6 space-y-4">
         {/* Mode */}

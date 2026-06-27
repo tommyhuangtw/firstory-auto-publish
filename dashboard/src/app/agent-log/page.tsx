@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
+import PageHeader from '@/components/PageHeader';
 
 interface Discussion {
   id: number;
@@ -100,7 +101,7 @@ type Tab = 'by-task' | 'timeline' | 'proposals';
 
 export default function AgentLogPage() {
   return (
-    <Suspense fallback={<div className="text-zinc-500 text-center py-12">Loading...</div>}>
+    <Suspense fallback={<div className="text-zinc-500 text-center py-12">載入中...</div>}>
       <AgentLogContent />
     </Suspense>
   );
@@ -178,7 +179,7 @@ function AgentLogContent() {
         const info = d.task_id != null ? taskMap[d.task_id] : null;
         groups.set(key, {
           taskId: d.task_id,
-          taskTitle: info?.title || (d.task_id != null ? `Task #${d.task_id}` : 'General / No Task'),
+          taskTitle: info?.title || (d.task_id != null ? `任務 #${d.task_id}` : '一般 / 無任務'),
           taskStatus: info?.status || '',
           taskCategory: info?.category || '',
           discussions: [],
@@ -228,28 +229,25 @@ function AgentLogContent() {
     const then = new Date(d).getTime();
     const diff = now - then;
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1) return '剛剛';
+    if (mins < 60) return `${mins} 分鐘前`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
+    if (hrs < 24) return `${hrs} 小時前`;
     const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
+    return `${days} 天前`;
   };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
-      <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-        <span className="w-1 h-6 rounded-full bg-brand" />
-        Agent Log
-      </h1>
+      <PageHeader title="Agent 紀錄" />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-zinc-900 rounded-lg p-1 w-fit">
         {([
-          { id: 'by-task' as Tab, label: 'By Task' },
-          { id: 'timeline' as Tab, label: 'Timeline' },
-          { id: 'proposals' as Tab, label: 'Proposals' },
+          { id: 'by-task' as Tab, label: '依任務' },
+          { id: 'timeline' as Tab, label: '時間軸' },
+          { id: 'proposals' as Tab, label: '提案' },
         ]).map(t => (
           <button
             key={t.id}
@@ -279,7 +277,7 @@ function AgentLogContent() {
                   : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600'
               }`}
             >
-              {id ? (agentNames[id] || id) : 'All'}
+              {id ? (agentNames[id] || id) : '全部'}
             </button>
           ))}
         </div>
@@ -288,9 +286,9 @@ function AgentLogContent() {
       {/* By Task Tab */}
       {tab === 'by-task' && (
         loading ? (
-          <div className="text-zinc-500 text-center py-12">Loading...</div>
+          <div className="text-zinc-500 text-center py-12">載入中...</div>
         ) : taskGroups.length === 0 ? (
-          <div className="text-zinc-500 text-center py-12">No agent discussions yet</div>
+          <div className="text-zinc-500 text-center py-12">尚無 Agent 討論紀錄</div>
         ) : (
           <div className="space-y-3">
             {taskGroups.map((group) => {
@@ -342,7 +340,7 @@ function AgentLogContent() {
                         ))}
                       </div>
                       <span className="text-[10px] text-zinc-500">
-                        {group.discussions.length} msg{group.discussions.length !== 1 ? 's' : ''}
+                        {group.discussions.length} 則
                       </span>
                       <span className="text-[10px] text-zinc-600">
                         {formatRelative(group.latestAt)}
@@ -369,9 +367,9 @@ function AgentLogContent() {
       {/* Timeline Tab */}
       {tab === 'timeline' && (
         loading ? (
-          <div className="text-zinc-500 text-center py-12">Loading...</div>
+          <div className="text-zinc-500 text-center py-12">載入中...</div>
         ) : discussions.length === 0 ? (
-          <div className="text-zinc-500 text-center py-12">No agent discussions yet</div>
+          <div className="text-zinc-500 text-center py-12">尚無 Agent 討論紀錄</div>
         ) : (
           <div className="space-y-2">
             {discussions.map((d) => (
@@ -387,10 +385,10 @@ function AgentLogContent() {
           {/* Stats */}
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'Total', value: stats.total, color: 'text-zinc-200' },
-              { label: 'Approved', value: stats.approved, color: 'text-emerald-400' },
-              { label: 'Rejected', value: stats.rejected, color: 'text-red-400' },
-              { label: 'Pending', value: stats.pending, color: 'text-amber-400' },
+              { label: '總計', value: stats.total, color: 'text-zinc-200' },
+              { label: '已核准', value: stats.approved, color: 'text-emerald-400' },
+              { label: '已拒絕', value: stats.rejected, color: 'text-red-400' },
+              { label: '待審', value: stats.pending, color: 'text-amber-400' },
             ].map(s => (
               <div key={s.label} className="bg-zinc-900 rounded-xl border border-zinc-800 p-3 text-center">
                 <div className={`text-xl font-semibold ${s.color}`}>{s.value}</div>
@@ -400,9 +398,9 @@ function AgentLogContent() {
           </div>
 
           {loading ? (
-            <div className="text-zinc-500 text-center py-12">Loading...</div>
+            <div className="text-zinc-500 text-center py-12">載入中...</div>
           ) : proposals.length === 0 ? (
-            <div className="text-zinc-500 text-center py-12">No proposals yet</div>
+            <div className="text-zinc-500 text-center py-12">尚無提案</div>
           ) : (
             <div className="space-y-3">
               {proposals.map((p) => (
@@ -415,7 +413,7 @@ function AgentLogContent() {
                         </span>
                         <span className="text-[10px] text-zinc-500 uppercase">{p.proposal_type}</span>
                         {p.priority_suggestion && (
-                          <span className="text-[10px] text-zinc-500">Priority: {p.priority_suggestion}</span>
+                          <span className="text-[10px] text-zinc-500">優先級: {p.priority_suggestion}</span>
                         )}
                         <span className="text-[10px] text-zinc-600">{formatDate(p.created_at)}</span>
                       </div>
@@ -433,7 +431,7 @@ function AgentLogContent() {
 
                       {p.task_id && (
                         <a href="/tasks" className="inline-block text-xs text-brand hover:text-brand-light mt-1 cursor-pointer">
-                          → Task #{p.task_id}
+                          → 任務 #{p.task_id}
                         </a>
                       )}
                     </div>
@@ -446,28 +444,28 @@ function AgentLogContent() {
                       ) : (
                         <>
                           <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            pending
+                            待審
                           </span>
                           <button
                             disabled={deciding === p.id}
                             onClick={() => decideProposal(p.id, 'approved')}
                             className="px-2.5 py-1 text-[10px] rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer disabled:opacity-50"
                           >
-                            Approve
+                            核准
                           </button>
                           <button
                             disabled={deciding === p.id}
                             onClick={() => decideProposal(p.id, 'rejected')}
                             className="px-2.5 py-1 text-[10px] rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer disabled:opacity-50"
                           >
-                            Reject
+                            拒絕
                           </button>
                           <button
                             disabled={deciding === p.id}
                             onClick={() => decideProposal(p.id, 'deferred')}
                             className="px-2.5 py-1 text-[10px] rounded bg-zinc-800 text-zinc-500 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
                           >
-                            Defer
+                            暫緩
                           </button>
                         </>
                       )}
@@ -514,7 +512,7 @@ function SessionGroupedDiscussions({
           {sessions.length > 1 && (
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] text-zinc-600 font-mono">
-                Session {si + 1}
+                對話 {si + 1}
               </span>
               <span className="flex-1 border-t border-zinc-800/50" />
               <span className="text-[10px] text-zinc-600">

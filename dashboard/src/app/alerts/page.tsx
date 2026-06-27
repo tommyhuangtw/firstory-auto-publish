@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface Alert {
   id: number;
@@ -69,17 +70,18 @@ export default function AlertsPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <span className="w-1 h-6 rounded-full bg-brand" />
-          Alert Center
-          {unreadCount > 0 && (
-            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-red-500/20 text-red-400">
-              {unreadCount} unread
-            </span>
-          )}
-        </h1>
-      </div>
+      <PageHeader
+        title={
+          <>
+            通知
+            {unreadCount > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-red-500/20 text-red-400">
+                {unreadCount} unread
+              </span>
+            )}
+          </>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-6">

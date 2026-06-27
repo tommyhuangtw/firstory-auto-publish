@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import PageHeader from '@/components/PageHeader';
 import { getAllTools, getToolCategories } from '@/services/memory/memoryService';
 
 function formatShortDate(dateStr: string): string {
@@ -43,15 +44,10 @@ async function MemoryContent({
 
   return (
     <div className="p-6 md:p-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <span className="w-1 h-6 rounded-full bg-brand" />
-          Tool Memory
-        </h1>
-        <p className="text-brand-taupe text-sm mt-1">
-          {tools.length} tools tracked across all episodes
-        </p>
-      </header>
+      <PageHeader
+        title="工具記憶"
+        subtitle={`已追蹤 ${tools.length} 個工具`}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-6">
@@ -61,7 +57,7 @@ async function MemoryContent({
             !category ? 'bg-brand text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
           }`}
         >
-          All
+          全部
         </Link>
         {categories.map((cat) => (
           <Link
@@ -84,7 +80,7 @@ async function MemoryContent({
           type="text"
           name="search"
           defaultValue={search}
-          placeholder="Search tools..."
+          placeholder="搜尋工具..."
           className="w-full sm:w-72 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
         />
       </form>
@@ -94,8 +90,8 @@ async function MemoryContent({
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
           <p className="text-zinc-400">
             {search || category
-              ? 'No tools match your filter.'
-              : 'No tools tracked yet. Run a pipeline to start building the knowledge base.'}
+              ? '沒有符合篩選條件的工具。'
+              : '尚無追蹤的工具。執行流程後開始建立知識庫。'}
           </p>
         </div>
       ) : (

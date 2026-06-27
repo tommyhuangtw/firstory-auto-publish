@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import PageHeader from '@/components/PageHeader';
 import { getAllDocs, getDocCategories, getDocContent } from '@/services/knowledgeService';
 
 function formatShortDate(dateStr: string): string {
@@ -37,15 +38,10 @@ async function KnowledgeContent({
 
   return (
     <div className="p-6 md:p-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <span className="w-1 h-6 rounded-full bg-brand" />
-          Knowledge Base
-        </h1>
-        <p className="text-brand-taupe text-sm mt-1">
-          {docs.length} research document{docs.length !== 1 ? 's' : ''}
-        </p>
-      </header>
+      <PageHeader
+        title="知識庫"
+        subtitle={`共 ${docs.length} 份研究文件`}
+      />
 
       {/* Category Filters */}
       <div className="flex flex-wrap gap-2 mb-6">
@@ -55,7 +51,7 @@ async function KnowledgeContent({
             !category ? 'bg-brand text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
           }`}
         >
-          All
+          全部
         </Link>
         {categories.map((cat) => (
           <Link
@@ -78,7 +74,7 @@ async function KnowledgeContent({
           type="text"
           name="search"
           defaultValue={search}
-          placeholder="Search documents..."
+          placeholder="搜尋文件..."
           className="w-full sm:w-72 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
         />
       </form>
@@ -88,8 +84,8 @@ async function KnowledgeContent({
         <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-8 text-center">
           <p className="text-zinc-400">
             {search || category
-              ? 'No documents match your filter.'
-              : 'No research documents yet. Complete a research task to get started.'}
+              ? '沒有符合篩選條件的文件。'
+              : '尚無研究文件。完成一個研究任務後即可開始。'}
           </p>
         </div>
       ) : (

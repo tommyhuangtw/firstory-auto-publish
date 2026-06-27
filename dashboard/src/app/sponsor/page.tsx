@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface SponsorPreset {
   id: number;
@@ -289,10 +290,7 @@ export default function SponsorPage() {
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-2">
-        <span className="w-1 h-6 rounded-full bg-brand" />
-        業配口播
-      </h1>
+      <PageHeader title="業配" />
 
       <div className="space-y-6">
         {/* Section A: TTS Tester */}

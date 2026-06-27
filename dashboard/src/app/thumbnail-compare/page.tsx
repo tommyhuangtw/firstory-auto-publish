@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import PageHeader from '@/components/PageHeader';
 
 interface StyleItem {
   id: number;
@@ -176,7 +177,7 @@ export default function ThumbnailComparePage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      <h1 className="text-2xl font-bold text-brand-cream">縮圖風格管理</h1>
+      <PageHeader title="縮圖比較" />
       <div className="space-y-6">
         {/* === Section 1: Style Pool (enabled styles) === */}
         <div className="space-y-3">

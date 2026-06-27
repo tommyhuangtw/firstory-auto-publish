@@ -1,3 +1,4 @@
+import PageHeader from '@/components/PageHeader';
 import { getDb } from '@/db';
 import { formatLocalDateTime, getLocalDayOfWeek } from '@/lib/formatDate';
 import VoaiUsageCard from '@/components/VoaiUsageCard';
@@ -28,34 +29,31 @@ export default function Dashboard() {
     <div className="p-8">
       <header className="mb-8 flex items-center gap-5">
         <img src="/logo-sm.png" alt="AI懶人報" className="w-16 h-16 rounded-xl" />
-        <div>
-          <h1 className="text-3xl font-bold">AI懶人報</h1>
-          <p className="text-brand-taupe mt-1">Podcast Automation Dashboard</p>
-        </div>
+        <PageHeader title="首頁" subtitle="Podcast Automation Dashboard" />
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* DB Status */}
         <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
-          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Database</h2>
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">資料庫</h2>
           <p className="text-2xl font-bold mt-2">
-            <span className="text-green-400">Connected</span>
+            <span className="text-green-400">已連線</span>
           </p>
           <p className="text-zinc-400 text-sm mt-1">{tableCount} tables</p>
         </div>
 
         {/* Episodes */}
         <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
-          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Episodes</h2>
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">節目</h2>
           <p className="text-2xl font-bold mt-2">{episodeCount}</p>
-          <p className="text-zinc-400 text-sm mt-1">total episodes</p>
+          <p className="text-zinc-400 text-sm mt-1">總節目數</p>
         </div>
 
         {/* Pipeline */}
         <div className="bg-zinc-900 rounded-lg p-6 border border-zinc-800 hover:border-brand/30 transition-colors">
-          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">Pipeline</h2>
+          <h2 className="text-sm font-medium text-brand-taupe uppercase tracking-wider">流程</h2>
           <p className="text-2xl font-bold mt-2">{recentRuns.c}</p>
-          <p className="text-zinc-400 text-sm mt-1">recent runs (7d)</p>
+          <p className="text-zinc-400 text-sm mt-1">近 7 天執行</p>
         </div>
 
         {/* VoAI TTS Usage */}
@@ -66,23 +64,23 @@ export default function Dashboard() {
       <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <span className="w-1 h-5 rounded-full bg-brand" />
-          Recent Episodes
+          最近節目
         </h2>
         {episodes.length > 0 ? (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-zinc-300 border-b border-zinc-800">
-                <th className="text-left py-2">Episode</th>
-                <th className="text-left py-2">Segment</th>
-                <th className="text-left py-2">Status</th>
-                <th className="text-left py-2">Created</th>
+                <th className="text-left py-2">節目</th>
+                <th className="text-left py-2">單元</th>
+                <th className="text-left py-2">狀態</th>
+                <th className="text-left py-2">建立時間</th>
               </tr>
             </thead>
             <tbody>
               {episodes.map((ep) => {
                 let label: string;
                 if (ep.episode_number) {
-                  label = `EP ${ep.episode_number}`;
+                  label = `第 ${ep.episode_number} 集`;
                 } else if (ep.created_at) {
                   const dayLabel = DAY_LABELS[getLocalDayOfWeek(ep.created_at)] || '';
                   const dateStr = formatLocalDateTime(ep.created_at).split(' ')[0] || '';
@@ -106,7 +104,7 @@ export default function Dashboard() {
             </tbody>
           </table>
         ) : (
-          <p className="text-zinc-400">No episodes yet. Start a pipeline to generate your first episode.</p>
+          <p className="text-zinc-400">尚無節目。啟動一個 Pipeline 來產生你的第一集節目。</p>
         )}
       </div>
     </div>
