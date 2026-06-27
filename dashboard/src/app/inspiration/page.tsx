@@ -78,8 +78,11 @@ export default function InspirationPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Opening the library = seen → clears the sidebar red dot.
-  useEffect(() => { void fetch('/api/inspiration/unread', { method: 'POST' }).catch(() => {}); }, []);
+  // Opening the library = seen → clears the sidebar red dot (optimistically + on the server).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('nav:unread-seen', { detail: 'inspiration' }));
+    void fetch('/api/inspiration/unread', { method: 'POST' }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('/api/inspiration/channels').then((r) => r.json()).then((d) => setChannels(d.channels || [])).catch(() => {});

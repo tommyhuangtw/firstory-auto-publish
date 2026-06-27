@@ -34,7 +34,7 @@ export default function TrendsPage() {
   const [showAll, setShowAll] = useState(false);
   const [showDisliked, setShowDisliked] = useState(false);
   const [sortMode, setSortMode] = useState<'interest' | 'newest' | 'heat'>('interest');
-  const [tab, setTab] = useState<'hot' | 'reply'>('hot');
+  const [tab, setTab] = useState<'hot' | 'reply'>('reply');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,8 +151,8 @@ export default function TrendsPage() {
 
       {/* Tabs: 熱點(寫新貼文) vs 回覆專區(回別人的 niche 貼文) */}
       <div className="flex gap-1 mb-4 border-b border-zinc-800">
-        <button onClick={() => setTab('hot')} className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === 'hot' ? 'border-brand text-brand' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>🔥 熱點</button>
         <button onClick={() => setTab('reply')} className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === 'reply' ? 'border-brand text-brand' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>💬 回覆專區</button>
+        <button onClick={() => setTab('hot')} className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === 'hot' ? 'border-brand text-brand' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>🔥 熱點</button>
       </div>
 
       {tab === 'reply' ? <ReplyZone /> : (<>
@@ -304,7 +304,8 @@ function ReplyZone() {
     for (const p of list) if (p.reply_draft) seed[p.id] = p.reply_draft;
     setReplies(seed);
     setLoading(false);
-    // Opening the reply zone = seen → clears the sidebar red dot.
+    // Opening the reply zone = seen → clears the sidebar red dot (optimistically + on the server).
+    window.dispatchEvent(new CustomEvent('nav:unread-seen', { detail: 'trends' }));
     void fetch('/api/trends/niche/unread', { method: 'POST' }).catch(() => {});
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect

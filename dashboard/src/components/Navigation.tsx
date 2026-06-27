@@ -228,6 +228,19 @@ export default function Navigation() {
     return () => { cancelled = true; clearInterval(id); };
   }, [pathname]);
 
+  // Instant clear: a page marks itself seen (POST) and fires this event, so the dot
+  // disappears immediately instead of waiting for the next navigation / 60s poll.
+  // (Switching the 回覆專區 sub-tab isn't a navigation, so polling alone would lag.)
+  useEffect(() => {
+    const onSeen = (e: Event) => {
+      const key = (e as CustomEvent).detail;
+      if (key === 'trends') setTrendsUnread(0);
+      else if (key === 'inspiration') setInspirationUnread(0);
+    };
+    window.addEventListener('nav:unread-seen', onSeen);
+    return () => window.removeEventListener('nav:unread-seen', onSeen);
+  }, []);
+
   // Restore the advanced section's collapsed state; auto-open if on an advanced page.
   useEffect(() => {
     const onAdvancedPage = allNavItems.some(
