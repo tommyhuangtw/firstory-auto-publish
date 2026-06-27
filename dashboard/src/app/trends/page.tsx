@@ -300,9 +300,9 @@ function ReplyZone() {
     const d = await fetch('/api/trends/niche').then(r => r.json()).catch(() => ({ posts: [] }));
     const list: NichePost[] = d.posts || [];
     setPosts(list);
-    const seed: Record<number, string> = {};
-    for (const p of list) if (p.reply_draft) seed[p.id] = p.reply_draft;
-    setReplies(seed);
+    // Start with a clean slate each visit: don't show previously AI-generated replies.
+    // (They're still cached in DB; press 生成回覆 to regenerate when needed.)
+    setReplies({});
     setLoading(false);
     // Opening the reply zone = seen → clears the sidebar red dot (optimistically + on the server).
     window.dispatchEvent(new CustomEvent('nav:unread-seen', { detail: 'trends' }));
