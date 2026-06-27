@@ -43,7 +43,7 @@ ${VERSION_GUARD_ZH}
   "rideability": 0-100 的整數,
   "riskLevel": "low" | "medium" | "high",
   "riskReason": "一句話說明風險",
-  "draftText": "完整貼文，300-450字",
+  "draftText": "完整貼文，180-280字（精簡有力，最多不超過 360 字）",
   "formatSuggestion": "text" | "video" | "webapp" | "interactive",
   "formatReason": "若非 text，一句話說明為什麼這個格式更好；若是 text 填空字串"
 }`;
