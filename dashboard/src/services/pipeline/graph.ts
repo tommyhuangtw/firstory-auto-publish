@@ -294,6 +294,7 @@ export async function publishEpisode(episodeId: number): Promise<Partial<Pipelin
     igHoliday: (episode.ig_holiday as string) || '',
     audioPath: (episode.audio_path as string) || '',
     audioDurationSec: 0,
+    ttsChunkTimings: [],
     srtPath: (episode.srt_path as string) || '',
     srtContent: (episode.srt_content as string) || '',
     driveAudioUrl: '',

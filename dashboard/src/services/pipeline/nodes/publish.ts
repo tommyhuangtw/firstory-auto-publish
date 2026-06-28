@@ -220,6 +220,21 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
 
   // Step 3: Create video from audio + composite image + burned-in subtitles
   // If no SRT data (pipeline stage was skipped), generate on-the-fly with sponsor awareness
+  if (!state.srtContent && state.audioPath && state.ttsChunkTimings && state.ttsChunkTimings.length > 0) {
+    // Prefer the drift-free chunk-timing path when the manifest survived in state.
+    log.warn({ episodeId: state.episodeId }, 'No SRT data — rebuilding from TTS chunk timings before publish');
+    const { buildSubtitlesFromChunks } = await import('@/services/subtitleGenerator');
+    const built = buildSubtitlesFromChunks(state.ttsChunkTimings);
+    state.srtContent = built.srtContent;
+    state.srtPath = state.audioPath.replace(/\.mp3$/, '.srt');
+    const srtDir = path.dirname(state.srtPath);
+    if (!fs.existsSync(srtDir)) fs.mkdirSync(srtDir, { recursive: true });
+    fs.writeFileSync(state.srtPath, state.srtContent, 'utf-8');
+    getDb().prepare('UPDATE episodes SET srt_path = ?, srt_content = ? WHERE id = ?')
+      .run(state.srtPath, state.srtContent, state.episodeId);
+    log.info({ episodeId: state.episodeId, cues: built.cues.length }, 'On-the-fly subtitles from chunk timings complete');
+  }
+
   if (!state.srtContent && state.audioPath && state.scriptZh) {
     log.warn({ episodeId: state.episodeId }, 'No SRT data — generating subtitles on-the-fly before publish');
     const { generateSubtitles } = await import('@/services/subtitleGenerator');
@@ -276,6 +291,75 @@ export async function publishToYouTubePlatform(state: PipelineState): Promise<st
     } else {
       log.warn({ srtPath }, 'SRT file missing and no srt_content available — video will have no subtitles');
       srtPath = undefined;
+    }
+  }
+
+  // ── Pre-publish subtitle coverage gate ──
+  // Last line of defense against desynced captions (the Whisper-truncation bug).
+  // If the subtitles stop well before the audio ends, auto-rebuild; only block the
+  // YouTube upload (throw → recorded as a publish error + failure notification) if
+  // the rebuild still can't reach full coverage.
+  if (srtPath && state.srtContent && state.audioPath) {
+    const { srtCoverage, buildSubtitlesFromChunks, generateSubtitles } = await import('@/services/subtitleGenerator');
+    const { probeDuration } = await import('./tts');
+    const audioDur = await probeDuration(state.audioPath).catch(() => 0);
+
+    let coverage = audioDur > 0 ? srtCoverage(state.srtContent, audioDur) : 1;
+    if (audioDur > 0 && coverage < 0.95) {
+      log.error({ episodeId: state.episodeId, coverage: coverage.toFixed(3) },
+        'Subtitle coverage < 95% before publish — attempting auto-rebuild');
+
+      const dbGate = getDb();
+      const epSp = dbGate.prepare('SELECT sponsor_audio_id FROM episodes WHERE id = ?')
+        .get(state.episodeId) as { sponsor_audio_id: number | null } | undefined;
+      const sponsorMerged = !!epSp?.sponsor_audio_id;
+
+      let best = state.srtContent;
+      let bestCov = coverage;
+
+      // Attempt 1: chunk timings (only valid when no sponsor was merged into the audio)
+      if (!sponsorMerged && state.ttsChunkTimings?.length) {
+        const rebuilt = buildSubtitlesFromChunks(state.ttsChunkTimings).srtContent;
+        const cov = srtCoverage(rebuilt, audioDur);
+        log.info({ source: 'chunk-timings', coverage: cov.toFixed(3) }, 'Rebuild attempt');
+        if (cov > bestCov) { best = rebuilt; bestCov = cov; }
+      }
+
+      // Attempt 2: Whisper with chunked transcription (sponsor-aware, can't truncate)
+      if (bestCov < 0.95) {
+        let fullScript = '';
+        if (sponsorMerged) {
+          const sp = dbGate.prepare('SELECT script_text FROM sponsor_audio_presets WHERE id = ?')
+            .get(epSp!.sponsor_audio_id) as { script_text: string } | undefined;
+          if (sp?.script_text) fullScript += sp.script_text + '\n';
+        }
+        fullScript += state.scriptZh || '';
+        if (fullScript.trim()) {
+          try {
+            const r = await generateSubtitles(state.audioPath, fullScript, { chunkLongAudio: true });
+            const cov = srtCoverage(r.srtContent, audioDur);
+            log.info({ source: 'whisper-chunked', coverage: cov.toFixed(3) }, 'Rebuild attempt');
+            if (cov > bestCov) { best = r.srtContent; bestCov = cov; }
+          } catch (err) {
+            log.error({ error: (err as Error).message }, 'Whisper-chunked rebuild failed');
+          }
+        }
+      }
+
+      if (bestCov > coverage) {
+        // Persist the better subtitles for burning + CC upload
+        state.srtContent = best;
+        fs.writeFileSync(srtPath, best, 'utf-8');
+        getDb().prepare('UPDATE episodes SET srt_content = ? WHERE id = ?').run(best, state.episodeId);
+        coverage = bestCov;
+        log.info({ episodeId: state.episodeId, coverage: coverage.toFixed(3) }, 'Subtitles rebuilt');
+      }
+
+      if (coverage < 0.95) {
+        throw new Error(
+          `Subtitle coverage ${(coverage * 100).toFixed(0)}% < 95% after rebuild — blocking YouTube publish to avoid desynced captions`
+        );
+      }
     }
   }
 

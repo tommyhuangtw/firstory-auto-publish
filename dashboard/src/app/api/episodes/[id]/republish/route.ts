@@ -75,6 +75,7 @@ export async function POST(
       igHoliday: '',
       audioPath: (episode.audio_path as string) || '',
       audioDurationSec: 0,
+      ttsChunkTimings: [],
       driveAudioUrl: '',
       driveImageUrl: '',
       igScenario: '',

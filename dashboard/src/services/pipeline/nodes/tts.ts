@@ -13,6 +13,7 @@ import { createChildLogger } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
 import { getDb } from '@/db';
 import type { PipelineState } from '../state';
+import type { ChunkTiming } from '@/services/subtitleGenerator';
 
 const log = createChildLogger('pipeline:tts');
 const execAsync = promisify(exec);
@@ -127,7 +128,12 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     const dur = await probeDuration(outPath);
     log.info({ duration: dur.toFixed(1) }, 'TTS complete (single chunk)');
     logTtsCost(state.episodeId, state.episodeNumber, text.length, Date.now() - ttsStartMs);
-    return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
+    return {
+      audioPath: outPath,
+      audioDurationSec: dur,
+      ttsChunkTimings: [{ text: chunks[0], startSec: 0, endSec: dur }],
+      status: 'pending_review',
+    };
   }
 
   // Multi chunk: batch synthesis + concat
@@ -178,7 +184,25 @@ export async function tts(state: PipelineState): Promise<Partial<PipelineState>>
     log.info({ duration: dur.toFixed(1), chunks: chunks.length }, 'TTS complete');
     logTtsCost(state.episodeId, state.episodeNumber, text.length, Date.now() - ttsStartMs);
 
-    return { audioPath: outPath, audioDurationSec: dur, status: 'pending_review' };
+    // Build the chunk-timing manifest while the per-chunk files still exist (the
+    // finally block deletes chunkDir). Each chunk's text is ground truth; its
+    // duration (ffprobe) and accumulated offset give exact subtitle timings —
+    // the subtitle node uses this instead of re-transcribing with Whisper.
+    const ttsChunkTimings: ChunkTiming[] = [];
+    let offsetSec = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(3, '0')}.mp3`);
+      const chunkDur = await probeDuration(chunkPath).catch(() => 0);
+      ttsChunkTimings.push({ text: chunks[i], startSec: offsetSec, endSec: offsetSec + chunkDur });
+      offsetSec += chunkDur;
+    }
+    const coverage = dur > 0 ? offsetSec / dur : 0;
+    log.info(
+      { chunks: ttsChunkTimings.length, summedSec: offsetSec.toFixed(1), audioSec: dur.toFixed(1), coverage: coverage.toFixed(3) },
+      'Built TTS chunk-timing manifest for subtitles'
+    );
+
+    return { audioPath: outPath, audioDurationSec: dur, ttsChunkTimings, status: 'pending_review' };
   } finally {
     await fs.remove(chunkDir).catch(() => {});
   }
@@ -351,7 +375,7 @@ function logTtsCost(episodeId: number, episodeNumber: number | null | undefined,
  * Clean text for TTS — strips JSON wrappers, escaped chars, markdown artifacts.
  * Safety net: translate node should already clean, but TTS is the last gate.
  */
-function cleanTextForTts(raw: string): string {
+export function cleanTextForTts(raw: string): string {
   let text = raw.trim();
 
   // Strip JSON wrapper if LLM returned { "original_script": "..." }

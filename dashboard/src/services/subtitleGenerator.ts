@@ -793,6 +793,71 @@ export function shiftSRTContent(srt: string, offsetSec: number): string {
   return generateSRT(shifted);
 }
 
+// ── Chunk-timing path (Approach A — no transcription) ──
+
+/**
+ * One synthesized TTS chunk and where it lands on the final audio timeline.
+ * `text` is the exact text that was spoken; `[startSec, endSec]` come from
+ * ffprobe-ing the chunk's own duration and accumulating offsets at concat time.
+ */
+export interface ChunkTiming {
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
+/**
+ * Build subtitles directly from TTS chunk timings — the robust path.
+ *
+ * We synthesize the script chunk-by-chunk, so each chunk's text is ground truth
+ * and its position on the timeline is exact (every chunk boundary is frame-accurate,
+ * so errors never accumulate). Within a chunk we split into sentences and interpolate
+ * by character proportion, then reuse the same segmentation/line-breaking rules as
+ * the Whisper path. This eliminates the Whisper-truncation drift entirely.
+ */
+export function buildSubtitlesFromChunks(chunks: ChunkTiming[]): {
+  srtContent: string;
+  aligned: AlignedSentence[];
+  cues: SubtitleCue[];
+} {
+  const aligned: AlignedSentence[] = [];
+
+  for (const ch of chunks) {
+    const span = Math.max(0, ch.endSec - ch.startSec);
+    const sentences = splitSentences(ch.text);
+    if (sentences.length === 0) continue;
+
+    // Distribute the chunk's time span across its sentences by visible char count.
+    const lens = sentences.map(s => normalize(s).length || 1);
+    const total = lens.reduce((a, b) => a + b, 0) || 1;
+
+    let cursor = 0;
+    for (let i = 0; i < sentences.length; i++) {
+      const startTime = ch.startSec + (cursor / total) * span;
+      cursor += lens[i];
+      const endTime = ch.startSec + (cursor / total) * span;
+      aligned.push({ text: sentences[i], startTime, endTime, matchScore: 1 });
+    }
+  }
+
+  const cues = segmentSubtitles(aligned);
+  const srtContent = generateSRT(cues);
+  return { srtContent, aligned, cues };
+}
+
+/**
+ * Coverage = how far into the audio the last subtitle cue reaches.
+ * < ~0.95 means the subtitles stop well before the audio ends — the signature of
+ * the Whisper-truncation bug. Used as a guard on the Whisper fallback path.
+ */
+export function srtCoverage(srtContent: string, audioDurationSec: number): number {
+  if (!srtContent?.trim() || !audioDurationSec || audioDurationSec <= 0) return 0;
+  const cues = parseSRT(srtContent);
+  if (cues.length === 0) return 0;
+  const lastEnd = cues[cues.length - 1].endTime;
+  return lastEnd / audioDurationSec;
+}
+
 // ── Public API: Full Pipeline ──
 
 /**
@@ -806,7 +871,7 @@ export function shiftSRTContent(srt: string, offsetSec: number): string {
 export async function generateSubtitles(
   audioPath: string,
   scriptText: string,
-  opts: { maxDurationSec?: number } = {}
+  opts: { maxDurationSec?: number; chunkLongAudio?: boolean } = {}
 ): Promise<{
   srtContent: string;
   transcription: TranscriptionResult;
@@ -816,6 +881,7 @@ export async function generateSubtitles(
   // Step 1: Transcribe
   const transcription = await transcribeAudio(audioPath, {
     maxDurationSec: opts.maxDurationSec,
+    chunkLongAudio: opts.chunkLongAudio,
   });
 
   // Step 2: Split script and align

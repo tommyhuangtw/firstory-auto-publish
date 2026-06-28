@@ -5,6 +5,7 @@
 
 import type { ResolvedTool } from '@/services/memory/toolExtractor';
 import type { MemoryContext } from '@/services/memory/memoryService';
+import type { ChunkTiming } from '@/services/subtitleGenerator';
 
 export interface VideoSource {
   videoId: string;
@@ -136,6 +137,9 @@ export interface PipelineState {
   // ── Stage 8: TTS ──
   audioPath: string;
   audioDurationSec: number;
+  // Per-chunk timeline from synthesis — lets subtitles be derived from ground-truth
+  // text without re-transcribing (avoids Whisper segment-truncation drift).
+  ttsChunkTimings: ChunkTiming[];
 
   // ── Stage 8.5: Subtitles ──
   srtPath: string;
@@ -209,6 +213,7 @@ export function createInitialState(
     igHoliday: '',
     audioPath: '',
     audioDurationSec: 0,
+    ttsChunkTimings: [],
     srtPath: '',
     srtContent: '',
     driveAudioUrl: '',

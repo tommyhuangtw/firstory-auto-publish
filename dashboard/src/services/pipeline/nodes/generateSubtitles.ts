@@ -21,11 +21,34 @@ export async function generateSubtitlesNode(
   if (!state.audioPath) throw new Error('No audio for subtitle generation');
   if (!state.scriptZh) throw new Error('No script_zh for subtitle generation');
 
-  const { generateSubtitles } = await import('@/services/subtitleGenerator');
+  const db = getDb();
+
+  // ── Preferred path: derive timing from TTS chunks (no transcription, no drift) ──
+  // Each chunk's text is ground truth and its position on the timeline is exact, so
+  // this can't desync the back half the way Whisper truncation did. Sponsor口播 is
+  // chosen later at review time, so at this stage the script is main-only.
+  if (state.ttsChunkTimings && state.ttsChunkTimings.length > 0) {
+    const { buildSubtitlesFromChunks, srtCoverage } = await import('@/services/subtitleGenerator');
+    const result = buildSubtitlesFromChunks(state.ttsChunkTimings);
+    const srtPath = state.audioPath.replace(/\.mp3$/, '.srt');
+    await fs.writeFile(srtPath, result.srtContent, 'utf-8');
+    db.prepare('UPDATE episodes SET srt_path = ?, srt_content = ? WHERE id = ?')
+      .run(srtPath, result.srtContent, state.episodeId);
+
+    const coverage = srtCoverage(result.srtContent, state.audioDurationSec);
+    log.info(
+      { cues: result.cues.length, coverage: coverage.toFixed(3), source: 'tts-chunks' },
+      'Subtitle generation complete (chunk timing — no Whisper)'
+    );
+    return { srtPath, srtContent: result.srtContent };
+  }
+
+  // ── Fallback path: Whisper transcription + alignment (legacy / single-stub audio) ──
+  log.warn({ episodeId: state.episodeId }, 'No TTS chunk timings — falling back to Whisper transcription');
+  const { generateSubtitles, srtCoverage } = await import('@/services/subtitleGenerator');
 
   // Build full script: sponsor text (if merged) + main script
   let fullScript = '';
-  const db = getDb();
   const ep = db.prepare(
     'SELECT sponsor_audio_id FROM episodes WHERE id = ?'
   ).get(state.episodeId) as { sponsor_audio_id: number | null } | undefined;
@@ -42,7 +65,30 @@ export async function generateSubtitlesNode(
   fullScript += state.scriptZh;
 
   // Generate subtitles
-  const result = await generateSubtitles(state.audioPath, fullScript);
+  let result = await generateSubtitles(state.audioPath, fullScript);
+
+  // Coverage guard: if Whisper returned segments for only part of the audio (the
+  // truncation bug), the last cue ends well before the audio does. Detect it and
+  // retry once with chunked transcription, which can't truncate a long file.
+  let coverage = srtCoverage(result.srtContent, state.audioDurationSec);
+  if (coverage > 0 && coverage < 0.95) {
+    log.error({ episodeId: state.episodeId, coverage: coverage.toFixed(3) },
+      'Whisper subtitles truncated (coverage < 95%) — retrying with chunked transcription');
+    try {
+      const retry = await generateSubtitles(state.audioPath, fullScript, { chunkLongAudio: true });
+      const retryCoverage = srtCoverage(retry.srtContent, state.audioDurationSec);
+      if (retryCoverage > coverage) {
+        result = retry;
+        coverage = retryCoverage;
+      }
+    } catch (err) {
+      log.error({ error: (err as Error).message }, 'Chunked-transcription retry failed');
+    }
+    if (coverage < 0.95) {
+      log.error({ episodeId: state.episodeId, coverage: coverage.toFixed(3) },
+        'Subtitles STILL truncated after retry — back half may be out of sync');
+    }
+  }
 
   // Write SRT file alongside the audio
   const srtPath = state.audioPath.replace(/\.mp3$/, '.srt');
