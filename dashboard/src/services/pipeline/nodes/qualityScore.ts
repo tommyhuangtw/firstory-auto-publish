@@ -52,6 +52,10 @@ const SCORING_MODEL = 'openai/gpt-5.5';
 const REWRITE_MODEL = 'anthropic/claude-sonnet-4.6';
 const QUALITY_THRESHOLD = 90;
 const MAX_ITERATIONS = 2;
+// 分數低於此值時，即使跑滿 MAX_ITERATIONS 也再多跑一次 review + rewrite
+const MIN_ACCEPTABLE_SCORE = 75;
+// 分數持續低於 MIN_ACCEPTABLE_SCORE 時的硬上限（最多再多跑 1 次）
+const MAX_ITERATIONS_WHEN_LOW = 3;
 
 // 機器人觀察週報 fixed opening for scoring/rewrite
 const ROBOT_FIXED_OPENING = `「AI 的浪潮正在改寫機器人的發展速度，越來越多過去像科幻的能力，開始變成工程上的日常。如果照這股動能延伸下去，五年、十年後的世界一定會很精彩。這裡是 AI 懶人報：機器人觀察週報，帶你看看這週未來感最強的那些技術亮點。」`;
@@ -473,7 +477,7 @@ export async function qualityScore(state: PipelineState): Promise<Partial<Pipeli
     ? ''
     : state.memoryContext?.briefForQualityCheck || '';
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
+  for (let i = 0; i < MAX_ITERATIONS_WHEN_LOW; i++) {
     // ── Score the script (GPT-5.4) ──
     const structureFlowScore = segmentType === 'sysdesign' ? `
     "structure_flow": 0,
@@ -565,14 +569,27 @@ ${memoryQualityBrief ? `\n【觀眾記憶背景】\n${memoryQualityBrief}\n` : '
       'Quality score'
     );
 
-    // Check pass condition: score > 88 OR iterations >= 2
-    if (score.overall > QUALITY_THRESHOLD || iterations >= MAX_ITERATIONS) {
-      if (score.overall > QUALITY_THRESHOLD) {
+    // Stop conditions:
+    //   1. score > 90 → quality threshold met
+    //   2. iterations >= MAX_ITERATIONS AND score >= 75 → good enough, normal stop
+    //   3. iterations >= MAX_ITERATIONS_WHEN_LOW → hard cap (score still < 75, give up)
+    // i.e. a sub-75 score earns one extra review + rewrite beyond the normal cap.
+    const passed = score.overall > QUALITY_THRESHOLD;
+    const goodEnough = iterations >= MAX_ITERATIONS && score.overall >= MIN_ACCEPTABLE_SCORE;
+    const hitHardCap = iterations >= MAX_ITERATIONS_WHEN_LOW;
+    if (passed || goodEnough || hitHardCap) {
+      if (passed) {
         log.info('Quality threshold met');
-      } else {
+      } else if (goodEnough) {
         log.info({ iterations }, 'Max iterations reached');
+      } else {
+        log.info({ iterations, score: score.overall }, 'Hard iteration cap reached, score still below minimum');
       }
       break;
+    }
+
+    if (iterations >= MAX_ITERATIONS && score.overall < MIN_ACCEPTABLE_SCORE) {
+      log.info({ iterations, score: score.overall, min: MIN_ACCEPTABLE_SCORE }, 'Score below minimum, running extra refinement iteration');
     }
 
     // ── Rewrite the script (Gemini 3.1 Pro) ──
