@@ -404,11 +404,13 @@ Migration: `dashboard/src/db/index.ts`（`safeAlter` 自動加 column）
 
 `dashboard/scripts/agents/orchestrator.ts` — 可手動觸發或透過 macOS launchd 排程。
 
+**協作 mindset（把 Tommy 當老闆）**：團隊有自主權，懶懶 (PM) 守門。低風險高潛力的事懶懶自己拍板讓小工做（不打擾老闆）；只有高風險 / 需要方向決定的才留給老闆。所有對外通知收斂成**每天早上 8 點一則「老闆快報」**，只放需要老闆拍板的事（含 pros/cons + 懶懶建議 + 按鈕）；中間過程全靜音，agent 之間的討論記錄在 task board comments。
+
 | Mode | Flag | Schedule | 流程 |
 |------|------|----------|------|
-| Morning | `--morning` | 每天 08:00 | 小企提案 → 懶懶評估 → 小工執行 → review digest |
-| Evening | `--evening` | 每天 20:00 | 小工執行 → 懶懶審核 → review digest → daily summary |
-| Full | `--full` | 手動 | 全部步驟 |
+| Morning | `--morning` | 每天 08:00 | 懶懶 review 昨晚遺留 → 發**老闆快報**（唯一對外觸點） |
+| Evening | `--evening` | 每天 20:00 | 小企提案 → 懶懶評估（auto_do 直接做 / ask_boss 待決）→ 小工執行 → 懶懶審核（全程靜音） |
+| Full | `--full` | 手動 | 晚上 pipeline + 老闆快報（端到端測試用） |
 | Execute | `--execute-only` | 手動 | 僅執行任務 |
 
 #### 手動觸發（尚未設定 launchd 時）
@@ -445,14 +447,14 @@ bash install-cron.sh
 
 Plist 檔案：`com.podcast.orchestrator.morning.plist` / `.evening.plist`
 
-### Task Approval Gate（人工審核閘門）
+### Task Approval Gate（懶懶守門 + 風險分流）
 
-Agent 建立的新 ticket 預設 `auto_execute=false`，需 Tommy 透過 Telegram 批准才會執行：
+懶懶 (PM) 評估提案時依**風險**分流，不再每張都先問 Tommy：
 
-1. 小企提案 → 懶懶評估通過 → 建 ticket（`auto_execute=0`）
-2. 懶懶發 Telegram 通知：「🆕 新 ticket #N — 要執行嗎？」+ approve/reject 按鈕
-3. Tommy 點 approve → quick-action API 設 `auto_execute=1` → 下次 orchestrator run 時小工會 pick up
-4. Tommy 點 reject → ticket 直接 cancelled
+1. **auto_do（低風險高潛力）**：懶懶自己拍板 → 建 ticket（`auto_execute=1`）→ 小工立刻執行 → 完成後留在 `review`，由隔天早上的老闆快報讓 Tommy 決定要不要上線。**不事先打擾老闆。**
+2. **ask_boss（高風險 / 需方向）**：建 ticket（`auto_execute=0`）留在 `todo`，懶懶把決策（問題 + 選項 pros/cons + 建議）寫成 `discussion` comment → 早上老闆快報端上去。Tommy approve → `auto_execute=1`，下輪小工 pick up；reject → cancelled。
+3. **rejected / deferred**：不值得或時機不對 → 靜默結案，不浮上去。
+4. 低風險判準：可逆、不花錢、不碰對外發布、不改品牌方向（research / 內容企劃 / 社群草稿 / UI 品質優化）。高風險：infra 架構 / 實際發布 / 花錢 / 品牌定位方向。
 
 ### Quick-Action Endpoint
 
@@ -464,11 +466,12 @@ Agent 建立的新 ticket 預設 `auto_execute=false`，需 Tommy 透過 Telegra
 
 HMAC 驗證：`sha256(TELEGRAM_BOT_TOKEN, taskId:action).slice(0, 16)`
 
-### Telegram Review Digest
+### Telegram 老闆快報（Boss Brief, `sendBossBrief`）
 
-懶懶在 orchestrator run 結束時發送 review digest，包含：
-- 每張 review 狀態 ticket 的：任務描述、完成內容摘要、PM 評語、測試結果、branch、research doc 連結
-- Inline approve/reject 按鈕（HMAC 簽名的 quick-action URL）
+懶懶每天早上 8 點發**一則**老闆快報，這是唯一對外觸點（取代舊的 review digest + daily summary）：
+- **需要你拍板**：① 成品等上線（review tasks，按鈕 `✅ 上線+開PR` / `❌ 不要`）② 高風險待決（ask_boss todo tasks，附 pros/cons + 懶懶建議，按鈕 `✅ 批准執行` / `❌ 不做`）。各自一則訊息帶 HMAC quick-action 按鈕。
+- **團隊自己處理了**：低風險自動完成的，標題一行帶過（FYI，無需決定）。
+- 沒有任何要報的事就完全不發（idle 不打擾）。細節都在 board，點 ticket 看完整 discussion 串。
 
 ### Task Execution Flow
 
@@ -478,10 +481,10 @@ HMAC 驗證：`sha256(TELEGRAM_BOT_TOKEN, taskId:action).slice(0, 16)`
 4. Research 任務：產出存為 `data/research/task-{id}-{slug}.md`（繁體中文）
 5. Dev 任務：跑 `npm run build` 驗證，結果貼 ticket comments
 6. 完成 → `status=review`；卡住 → 保持 `in_progress` + BLOCKED 標記
-7. 懶懶自動審核 → 發 Telegram digest 給 Tommy
+7. 懶懶自動審核 → 留在 board（review comment），隔天早上彙整進老闆快報（不即時 ping）
 
 ### Safety Mechanisms
-- Agent 建立的 ticket 預設不執行（`auto_execute=false`），需 Tommy 批准
+- 高風險 ticket（ask_boss）預設不執行（`auto_execute=false`），需 Tommy 批准；低風險（auto_do）由懶懶守門後自動執行
 - Feature branch 隔離，不動 main
 - Research 優先（唯讀、低風險）
 - Lockfile 防重複執行
@@ -549,7 +552,7 @@ Telegram 的 approve/reject 按鈕連結指向 `https://hub.ailanbao.org/api/tas
 9. **NotificationHub** — 中央事件派發，fan-out 到 Gmail + Hermes webhook，各 channel 獨立不互相阻擋
 10. **Hermes MCP** — stdio MCP server 包裝 REST API 為 ~40 個 tools，讓 Hermes Agent 操控系統
 11. **Knowledge Base** — 研究文件自動索引（`data/research/*.md` → `knowledge_docs` table），從 task metadata 自動分類，`/knowledge` 頁面瀏覽
-12. **Multi-Agent Orchestrator** — 三 agent 協作（小企提案→懶懶評估→小工執行→懶懶審核），launchd 早晚排程，Telegram 通知 + quick-action 審核閘門
-13. **Task Approval Gate** — Agent 建立的 ticket 預設不執行，需 Tommy 透過 Telegram approve 才啟用 `auto_execute`
+12. **Multi-Agent Orchestrator** — 三 agent 協作（小企提案→懶懶評估→小工執行→懶懶審核）。把 Tommy 當老闆：團隊有自主權、懶懶守門，晚上靜默工作、早上 8 點發一則「老闆快報」只放需決定的事
+13. **Risk-Based Approval Gate** — 懶懶依風險分流：低風險高潛力自己拍板自動執行（auto_do, `auto_execute=1`）；高風險才建待決 ticket（ask_boss, `auto_execute=0`）等老闆 Telegram approve
 14. **Cloudflare Tunnel** — `hub.ailanbao.org` → `localhost:3000`，供 Telegram quick-action 和遠端 Dashboard 存取
 15. **Like Predictor (best-of-N)** — Python ML 模型評爆文機率，包成常駐 HTTP 服務（:8765）；voice-writer 生 N 版草稿用它挑最爆，服務離線時 graceful fallback 不阻斷寫作

@@ -26,7 +26,6 @@ import {
   callClaude,
   extractJson,
   logDiscussion,
-  createProposal,
   updateProposalDecision,
   createAlert,
   sendTelegram,
@@ -50,32 +49,32 @@ const PM_CONFIG: AgentConfig = {
   id: 'pm',
   name: '懶懶',
   role: 'PM / Orchestrator',
-  systemPrompt: `你是懶懶，AI 懶人報的 PM / Orchestrator。
+  systemPrompt: `你是懶懶，AI 懶人報的營運長 (COO)。Tommy 是老闆，你是他最信任的右手。
 
-## 核心職責
-- 統籌所有提案、決定優先順序
-- Review 小工完成的工作（看 diff、build 結果、是否符合需求）
-- 需要 Tommy input 時建立 Alert + 發 Telegram
-- 明確可做的事項自動建 ticket
+## 你的心態：把 Tommy 當老闆，不是當審核員
+- 你有自主權，也有責任**自己扛起判斷**。值得做的低風險事，你直接拍板讓小工做，不要每件都跑去問老闆。
+- 老闆的注意力是最稀缺的資源。你存在的價值，就是**幫他擋掉 90% 的雜訊，只把真正需要他拍板的事，講重點地端到他面前**。
+- 跟老闆溝通用**老闆語言**：講影響、講取捨、給建議，讓他三秒能決定。**絕對不要叫老闆去看 diff、讀 document、review code** — 那是你的工作，不是他的。
 
-## 行為規範
-1. **不寫 code、不做 research** — 你是統籌者，不是執行者
-2. **用數據說話** — 決策要有根據，不是憑感覺
-3. **Tommy 的時間最寶貴** — 只在真正需要時打擾他
-4. **品質 > 速度** — 寧可多花時間 review，不要放過有問題的 code
-5. **記錄決策原因** — 每個 approve/reject 都要附理由
+## 你可以自己拍板、直接讓小工做的（低風險，不必先問老闆）
+- research / 調研、內容企劃與選題、社群貼文草稿、UI 與內容品質優化
+- 判準：可逆、不花錢、不碰發布、不改變品牌方向 → 你自己 greenlight
 
-## Review 標準
-- [ ] Code 是否完成了 ticket 描述的需求？
-- [ ] 有沒有多改了不該改的東西？
-- [ ] Build 是否通過？
-- [ ] 有沒有安全性問題？
-- [ ] 改動量是否合理（不要為了小需求改太多）？
+## 一定要先問老闆才能做的（高風險 / 需要方向決定）
+- infra 架構改動、實際對外發布、需要花錢、品牌定位與內容方向的決定
+- 這類**不要自己開工**，整理成一個「需要老闆拍板」的決策（含選項 pros/cons + 你的建議），留給早上的老闆快報
+
+## 守門原則：寧缺勿濫
+- 平庸的、重複的、低槓桿的提案 → 直接 reject / defer，不要讓它佔用 pipeline 和老闆的注意力
+- 門檻要高：只有「合理且很有潛力」的才放行
+
+## Review 小工成品的標準
+- [ ] 完成了 ticket 需求？沒多改不該改的？build 過了？沒有安全問題？改動量合理？
+- 通過後不要急著通知老闆 — 標記好、寫進 board，等早上快報一次端上去讓老闆決定要不要上線
 
 ## 不做的事
-- 不寫 code（那是小工的事）
-- 不做 content strategy（那是小企的事）
-- 不代替 Tommy 做重大決策`,
+- 不寫 code（小工的事）、不做 content strategy（小企的事）
+- 不把該你扛的判斷推給老闆`,
 };
 
 // ── Git Helpers ──────────────────────────────────────────────────────
@@ -265,39 +264,34 @@ Confidence (how sure are you about this verdict):
     `${verdictEmoji[result.verdict]} 懶懶 Review: **${result.verdict}** (confidence: ${result.confidence})\n\n${result.reasoning}${result.feedback ? `\n\n**Feedback**: ${result.feedback}` : ''}`,
   );
 
+  // NOTE: All boss-facing notifications are batched into the morning 老闆快報 (sendBossBrief).
+  // Here we only update status + leave a trail on the board — NO immediate Telegram pings.
   if (result.verdict === 'approved') {
     const isResearch = task.category === 'research';
     const canAutoApprove = isResearch && result.confidence === 'high';
 
     if (canAutoApprove) {
-      // Auto-approve: research + high confidence → done directly
+      // Low-risk research + high confidence → 懶懶 自己拍板完成，不打擾老闆（快報 FYI 帶過）
       await updateTask(task.id, { status: 'done', completed_by: '懶懶' });
       await addComment(task.id, '懶懶', 'review',
-        `Auto-approved (research + high confidence)\n${result.reasoning}`);
-      await sendTelegram(
-        `✅ Auto-approved Task #${task.id}: ${task.title}\n` +
-        `(research + high confidence, 已自動完成)`
-      );
-      log('info', `Task #${task.id} auto-approved (research + high confidence)`);
+        `懶懶自己拍板完成（research + 高信心，低風險）\n${result.reasoning}`);
+      log('info', `Task #${task.id} auto-approved by 懶懶 (research + high confidence)`);
     } else {
-      // Keep in review status — Tommy does final approve
-      await createAlert('pm', 'review_ready', `Task #${task.id} 通過 review`,
-        `${task.title}\nBranch: ${branchName}\n${result.reasoning}`, 'normal', { taskId: task.id });
-      await sendTelegram(`✅ 懶懶 approved Task #${task.id}: ${task.title}\nBranch: ${branchName}\n等待 Tommy 最終 review`);
+      // 成品通過 review → 留在 review，等早上快報讓老闆決定要不要上線（已有 review comment 留痕）
+      log('info', `Task #${task.id} approved by 懶懶 — queued for morning boss brief`);
     }
 
   } else if (result.verdict === 'needs_changes') {
-    // Send back to 小工
+    // 退回小工，靜默處理（board 已有 review comment 記錄 feedback）
     await updateTask(task.id, {
       status: 'in_progress',
       result_notes: `懶懶 review: needs changes — ${result.feedback?.slice(0, 200)}`,
     });
-    await sendTelegram(`🔄 懶懶 sent Task #${task.id} back to 小工: ${result.feedback?.slice(0, 200)}`);
 
   } else {
-    // needs_tommy — escalate
-    await createAlert('pm', 'needs_decision', `Task #${task.id} 需要 Tommy 決策`,
-      `${task.title}\n\n${result.feedback || result.reasoning}`, 'high', { taskId: task.id });
+    // needs_tommy — 懶懶 判斷不了，需要老闆方向。留在 review，由早上快報端上去（不即時 ping）。
+    await createAlert('pm', 'needs_decision', `Task #${task.id} 需要老闆拍板`,
+      `${task.title}\n\n${result.feedback || result.reasoning}`, 'normal', { taskId: task.id });
   }
 
   // 9. Reflect
@@ -311,11 +305,34 @@ Confidence (how sure are you about this verdict):
 
 // ── Proposal Evaluation ─────────────────────────────────────────────
 
+export interface BossDecision {
+  question: string;
+  options: Array<{ label: string; pros: string; cons: string }>;
+  recommendation: string;
+}
+
 export interface ProposalDecision {
   proposalId: number;
-  decision: 'approved' | 'rejected' | 'needs_tommy' | 'deferred';
+  decision: 'auto_do' | 'ask_boss' | 'rejected' | 'deferred';
   reasoning: string;
-  taskId?: number; // if approved and ticket created
+  taskId?: number; // if a ticket was created (auto_do / ask_boss)
+}
+
+/** Map a proposal type to a valid task category. */
+function proposalCategory(proposalType: string): string {
+  switch (proposalType) {
+    case 'research': return 'research';
+    case 'content': return 'content';
+    case 'feature': return 'infra';
+    default: return 'ops'; // optimization / misc
+  }
+}
+
+/** Map a proposer id to a valid comment author. */
+function proposerAuthor(proposedBy: string): string {
+  if (proposedBy === 'planner') return '小企';
+  if (proposedBy === 'engineer') return '小工';
+  return '懶懶';
 }
 
 /** Evaluate pending proposals from 小企 or 小工. */
@@ -367,32 +384,43 @@ Task Board 現況: ${taskBoard}
 
 ${proposalList}
 
-## 評估標準
-1. 會影響聽眾體驗的 > 內部流程優化
-2. 有數據支持的 > 憑感覺的
-3. 小改動大效果的 > 大工程小效果的
-4. research 類通常可以直接 approve
-5. infra 改動要謹慎
-6. 已有太多 in_progress 時應 defer 新工作
-7. 不要跟 task board 上已有的工作重複
+## 你的角色
+你是營運長，幫老闆守門。你的目標**不是放行越多越好，而是只放行「合理且很有潛力」的**，
+其餘擋掉。放行的低風險項目你自己拍板讓小工做；高風險的整理成決策留給老闆。
+
+## 先判斷「值不值得做」（門檻要高，寧缺勿濫）
+- 小投入大影響 / 有 timing 的 > 例行小優化
+- 會影響聽眾體驗或成長的 > 純內部流程
+- 有數據或趨勢支撐的 > 憑感覺的
+- 平庸、重複、低槓桿、已在 board 上的 → rejected / deferred
+
+## 再判斷「風險」決定誰拍板
+- **low（你自己拍板，直接做）**：可逆、不花錢、不碰對外發布、不改品牌方向。
+  例：research / 調研、內容企劃選題、社群貼文草稿、UI 與內容品質優化。
+- **high（要先問老闆）**：infra 架構、實際對外發布、要花錢、品牌定位 / 內容方向決定。
 
 ## Response Format (STRICT JSON)
 回傳 JSON array，每個 proposal 一個 decision:
 [
   {
     "proposalId": <number>,
-    "decision": "approved" | "rejected" | "needs_tommy" | "deferred",
-    "reasoning": "1-2 sentence explanation in 繁體中文",
-    "createTicket": true | false,
-    "ticketPriority": "low" | "medium" | "high"
+    "decision": "auto_do" | "ask_boss" | "rejected" | "deferred",
+    "risk": "low" | "high",
+    "reasoning": "1-2 句繁體中文，說明為什麼這樣判斷",
+    "ticketPriority": "low" | "medium" | "high",
+    "bossDecision": {
+      "question": "要問老闆的一句話決策（只有 ask_boss 才填）",
+      "options": [ { "label": "選項", "pros": "好處", "cons": "代價/風險" } ],
+      "recommendation": "你的建議與理由（一句話）"
+    }
   }
 ]
 
-- approved + createTicket=true: 自動建 ticket 讓小工執行
-- approved + createTicket=false: 記錄但不急著做
-- rejected: 不適合現在做（附理由）
-- needs_tommy: 需要 Tommy 決定（建築、產品、方向性問題）
-- deferred: 好主意但現在不是時候`;
+- **auto_do**（低風險 + 值得做）：你自己拍板，自動建 ticket 讓小工立刻執行，不打擾老闆。
+- **ask_boss**（高風險 / 需方向，但值得做）：建 ticket 但不執行，填好 bossDecision（選項 + pros/cons + 你的建議），留給早上快報讓老闆拍板。
+- **rejected**：不值得做（附理由）。
+- **deferred**：好主意但現在不是時候。
+- ⚠️ bossDecision 只在 decision="ask_boss" 時才需要；其餘可省略或給 null。`;
 
   const response = await callClaude(agentPrompt, userPrompt, {
     maxTokens: 2048,
@@ -403,9 +431,10 @@ ${proposalList}
   let rawDecisions: Array<{
     proposalId: number;
     decision: string;
+    risk?: string;
     reasoning: string;
-    createTicket?: boolean;
     ticketPriority?: string;
+    bossDecision?: BossDecision | null;
   }> = [];
 
   try {
@@ -414,11 +443,11 @@ ${proposalList}
     rawDecisions = JSON.parse(jsonStr);
   } catch (e) {
     log('warn', `Failed to parse proposal decisions: ${String(e)}`);
-    // Mark all as needs_tommy
+    // Can't evaluate → defer (don't spam the boss; he'll see nothing rather than noise)
     rawDecisions = pending.map(p => ({
       proposalId: p.id,
-      decision: 'needs_tommy',
-      reasoning: '無法自動評估，轉交 Tommy',
+      decision: 'deferred',
+      reasoning: '無法自動評估，暫緩',
     }));
   }
 
@@ -434,35 +463,40 @@ ${proposalList}
       reasoning: raw.reasoning,
     };
 
-    // Create ticket if approved — but auto_execute=false until Tommy approves
-    if (raw.decision === 'approved' && raw.createTicket) {
+    const isAutoDo = raw.decision === 'auto_do';
+    const isAskBoss = raw.decision === 'ask_boss';
+
+    // Create a ticket for auto_do (runs now) and ask_boss (waits for boss in the morning brief)
+    if (isAutoDo || isAskBoss) {
       try {
         const taskId = await createTask(
           proposal.title,
           proposal.description,
-          proposal.proposal_type === 'research' ? 'research' : proposal.proposal_type === 'content' ? 'content' : 'infra',
+          proposalCategory(proposal.proposal_type),
           raw.ticketPriority || proposal.priority_suggestion || 'medium',
-          false, // auto_execute OFF — needs Tommy's approval first
+          isAutoDo,   // auto_execute ON for low-risk auto_do; OFF for high-risk ask_boss
           '懶懶',
         );
         decision.taskId = taskId;
-        log('info', `Created ticket #${taskId} from proposal #${raw.proposalId} (pending Tommy approval)`);
 
-        // Notify Tommy to approve
-        const approveUrl = buildQuickActionUrl(taskId, 'approve');
-        const rejectUrl = buildQuickActionUrl(taskId, 'reject');
-        if (approveUrl && rejectUrl) {
-          await sendTelegramWithButtons(
-            `🆕 懶懶建了新 ticket #${taskId}\n<b>${proposal.title}</b>\n\n${proposal.description.slice(0, 200)}${proposal.description.length > 200 ? '...' : ''}\n\n要執行嗎？`,
-            [[
-              { text: '✅ 批准執行', url: approveUrl },
-              { text: '❌ 不需要', url: rejectUrl },
-            ]],
-          );
+        // ── Mirror the agent discussion onto the board (so Tommy can drill in from the card) ──
+        await addComment(taskId, proposerAuthor(proposal.proposed_by), 'discussion',
+          `💡 ${proposal.proposed_by === 'planner' ? '小企' : proposal.proposed_by === 'engineer' ? '小工' : ''}提案：${proposal.title}\n\n${proposal.description}`);
+
+        if (isAutoDo) {
+          await addComment(taskId, '懶懶', 'discussion',
+            `✅ 懶懶評估：低風險、值得做 → 自己拍板，交給小工執行（不打擾老闆）。\n理由：${raw.reasoning}`);
+          log('info', `auto_do ticket #${taskId} from proposal #${raw.proposalId} (executing without boss approval)`);
         } else {
-          await sendTelegram(
-            `🆕 懶懶建了新 ticket #${taskId}: ${proposal.title}\n需要你到 Dashboard 批准才會執行`,
-          );
+          // ask_boss: store the boss decision payload so the morning brief can render it
+          const bd = raw.bossDecision;
+          const optionsText = bd?.options?.length
+            ? bd.options.map(o => `• ${o.label}\n   優點：${o.pros}\n   代價：${o.cons}`).join('\n')
+            : '（無明確選項，需老闆裁示）';
+          await addComment(taskId, '懶懶', 'discussion',
+            `🤔 需要老闆拍板（高風險）\n問題：${bd?.question || proposal.title}\n${optionsText}\n\n懶懶建議：${bd?.recommendation || raw.reasoning}`,
+            { bossDecision: bd || null, reasoning: raw.reasoning });
+          log('info', `ask_boss ticket #${taskId} from proposal #${raw.proposalId} (queued for morning brief)`);
         }
       } catch (e) {
         log('warn', `Failed to create ticket for proposal #${raw.proposalId}: ${String(e)}`);
@@ -472,18 +506,12 @@ ${proposalList}
     // Update proposal in DB
     updateProposalDecision(raw.proposalId, raw.decision, raw.reasoning, decision.taskId);
 
-    // Log discussion
-    const emoji = { approved: '✅', rejected: '❌', needs_tommy: '🔔', deferred: '⏸️' };
+    // Log discussion (session log + agent_discussions, linked to ticket if any)
+    const emoji: Record<string, string> = { auto_do: '🟢', ask_boss: '🤔', rejected: '❌', deferred: '⏸️' };
     logDiscussion('pm', sessionId, 'decision',
-      `提案 #${raw.proposalId} "${proposal.title}": ${emoji[raw.decision as keyof typeof emoji] || '?'} ${raw.decision}\n${raw.reasoning}${decision.taskId ? `\n→ Created ticket #${decision.taskId}` : ''}`,
-      { tokenUsage: response.tokenUsage, durationMs: response.durationMs },
+      `提案 #${raw.proposalId} "${proposal.title}": ${emoji[raw.decision] || '?'} ${raw.decision}\n${raw.reasoning}${decision.taskId ? `\n→ ticket #${decision.taskId}` : ''}`,
+      { taskId: decision.taskId, tokenUsage: response.tokenUsage, durationMs: response.durationMs },
     );
-
-    // Alert for needs_tommy
-    if (raw.decision === 'needs_tommy') {
-      await createAlert('pm', 'needs_decision', `提案需要 Tommy 決策: ${proposal.title}`,
-        `${proposal.description}\n\n懶懶: ${raw.reasoning}`, 'high', { proposalId: raw.proposalId });
-    }
 
     decisions.push(decision);
   }
@@ -550,134 +578,147 @@ ${proposalSummary}
   return summary;
 }
 
-/** Send a structured review digest to Tommy via Telegram with quick-action buttons. */
-export async function sendReviewDigest(sessionId: string): Promise<void> {
-  const { tasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=review&limit=20');
+/**
+ * 老闆快報 (Boss Brief) — the ONE daily Telegram report Tommy reads.
+ * Decision-first: only surfaces what needs his call, framed for a 3-second decision.
+ *   1. 需要你拍板：成品等上線 (review tasks) + 高風險待決 (ask_boss todo tasks)
+ *   2. 團隊自己處理了：低風險自動完成的，標題一行帶過 (FYI, no decision)
+ * Each decision item is its own message so it can carry approve/reject buttons.
+ */
+export async function sendBossBrief(sessionId: string): Promise<void> {
+  // 1. Finished work awaiting 上線 (Tommy decides ship-or-not)
+  const { tasks: reviewTasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=review&limit=20')
+    .catch(() => ({ tasks: [] as Task[] }));
 
-  if (tasks.length === 0) {
-    log('info', 'No tasks in review — skipping digest');
+  // 2. High-risk proposals 懶懶 wants the boss to decide before doing
+  const { tasks: todoTasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=todo&limit=50')
+    .catch(() => ({ tasks: [] as Task[] }));
+  const askBossTasks = todoTasks.filter(t => t.auto_execute === 0 && t.completed_by !== 'tommy');
+
+  const decisionCount = reviewTasks.length + askBossTasks.length;
+
+  // 3. FYI — what the team handled on its own today
+  const db = getDb();
+  const fyiDone = db.prepare(`
+    SELECT id, title FROM tasks
+    WHERE status = 'done' AND date(completed_at) = date('now')
+    ORDER BY completed_at DESC LIMIT 8
+  `).all() as Array<{ id: number; title: string }>;
+  const inFlight = db.prepare(`
+    SELECT COUNT(*) as c FROM tasks WHERE status = 'in_progress' AND auto_execute = 1
+  `).get() as { c: number };
+
+  const today = new Date();
+  const dateStr = `${today.getMonth() + 1}/${today.getDate()}`;
+
+  if (decisionCount === 0 && fyiDone.length === 0 && inFlight.c === 0) {
+    log('info', 'Boss brief: nothing to report — skipping');
     return;
   }
 
-  log('info', `Sending review digest for ${tasks.length} task(s)`);
+  // ── Header ──
+  await sendTelegram(
+    `☀️ <b>老闆快報 ${dateStr}</b>\n` +
+    (decisionCount > 0
+      ? `有 <b>${decisionCount}</b> 件需要你拍板，點按鈕就好 👇`
+      : `今天沒有需要你拍板的事，以下是團隊自己處理的進度。`)
+  );
 
-  // Send header
-  await sendTelegram(`📋 <b>Review Digest</b> — ${tasks.length} 張待 review\n按 Approve 會自動開 PR 到 main`);
+  // ── Section 1a: 成品等上線 (review tasks) ──
+  for (const task of reviewTasks) {
+    const { comments } = await apiFetch<{ comments: TaskComment[] }>(`/api/tasks/${task.id}/comments`)
+      .catch(() => ({ comments: [] as TaskComment[] }));
 
-  // Send one message per task with inline buttons
-  for (const task of tasks) {
-    const { comments } = await apiFetch<{ comments: TaskComment[] }>(
-      `/api/tasks/${task.id}/comments`
-    ).catch(() => ({ comments: [] as TaskComment[] }));
-
-    // Find PM review comment (most recent)
-    const reviewComment = [...comments].reverse()
-      .find(c => c.author === '懶懶' && c.type === 'review');
-
-    // Find branch
-    const branchComment = comments.find(c => c.type === 'branch');
-    const branch = branchComment?.metadata
-      ? (() => { try { return JSON.parse(branchComment.metadata!).branch; } catch { return ''; } })()
-      : '';
-
-    // Extract confidence
+    const reviewComment = [...comments].reverse().find(c => c.author === '懶懶' && c.type === 'review');
     const confMatch = reviewComment?.content.match(/confidence: (high|medium|low)/);
     const confidence = confMatch ? confMatch[1] : '';
-    const confEmoji = confidence === 'high' ? '🟢' : confidence === 'medium' ? '🟡' : '🔴';
+    const confEmoji = confidence === 'high' ? '🟢' : confidence === 'medium' ? '🟡' : confidence === 'low' ? '🔴' : '⚪';
 
-    // ── Build rich message ──
     const lines: string[] = [];
+    lines.push(`✅ <b>等你上線</b> · #${task.id} ${task.title}`);
 
-    // Header
-    lines.push(`<b>#${task.id}</b> [${task.category}] ${task.title}`);
-    if (confidence) lines.push(`${confEmoji} Confidence: ${confidence}`);
-
-    // What: task description (what this ticket is about)
-    if (task.description) {
-      const desc = task.description.replace(/<[^>]+>/g, '').slice(0, 200);
-      lines.push(`\n<b>任務：</b>${desc}${task.description.length > 200 ? '...' : ''}`);
-    }
-
-    // Work done: agent's work summary from result_notes or action comments
+    // What was done — one tight blurb
     const workSummary = task.result_notes
       || [...comments].reverse().find(c => c.type === 'action' && c.content.includes('工作紀錄'))?.content
       || '';
     if (workSummary) {
       const clean = workSummary
-        .replace(/<[^>]+>/g, '')
-        .replace(/\*\*/g, '')
-        .replace(/^Branch:.*\n?/m, '')
-        .replace(/^\d+ commit.*\n?/m, '')
-        .trim()
-        .slice(0, 250);
-      lines.push(`\n<b>完成內容：</b>\n${clean}${workSummary.length > 250 ? '...' : ''}`);
+        .replace(/<[^>]+>/g, '').replace(/\*\*/g, '')
+        .replace(/^Branch:.*\n?/m, '').replace(/^\d+ commit.*\n?/m, '')
+        .trim().slice(0, 180);
+      if (clean) lines.push(`做了什麼：${clean}`);
     }
-
-    // PM review verdict
     if (reviewComment) {
-      // Extract just the reasoning, skip the emoji/verdict header
       const reasoning = reviewComment.content
-        .replace(/<[^>]+>/g, '')
-        .replace(/\*\*/g, '')
+        .replace(/<[^>]+>/g, '').replace(/\*\*/g, '')
         .replace(/^.*?(approved|needs_changes|needs_tommy).*?\n/i, '')
-        .trim()
-        .slice(0, 200);
-      if (reasoning) lines.push(`\n<b>懶懶評語：</b>${reasoning}`);
+        .trim().slice(0, 160);
+      if (reasoning) lines.push(`懶懶：${confEmoji} ${reasoning}`);
     }
 
-    // Test results
-    const testComment = [...comments].reverse()
-      .find(c => c.type === 'test');
-    if (testComment) {
-      const passed = testComment.content.includes('passed') || testComment.content.includes('✅') || testComment.content.includes('成功');
-      const icon = passed ? '✅' : '⚠️';
-      const testSnippet = testComment.content
-        .replace(/<[^>]+>/g, '')
-        .replace(/\*\*/g, '')
-        .slice(0, 120);
-      lines.push(`\n<b>測試：</b>${icon} ${testSnippet}`);
-    } else {
-      lines.push(`\n<b>測試：</b>⚠️ 無測試紀錄`);
-    }
-
-    // Branch info
-    if (branch) lines.push(`\nBranch: <code>${branch}</code>`);
-
-    // Research report link — look up real filename from knowledge_docs
+    // Research report link if applicable
     if (task.category === 'research') {
       const publicUrl = process.env.DASHBOARD_PUBLIC_URL || '';
       if (publicUrl) {
-        const db = getDb();
         const knowledgeDoc = db.prepare(
           `SELECT filename FROM knowledge_docs WHERE filename LIKE ? ORDER BY id DESC LIMIT 1`
         ).get(`task-${task.id}-%`) as { filename: string } | undefined;
         if (knowledgeDoc) {
-          const encodedFilename = encodeURIComponent(knowledgeDoc.filename);
-          lines.push(`📄 <a href="${publicUrl}/knowledge/${encodedFilename}">查看研究報告</a>`);
+          lines.push(`📄 <a href="${publicUrl}/knowledge/${encodeURIComponent(knowledgeDoc.filename)}">看研究報告</a>`);
         }
       }
     }
 
-    const msg = lines.join('\n');
+    await sendDecisionMessage(task.id, lines.join('\n'), '✅ 上線+開PR', '❌ 不要');
+  }
 
-    // Build quick-action URLs (only available if DASHBOARD_PUBLIC_URL is set)
-    const approveUrl = buildQuickActionUrl(task.id, 'approve');
-    const rejectUrl = buildQuickActionUrl(task.id, 'reject');
+  // ── Section 1b: 高風險待決 (ask_boss tasks) ──
+  for (const task of askBossTasks) {
+    const { comments } = await apiFetch<{ comments: TaskComment[] }>(`/api/tasks/${task.id}/comments`)
+      .catch(() => ({ comments: [] as TaskComment[] }));
 
-    if (approveUrl && rejectUrl) {
-      await sendTelegramWithButtons(msg, [
-        [
-          { text: '✅ Approve + 開 PR', url: approveUrl },
-          { text: '❌ Reject', url: rejectUrl },
-        ],
-      ]);
-    } else {
-      await sendTelegram(msg);
+    // Find the boss-decision discussion comment 懶懶 left
+    const bdComment = [...comments].reverse().find(c => {
+      if (c.author !== '懶懶' || c.type !== 'discussion') return false;
+      try { return c.metadata ? 'bossDecision' in JSON.parse(c.metadata) : false; } catch { return false; }
+    });
+
+    const lines: string[] = [`🤔 <b>要不要做</b> · #${task.id} ${task.title}`];
+    if (bdComment) {
+      // The comment content is already human-readable (question + options pros/cons + recommendation)
+      lines.push(bdComment.content.replace(/<[^>]+>/g, '').replace(/\*\*/g, '').replace(/^🤔[^\n]*\n/, '').trim().slice(0, 500));
+    } else if (task.description) {
+      lines.push(task.description.replace(/<[^>]+>/g, '').slice(0, 300));
     }
+
+    await sendDecisionMessage(task.id, lines.join('\n'), '✅ 批准執行', '❌ 不做');
+  }
+
+  // ── Section 2: FYI — 團隊自己處理了 ──
+  if (fyiDone.length > 0 || inFlight.c > 0) {
+    const fyiLines: string[] = [`\n🤖 <b>團隊自己處理了</b>`];
+    for (const t of fyiDone) fyiLines.push(`• #${t.id} ${t.title}`);
+    if (inFlight.c > 0) fyiLines.push(`• （還有 ${inFlight.c} 件低風險的小工正在做）`);
+    fyiLines.push(`\n詳情都在 board，點 ticket 看完整討論。`);
+    await sendTelegram(fyiLines.join('\n'));
   }
 
   logDiscussion('pm', sessionId, 'report',
-    `Review digest sent (${tasks.length} items with quick-action buttons)`, {});
+    `老闆快報已發送：${decisionCount} 件待拍板（${reviewTasks.length} 上線 / ${askBossTasks.length} 高風險）, ${fyiDone.length} 件自動完成`, {});
+}
+
+/** Send one decision item with approve/reject buttons (falls back to plain text if no public URL). */
+async function sendDecisionMessage(taskId: number, msg: string, approveLabel: string, rejectLabel: string): Promise<void> {
+  const approveUrl = buildQuickActionUrl(taskId, 'approve');
+  const rejectUrl = buildQuickActionUrl(taskId, 'reject');
+  if (approveUrl && rejectUrl) {
+    await sendTelegramWithButtons(msg, [[
+      { text: approveLabel, url: approveUrl },
+      { text: rejectLabel, url: rejectUrl },
+    ]]);
+  } else {
+    await sendTelegram(msg);
+  }
 }
 
 /** Review all tasks in 'review' status that were completed by 小工. */
@@ -756,12 +797,17 @@ async function main() {
     const summary = await dailySummary(sessionId);
     console.log(summary);
 
+  } else if (args.includes('--boss-brief')) {
+    await sendBossBrief(sessionId);
+    console.log('老闆快報 sent.');
+
   } else {
     console.log('Usage:');
     console.log('  npx tsx scripts/agents/pm.ts --review-task <id>       Review a specific task');
     console.log('  npx tsx scripts/agents/pm.ts --review-all             Review all pending tasks');
     console.log('  npx tsx scripts/agents/pm.ts --evaluate-proposals     Evaluate pending proposals');
     console.log('  npx tsx scripts/agents/pm.ts --daily-summary          Generate daily summary');
+    console.log('  npx tsx scripts/agents/pm.ts --boss-brief             Send the morning 老闆快報');
     process.exit(1);
   }
 }

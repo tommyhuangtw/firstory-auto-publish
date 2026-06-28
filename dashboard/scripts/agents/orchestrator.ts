@@ -20,7 +20,6 @@ import {
   log,
   generateSessionId,
   logDiscussion,
-  sendTelegram,
   apiFetch,
   updateTask,
   getTaskBoardState,
@@ -28,7 +27,7 @@ import {
 } from './base';
 
 import { checkAndPropose } from './planner';
-import { evaluateProposals, reviewPendingTasks, reviewTask, dailySummary, sendReviewDigest } from './pm';
+import { evaluateProposals, reviewPendingTasks, reviewTask, sendBossBrief } from './pm';
 import { executeTask, resumeTask, type ExecutionResult } from './engineer';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -134,89 +133,42 @@ async function findResumableTasks(): Promise<Array<{ task: Task; userReply: stri
 // ── Run Modes ───────────────────────────────────────────────────────
 
 /**
- * Morning run: 小企 proposes → 懶懶 evaluates → 小工 executes available tasks
+ * Morning run (08:00): the ONE daily boss touchpoint.
+ * Reviews any work left over from the evening, then sends the 老闆快報 — nothing else.
+ * Kept light so the brief fires promptly at 8am (no long task execution here).
  */
 async function morningRun(sessionId: string): Promise<void> {
-  log('info', '=== Morning Run: propose + evaluate + execute ===');
-  logDiscussion('pm', sessionId, 'report', '🌅 Morning orchestrator run started', {});
+  log('info', '=== Morning Run: review leftovers + 老闆快報 ===');
+  logDiscussion('pm', sessionId, 'report', '🌅 Morning run started', {});
 
-  // Step 1: 小企 proposes
-  log('info', 'Step 1: 小企 generating proposals...');
-  try {
-    const proposals = await checkAndPropose(sessionId);
-    log('info', `小企 generated ${proposals.length} proposal(s)`);
-  } catch (e) {
-    log('error', `小企 proposal generation failed: ${String(e)}`);
-  }
-
-  // Step 2: 懶懶 evaluates proposals
-  log('info', 'Step 2: 懶懶 evaluating proposals...');
-  try {
-    const decisions = await evaluateProposals(sessionId);
-    log('info', `懶懶 evaluated ${decisions.length} proposal(s)`);
-    const approved = decisions.filter(d => d.decision === 'approved' && d.taskId);
-    if (approved.length > 0) {
-      log('info', `Created ${approved.length} new ticket(s)`);
-    }
-  } catch (e) {
-    log('error', `懶懶 proposal evaluation failed: ${String(e)}`);
-  }
-
-  // Step 3: 小工 executes tasks
-  await executeAvailableTasks(sessionId);
-
-  // Step 4: Send review digest (remind Tommy of pending reviews)
-  try {
-    await sendReviewDigest(sessionId);
-  } catch (e) {
-    log('warn', `Review digest failed: ${String(e)}`);
-  }
-}
-
-/**
- * Evening run: 小工 executes remaining → 懶懶 reviews → daily summary
- */
-async function eveningRun(sessionId: string): Promise<void> {
-  log('info', '=== Evening Run: execute + review + summary ===');
-  logDiscussion('pm', sessionId, 'report', '🌙 Evening orchestrator run started', {});
-
-  // Step 1: 小工 executes any remaining tasks
-  await executeAvailableTasks(sessionId);
-
-  // Step 2: 懶懶 reviews completed work
-  log('info', 'Step 2: 懶懶 reviewing completed work...');
+  // Step 1: 懶懶 reviews anything that finished after the evening run
+  log('info', 'Step 1: 懶懶 reviewing any leftover completed work...');
   try {
     const reviews = await reviewPendingTasks(sessionId);
-    log('info', `懶懶 reviewed ${reviews.length} task(s)`);
+    log('info', `懶懶 reviewed ${reviews.length} leftover task(s)`);
   } catch (e) {
     log('error', `懶懶 review failed: ${String(e)}`);
   }
 
-  // Step 3: Send review digest
+  // Step 2: send the single morning 老闆快報
   try {
-    await sendReviewDigest(sessionId);
+    await sendBossBrief(sessionId);
   } catch (e) {
-    log('warn', `Review digest failed: ${String(e)}`);
-  }
-
-  // Step 4: Daily summary
-  log('info', 'Step 4: 懶懶 generating daily summary...');
-  try {
-    await dailySummary(sessionId);
-    log('info', 'Daily summary sent');
-  } catch (e) {
-    log('error', `Daily summary failed: ${String(e)}`);
+    log('warn', `Boss brief failed: ${String(e)}`);
   }
 }
 
 /**
- * Full run: propose + evaluate + execute + review + summary
+ * Evening run (20:00): the team does all the work, silently.
+ * propose → evaluate (auto_do runs / ask_boss queued) → execute → review.
+ * No Telegram to the boss — everything is recorded on the board and surfaced
+ * in tomorrow's morning 老闆快報.
  */
-async function fullRun(sessionId: string): Promise<void> {
-  log('info', '=== Full Run: all steps ===');
-  logDiscussion('pm', sessionId, 'report', '🔄 Full orchestrator run started', {});
+async function eveningRun(sessionId: string): Promise<void> {
+  log('info', '=== Evening Run: propose + evaluate + execute + review (silent) ===');
+  logDiscussion('pm', sessionId, 'report', '🌙 Evening run started', {});
 
-  // Step 1: 小企 proposes
+  // Step 1: 小企 proposes (0-2 high-leverage ideas)
   log('info', 'Step 1: 小企 generating proposals...');
   try {
     const proposals = await checkAndPropose(sessionId);
@@ -225,19 +177,21 @@ async function fullRun(sessionId: string): Promise<void> {
     log('error', `小企 proposal generation failed: ${String(e)}`);
   }
 
-  // Step 2: 懶懶 evaluates proposals
+  // Step 2: 懶懶 evaluates — auto_do runs, ask_boss queued for the boss, others dropped
   log('info', 'Step 2: 懶懶 evaluating proposals...');
   try {
     const decisions = await evaluateProposals(sessionId);
-    log('info', `懶懶 evaluated ${decisions.length} proposal(s)`);
+    const autoDo = decisions.filter(d => d.decision === 'auto_do').length;
+    const askBoss = decisions.filter(d => d.decision === 'ask_boss').length;
+    log('info', `懶懶 evaluated ${decisions.length}: ${autoDo} auto_do, ${askBoss} ask_boss`);
   } catch (e) {
     log('error', `懶懶 proposal evaluation failed: ${String(e)}`);
   }
 
-  // Step 3: 小工 executes tasks
+  // Step 3: 小工 executes available tasks (auto_execute=1)
   await executeAvailableTasks(sessionId);
 
-  // Step 4: 懶懶 reviews
+  // Step 4: 懶懶 reviews completed work (stays on board for the morning brief)
   log('info', 'Step 4: 懶懶 reviewing completed work...');
   try {
     const reviews = await reviewPendingTasks(sessionId);
@@ -245,20 +199,23 @@ async function fullRun(sessionId: string): Promise<void> {
   } catch (e) {
     log('error', `懶懶 review failed: ${String(e)}`);
   }
+}
 
-  // Step 5: Review digest
-  try {
-    await sendReviewDigest(sessionId);
-  } catch (e) {
-    log('warn', `Review digest failed: ${String(e)}`);
-  }
+/**
+ * Full run (manual): the whole evening pipeline + the morning brief, in one go.
+ * Useful for testing the end-to-end flow.
+ */
+async function fullRun(sessionId: string): Promise<void> {
+  log('info', '=== Full Run: all steps ===');
+  logDiscussion('pm', sessionId, 'report', '🔄 Full run started', {});
 
-  // Step 6: Daily summary
-  log('info', 'Step 6: Daily summary...');
+  await eveningRun(sessionId);
+
+  // Then send the boss brief (what evening produced)
   try {
-    await dailySummary(sessionId);
+    await sendBossBrief(sessionId);
   } catch (e) {
-    log('error', `Daily summary failed: ${String(e)}`);
+    log('warn', `Boss brief failed: ${String(e)}`);
   }
 }
 
@@ -350,10 +307,10 @@ async function main() {
 
   if (!mode) {
     console.log('Usage:');
-    console.log('  npx tsx scripts/agents/orchestrator.ts --morning        Propose + evaluate + execute');
-    console.log('  npx tsx scripts/agents/orchestrator.ts --evening        Execute + review + summary');
-    console.log('  npx tsx scripts/agents/orchestrator.ts --full           All steps');
-    console.log('  npx tsx scripts/agents/orchestrator.ts --execute-only   Just execute tasks');
+    console.log('  npx tsx scripts/agents/orchestrator.ts --morning        Review leftovers + send 老闆快報 (the one daily boss touchpoint)');
+    console.log('  npx tsx scripts/agents/orchestrator.ts --evening        Propose + evaluate + execute + review (silent)');
+    console.log('  npx tsx scripts/agents/orchestrator.ts --full           Evening pipeline + 老闆快報 (manual end-to-end)');
+    console.log('  npx tsx scripts/agents/orchestrator.ts --execute-only   Just execute available tasks');
     process.exit(1);
   }
 

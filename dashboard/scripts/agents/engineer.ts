@@ -23,8 +23,6 @@ import {
   generateSessionId,
   logDiscussion,
   createProposal,
-  createAlert,
-  sendTelegram,
   apiFetch,
   updateTask,
   addComment,
@@ -366,9 +364,8 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
     taskId: task.id,
   });
 
-  // 2. Claim task
+  // 2. Claim task (silent — progress is recorded on the board, boss only sees the morning brief)
   await updateTask(task.id, { status: 'in_progress' });
-  await sendTelegram(`🔧 小工開始執行 Task #${task.id}: ${task.title}`);
 
   // 3. Create feature branch
   let branchName: string;
@@ -478,7 +475,6 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
     completed_by: '小工',
     result_notes: summary.slice(0, 1000),
   });
-  await sendTelegram(`✅ 小工完成 Task #${task.id}: ${task.title}\nBranch: ${branchName}`);
 
   logDiscussion('engineer', sessionId, 'execution',
     `Task #${task.id} 完成，已移至 review。\nBranch: ${branchName}\n${changes.summary}`,
@@ -506,9 +502,7 @@ export async function resumeTask(
     { taskId: task.id },
   );
 
-  await sendTelegram(`🔄 小工恢復執行 Task #${task.id}: ${task.title}`);
-
-  // Checkout branch
+  // Checkout branch (silent — recorded on the board, not pushed to the boss)
   await execGit('stash', '--include-untracked').catch(() => {});
   try {
     await execGit('checkout', branchName);
@@ -572,7 +566,6 @@ export async function resumeTask(
 
   const summary = `Branch: ${branchName}\n${changes.summary}`;
   await updateTask(task.id, { status: 'review', completed_by: '小工', result_notes: summary.slice(0, 1000) });
-  await sendTelegram(`✅ 小工完成 Task #${task.id} (resumed): ${task.title}`);
 
   logDiscussion('engineer', sessionId, 'execution',
     `Task #${task.id} resume 完成，已移至 review。\n${changes.summary}`,
@@ -585,7 +578,11 @@ export async function resumeTask(
   return { success: true, hitMaxTurns: false, status: 'review', summary, branchName };
 }
 
-/** Propose an improvement to 懶懶. Returns proposal ID. */
+/**
+ * Propose an improvement to 懶懶 (PM). Returns proposal ID.
+ * Silent by design: the proposal flows into 懶懶's next evaluation (auto_do / ask_boss / reject),
+ * so the boss is never pinged directly — only via the morning brief if 懶懶 escalates it.
+ */
 export async function proposeImprovement(
   sessionId: string,
   proposalType: 'bugfix' | 'optimization' | 'feature',
@@ -593,15 +590,11 @@ export async function proposeImprovement(
   description: string,
   priority?: string,
 ): Promise<number> {
-  log('info', `小工 proposing: ${title}`);
+  log('info', `小工 proposing to 懶懶: ${title}`);
 
   const proposalId = createProposal(sessionId, 'engineer', proposalType, title, description, priority);
 
-  logDiscussion('engineer', sessionId, 'proposal', `提案: ${title}\n${description}`, {});
-
-  await createAlert('engineer', 'proposal', `小工提案: ${title}`, description, priority === 'high' ? 'high' : 'normal', {
-    proposalId,
-  });
+  logDiscussion('engineer', sessionId, 'proposal', `提案給懶懶: ${title}\n${description}`, {});
 
   return proposalId;
 }
