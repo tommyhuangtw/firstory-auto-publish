@@ -141,6 +141,11 @@ export function initializeSchedulerJobs(): void {
     scheduler.register(INSPIRATION_CRAWL_JOB, insp.cron, runInspirationCrawl);
   }
 
+  // Thumbnail style auto-discovery — fires every Sunday 09:00 but only proceeds once
+  // every ~2 weeks (node-cron has no biweekly syntax; the handler gates on a stored
+  // last-run timestamp). Generates 10 new styles + sample previews for human review.
+  scheduler.register('縮圖風格雙週生成', '0 9 * * 0', runThumbnailStyleBiweekly);
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
@@ -210,6 +215,55 @@ async function runInspirationCrawl(): Promise<void> {
     log.info(result, 'Inspiration channel crawl complete');
   } catch (err) {
     log.error({ err: (err as Error).message }, 'Inspiration channel crawl failed');
+  }
+}
+
+const THUMBNAIL_BIWEEKLY_LAST_RUN = 'thumbnail_biweekly_last_run';
+const THUMBNAIL_BIWEEKLY_MIN_DAYS = 14;
+
+/**
+ * Biweekly thumbnail style discovery. Registered on a weekly Sunday cron but self-gates
+ * to a 14-day cadence via the stored last-run timestamp, so it effectively runs every
+ * other Sunday (and resumes correctly even if the Mac slept through a fire). Generates
+ * 10 new styles + sample preview images, leaving them disabled for human review.
+ */
+async function runThumbnailStyleBiweekly(): Promise<void> {
+  try {
+    const db = getDb();
+    const last = db.prepare('SELECT value FROM settings WHERE key = ?')
+      .get(THUMBNAIL_BIWEEKLY_LAST_RUN) as { value: string } | undefined;
+    if (last?.value) {
+      const elapsedDays = (Date.now() - new Date(last.value).getTime()) / 86_400_000;
+      if (elapsedDays < THUMBNAIL_BIWEEKLY_MIN_DAYS) {
+        log.info({ elapsedDays: Math.round(elapsedDays) }, 'Thumbnail biweekly: <14 days since last run, skipping');
+        return;
+      }
+    }
+
+    log.info('Running biweekly thumbnail style discovery...');
+    const { generateStyles, auditionStyle } = await import('@/services/thumbnailStyles');
+    const styles = await generateStyles(10);
+
+    // Pre-generate a sample image per style so they're ready to review on open.
+    // Sequential to avoid hammering the image API; one failure doesn't abort the rest.
+    let samples = 0;
+    for (const s of styles) {
+      try {
+        await auditionStyle(s.id);
+        samples++;
+      } catch (err) {
+        log.warn({ styleId: s.id, err: (err as Error).message }, 'Thumbnail biweekly: sample generation failed');
+      }
+    }
+
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, datetime('now'), datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = datetime('now'), updated_at = datetime('now')
+    `).run(THUMBNAIL_BIWEEKLY_LAST_RUN);
+
+    log.info({ generated: styles.length, samples }, 'Biweekly thumbnail style discovery complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Biweekly thumbnail style discovery failed');
   }
 }
 

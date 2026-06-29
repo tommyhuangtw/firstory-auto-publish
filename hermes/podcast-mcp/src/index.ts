@@ -15,6 +15,7 @@ import { gitTools } from './tools/git.js';
 import { taskTools } from './tools/tasks.js';
 import { claudeCodeTools } from './tools/claude-code.js';
 import { trendTools } from './tools/trends.js';
+import { threadTools } from './tools/threads.js';
 
 const allTools: ToolDef[] = [
   ...pipelineTools,
@@ -29,6 +30,7 @@ const allTools: ToolDef[] = [
   ...taskTools,
   ...claudeCodeTools,
   ...trendTools,
+  ...threadTools,
 ];
 
 const server = new McpServer({

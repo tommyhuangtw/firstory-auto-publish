@@ -202,6 +202,7 @@ export default function Navigation() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [trendsUnread, setTrendsUnread] = useState(0);
   const [inspirationUnread, setInspirationUnread] = useState(0);
+  const [thumbnailUnread, setThumbnailUnread] = useState(0);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -212,13 +213,15 @@ export default function Navigation() {
     let cancelled = false;
     const check = async () => {
       try {
-        const [t, i] = await Promise.all([
+        const [t, i, th] = await Promise.all([
           fetch('/api/trends/niche/unread').then(r => r.json()).catch(() => null),
           fetch('/api/inspiration/unread').then(r => r.json()).catch(() => null),
+          fetch('/api/thumbnail-styles/unread').then(r => r.json()).catch(() => null),
         ]);
         if (cancelled) return;
         if (t) setTrendsUnread(t.count ?? 0);
         if (i) setInspirationUnread(i.count ?? 0);
+        if (th) setThumbnailUnread(th.count ?? 0);
       } catch {
         /* offline / dev — leave counts as-is */
       }
@@ -236,6 +239,7 @@ export default function Navigation() {
       const key = (e as CustomEvent).detail;
       if (key === 'trends') setTrendsUnread(0);
       else if (key === 'inspiration') setInspirationUnread(0);
+      else if (key === 'thumbnail') setThumbnailUnread(0);
     };
     window.addEventListener('nav:unread-seen', onSeen);
     return () => window.removeEventListener('nav:unread-seen', onSeen);
@@ -343,6 +347,9 @@ export default function Navigation() {
                     {item.href === '/inspiration' && inspirationUnread > 0 && (
                       <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新爬到的靈感" />
                     )}
+                    {item.href === '/thumbnail-compare' && thumbnailUnread > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新縮圖風格待 review" />
+                    )}
                   </Link>
                 ))}
               </div>
@@ -377,6 +384,9 @@ export default function Navigation() {
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
                   )}
                   {item.href === '/inspiration' && inspirationUnread > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+                  )}
+                  {item.href === '/thumbnail-compare' && thumbnailUnread > 0 && (
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
                   )}
                   <span className="truncate max-w-full">{item.label}</span>

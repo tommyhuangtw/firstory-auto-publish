@@ -46,6 +46,12 @@ export default function ThumbnailComparePage() {
 
   useEffect(() => { fetchStyles(); }, [fetchStyles]);
 
+  // Mark pending-review styles as seen → clear the nav red dot instantly + persist.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('nav:unread-seen', { detail: 'thumbnail' }));
+    void fetch('/api/thumbnail-styles/unread', { method: 'POST' }).catch(() => {});
+  }, []);
+
   // Process audition queue
   const processQueue = useCallback(async () => {
     if (processingRef.current) return;
@@ -212,7 +218,7 @@ export default function ThumbnailComparePage() {
                       queuedIds.includes(style.id) ? 'queued' : 'idle'
                     }
                     mode="pool"
-                    onDrop={() => toggleStyle(style.id, false)}
+                    onDrop={() => deleteStyle(style.id)}
                     onAudition={() => enqueueAudition(style.id)}
                   />
                 ))}

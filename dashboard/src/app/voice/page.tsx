@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PageHeader from '@/components/PageHeader';
 
 interface Post {
@@ -243,14 +243,36 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function PostRow({ post, rank }: { post: Post; rank?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (el) setClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [post.text]);
+
   return (
-    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 transition-colors hover:border-zinc-700">
       <div className="flex items-start gap-3">
         {rank && (
           <span className={`shrink-0 w-6 h-6 rounded-full grid place-items-center text-[11px] font-bold ${rank <= 3 ? 'bg-brand/20 text-brand' : 'bg-zinc-800 text-zinc-500'}`}>{rank}</span>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-zinc-200 whitespace-pre-wrap line-clamp-4">{post.text || <span className="text-zinc-600 italic">（媒體貼文,無文字）</span>}</p>
+          <div className="relative">
+            <p ref={textRef} className={`text-sm leading-relaxed text-zinc-200 whitespace-pre-wrap ${expanded ? '' : 'line-clamp-4'}`}>{post.text || <span className="text-zinc-600 italic">（媒體貼文,無文字）</span>}</p>
+            {!expanded && clamped && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-zinc-900 to-transparent" />
+            )}
+          </div>
+          {clamped && (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="mt-1 text-xs font-medium text-brand/90 hover:text-brand cursor-pointer transition-colors"
+            >
+              {expanded ? '收合' : '展開全文'}
+            </button>
+          )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]">
             <span className="px-1.5 py-0.5 rounded bg-brand/15 text-brand font-semibold">互動率 {fmtRate(post.engagement_rate)}</span>
             <Metric label="瀏覽" value={post.views} />
