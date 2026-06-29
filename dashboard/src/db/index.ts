@@ -409,9 +409,11 @@ export function getDb(): Database.Database {
       drafted INTEGER DEFAULT 0,
       recorded INTEGER DEFAULT 0,
       error TEXT,
-      dropped TEXT
+      dropped TEXT,
+      cost_usd REAL DEFAULT 0
     )
   `);
+  safeAlter('ALTER TABLE resource_scan_runs ADD COLUMN cost_usd REAL DEFAULT 0'); // 既有 DB 補欄位
   safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_curated_resources_guid ON curated_resources(guid)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_curated_resources_status ON curated_resources(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_resource_drafts_guid ON resource_drafts(resource_guid)');

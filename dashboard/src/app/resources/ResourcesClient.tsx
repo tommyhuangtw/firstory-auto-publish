@@ -155,6 +155,8 @@ export default function ResourcesClient() {
             {last && (
               <span className="text-xs text-zinc-500 break-words">
                 上次：爬 {last.scraped}→閘門淘汰 {last.below_gate}→收錄 {last.recorded}
+                {Number(last.cost_usd) > 0 &&
+                  ` ｜💸 ~$${Number(last.cost_usd).toFixed(3)}/次（月估 ~$${(Number(last.cost_usd) * 30).toFixed(2)}）`}
               </span>
             )}
           </div>

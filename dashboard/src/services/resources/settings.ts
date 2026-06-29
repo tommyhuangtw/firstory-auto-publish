@@ -12,6 +12,8 @@ const DEFAULTS = {
   resource_github_pushed_days: '14',
   resource_github_min_stars: '80',
   resource_top_n: '5',
+  resource_max_post_age_days: '14',      // 社群貼文超過幾天就算舊、直接淘汰（不論互動多高）
+  resource_apify_cost_per_item: '0.0004', // Apify X 每則結果估價（USD），用於成本估算
 };
 
 export type ResourceSettingKey = keyof typeof DEFAULTS;

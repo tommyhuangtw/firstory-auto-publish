@@ -21,10 +21,18 @@ export function applyFreshnessGate(resources: EnrichedResource[]): GateResult {
   const buzzFloor = rgetNum('resource_social_buzz_floor');
   const velFloor = rgetNum('resource_star_velocity_floor');
   const youthWindow = rgetNum('resource_youth_window_days');
+  const maxPostAgeMs = rgetNum('resource_max_post_age_days') * 86_400_000;
   const passed: EnrichedResource[] = [];
   let belowGate = 0;
 
   for (const r of resources) {
+    // 社群貼文（非 github）必須夠新：一篇一年前的爆文（8M views）互動再高也是舊聞，直接淘汰。
+    // github 不套用此規則 —— 老 repo「現在星數暴衝」正是我們要的「被重新討論」訊號。
+    if (r.contentType !== 'github' && r.publishedAt) {
+      const ageMs = Date.now() - new Date(r.publishedAt).getTime();
+      if (Number.isFinite(ageMs) && ageMs > maxPostAgeMs) { belowGate++; continue; }
+    }
+
     const youth = r.contentType === 'github' ? youthBonus(r.createdAt, youthWindow) : 0;
     const vel = r.starVelocity ?? 0;
 

@@ -7,13 +7,18 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 export async function sendResourceDigest(
   items: Array<{ r: ScoredResource; text: string; viral: number }>,
+  costUsd = 0,
 ): Promise<void> {
-  const to = process.env.RECIPIENT_EMAIL;
+  // 專屬收件人，不沿用全域 RECIPIENT_EMAIL（那是 ops 通知信箱）。
+  const to = process.env.RESOURCE_DIGEST_EMAIL || process.env.RECIPIENT_EMAIL;
   if (!to) {
-    log.warn('no RECIPIENT_EMAIL, skip digest');
+    log.warn('no RESOURCE_DIGEST_EMAIL / RECIPIENT_EMAIL, skip digest');
     return;
   }
   const date = new Date().toISOString().split('T')[0];
+  const costLine = costUsd > 0
+    ? `<p style="color:#888;margin:2px 0">💸 本次成本 ~$${costUsd.toFixed(3)}（月估 ~$${(costUsd * 30).toFixed(2)}）</p>`
+    : '';
   const cards = items
     .map(({ r, text, viral }, i) => {
       const why =
@@ -36,7 +41,7 @@ export async function sendResourceDigest(
   await gmail.sendRawHtml({
     to,
     subject: `📚 學習資源每日精選 — ${items.length} 篇待 review (${date})`,
-    html: `<h2>📚 學習資源每日精選</h2><p style="color:#888">${date}｜在 /resources 頁可編輯/發布</p>${cards}`,
+    html: `<h2>📚 學習資源每日精選</h2><p style="color:#888">${date}｜在 /resources 頁可編輯/發布</p>${costLine}${cards}`,
   });
   log.info({ count: items.length }, 'resource digest sent');
 }

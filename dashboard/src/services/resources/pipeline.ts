@@ -20,9 +20,14 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     .run(new Date().toISOString(), opts.trigger ?? null).lastInsertRowid);
   const result: ResourceScanResult = { scraped: 0, belowGate: 0, deduped: 0, scored: 0, drafted: 0, recorded: 0 };
 
+  // 成本基準：跑前先記 llm_calls 累計花費，跑完取差值＝本次 LLM 成本（涵蓋評分+生草稿 best-of-N）。
+  const sumLlmCost = () => Number((db.prepare('SELECT COALESCE(SUM(cost_usd),0) c FROM llm_calls').get() as { c: number }).c);
+  const llmCostBefore = sumLlmCost();
+
   try {
     const raw = annotateMentions(await crawlAll());
     result.scraped = raw.length;
+    const xCount = raw.filter((r) => r.contentType === 'x').length; // Apify 按結果計費
     const enriched = await enrichAll(expandMentionedRepos(raw));
 
     // Star-history snapshot for ALL enriched GitHub repos (not just drafted ones), so
@@ -95,13 +100,16 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
 
     // 寫入已 commit → 本次掃描在資料層已成功。Email digest 是副作用，失敗只記 warn，
     // 不可讓它把整輪 run 標成 error（否則 audit 信號反轉、funnel 計數遺失）。
+    // 成本：LLM 差值 + Apify X（每則估價 × 結果數）。GitHub API 免費、無其他付費呼叫。
+    const costUsd = (sumLlmCost() - llmCostBefore) + xCount * rgetNum('resource_apify_cost_per_item');
+
     if (drafts.length) {
-      try { await sendResourceDigest(drafts); }
+      try { await sendResourceDigest(drafts, costUsd); }
       catch (e) { log.warn({ runId, err: (e as Error).message }, 'digest send failed (run still succeeded)'); }
     }
 
-    db.prepare(`UPDATE resource_scan_runs SET finished_at=?, duration_ms=?, scraped=?, below_gate=?, deduped=?, scored=?, drafted=?, recorded=? WHERE id=?`)
-      .run(new Date().toISOString(), Date.now() - t0, result.scraped, result.belowGate, result.deduped, result.scored, result.drafted, result.recorded, runId);
+    db.prepare(`UPDATE resource_scan_runs SET finished_at=?, duration_ms=?, scraped=?, below_gate=?, deduped=?, scored=?, drafted=?, recorded=?, cost_usd=? WHERE id=?`)
+      .run(new Date().toISOString(), Date.now() - t0, result.scraped, result.belowGate, result.deduped, result.scored, result.drafted, result.recorded, costUsd, runId);
     db.prepare('DELETE FROM resource_scan_runs WHERE id NOT IN (SELECT id FROM resource_scan_runs ORDER BY id DESC LIMIT 60)').run();
     log.info({ runId, ...result }, 'resource scan complete');
     return result;
