@@ -34,6 +34,7 @@ import {
 // ── Constants ────────────────────────────────────────────────────────
 const MAX_TURNS_PER_TASK = 50;
 const CLAUDE_TIMEOUT_MS = 50 * 60 * 1000; // 50 minutes
+const RECONCILE_INTERVAL_MS = 15_000; // how often to check if the ticket was changed mid-run
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 
@@ -164,7 +165,59 @@ async function verifyChanges(branchName: string): Promise<{ hasCommits: boolean;
 
 // ── Claude Code CLI ─────────────────────────────────────────────────
 
-function runClaudeCode(prompt: string): Promise<{ success: boolean; output: string }> {
+/** Fetch a task's current status, or null if it can't be determined (network blip / not found). */
+async function fetchTaskStatus(taskId: number): Promise<string | null> {
+  try {
+    const r = await apiFetch<{ task?: Task; status?: string }>(`/api/tasks/${taskId}`);
+    return r?.task?.status ?? r?.status ?? null;
+  } catch {
+    return null; // 404 or transient error — be conservative, don't abort the run
+  }
+}
+
+/** Parse `FOLLOWUP: <title> — <why>` lines the agent emits for out-of-scope discoveries. */
+function parseFollowups(output: string): Array<{ title: string; why: string }> {
+  const out: Array<{ title: string; why: string }> = [];
+  for (const line of output.split('\n')) {
+    const m = line.match(/^\s*FOLLOWUP:\s*(.+)$/i);
+    if (!m) continue;
+    const rest = m[1].trim();
+    const sepMatch = rest.match(/\s[—–-]\s(.+)$/);
+    if (sepMatch) {
+      out.push({ title: rest.slice(0, sepMatch.index).trim(), why: sepMatch[1].trim() });
+    } else {
+      out.push({ title: rest, why: '' });
+    }
+  }
+  return out;
+}
+
+/** File the agent's out-of-scope discoveries as proposals for 懶懶 to evaluate (closes the discovery loop). */
+async function fileFollowups(sessionId: string, taskId: number, output: string): Promise<number> {
+  const followups = parseFollowups(output);
+  for (const f of followups) {
+    try {
+      createProposal(sessionId, 'engineer', 'optimization', f.title.slice(0, 120),
+        `（小工在執行 Task #${taskId} 時發現的範圍外改善）\n${f.why || f.title}`, 'low');
+    } catch (e) {
+      log('warn', `Failed to file followup proposal: ${String(e)}`);
+    }
+  }
+  if (followups.length > 0) {
+    await addComment(taskId, '小工', 'discussion',
+      `💡 發現 ${followups.length} 個範圍外改善，已開成提案給懶懶評估：\n${followups.map(f => `• ${f.title}`).join('\n')}`);
+    logDiscussion('engineer', sessionId, 'proposal', `Filed ${followups.length} follow-up proposal(s) from task #${taskId}`, { taskId });
+    log('info', `Filed ${followups.length} follow-up proposal(s) from task #${taskId}`);
+  }
+  return followups.length;
+}
+
+/**
+ * Run the coding agent. If `reconcileTaskId` is given, poll the ticket while it runs and
+ * abort (SIGTERM) if a human moves it out of 'in_progress' (cancel / reprioritize) — so the
+ * boss's mid-flight decisions take effect instead of wasting a 50-minute run.
+ */
+function runClaudeCode(prompt: string, reconcileTaskId?: number): Promise<{ success: boolean; output: string; cancelled?: boolean }> {
   return new Promise((resolve) => {
     const promptFile = path.join(tmpdir(), `claude-engineer-${Date.now()}.txt`);
     writeFileSync(promptFile, prompt, 'utf-8');
@@ -172,6 +225,7 @@ function runClaudeCode(prompt: string): Promise<{ success: boolean; output: stri
     const chunks: string[] = [];
     const errChunks: string[] = [];
     let killed = false;
+    let cancelled = false;
 
     const proc = spawn('sh', [
       '-c',
@@ -191,14 +245,29 @@ function runClaudeCode(prompt: string): Promise<{ success: boolean; output: stri
       proc.kill('SIGTERM');
     }, CLAUDE_TIMEOUT_MS);
 
+    // Reconciliation: abort if the ticket is changed away from 'in_progress' mid-run
+    const reconcileTimer = reconcileTaskId
+      ? setInterval(async () => {
+          const status = await fetchTaskStatus(reconcileTaskId);
+          if (status !== null && status !== 'in_progress') {
+            cancelled = true;
+            log('warn', `Reconciliation: task #${reconcileTaskId} is now '${status}' — aborting agent`);
+            proc.kill('SIGTERM');
+          }
+        }, RECONCILE_INTERVAL_MS)
+      : undefined;
+
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (reconcileTimer) clearInterval(reconcileTimer);
       try { unlinkSync(promptFile); } catch {}
 
       const stdout = chunks.join('').trim();
       const stderr = errChunks.join('').trim();
 
-      if (killed) {
+      if (cancelled) {
+        resolve({ success: false, output: stdout || '(aborted by reconciliation)', cancelled: true });
+      } else if (killed) {
         resolve({
           success: !!stdout,
           output: stdout ? stdout + '\n\n⚠️ (partial — execution timed out)' : `Timeout: exceeded ${CLAUDE_TIMEOUT_MS / 60000} min`,
@@ -215,6 +284,7 @@ function runClaudeCode(prompt: string): Promise<{ success: boolean; output: stri
 
     proc.on('error', (err) => {
       clearTimeout(timer);
+      if (reconcileTimer) clearInterval(reconcileTimer);
       try { unlinkSync(promptFile); } catch {}
       resolve({ success: false, output: `Failed to spawn claude: ${err.message}` });
     });
@@ -308,6 +378,12 @@ ${task.description || '(no description provided)'}`;
 ## If you are blocked
 ONLY if you genuinely could not complete the task, make the VERY FIRST LINE start with "BLOCKED:" followed by the reason.
 If you finished, do NOT write the words "blocked" or "blocker" anywhere — just give the summary.
+
+## Out-of-scope discoveries
+Stay surgical — do NOT implement improvements outside this task's scope.
+If you notice meaningful out-of-scope improvements, list each on its own line at the very end as:
+FOLLOWUP: <short title> — <why it's worth doing>
+(They become proposals for 懶懶 to evaluate. List none if there are none.)
 Keep it concise.
 `;
 
@@ -387,9 +463,9 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
   // 4. Fetch comments for context
   const comments = await apiFetch<{ comments: TaskComment[] }>(`/api/tasks/${task.id}/comments`).then(r => r.comments).catch(() => []);
 
-  // 5. Run Claude Code CLI
+  // 5. Run Claude Code CLI (with reconciliation: abort if the ticket is changed mid-run)
   const prompt = buildTaskPrompt(task, branchName, comments);
-  const result = await runClaudeCode(prompt);
+  const result = await runClaudeCode(prompt, task.id);
 
   // Verify branch position (Claude Code may have switched)
   try {
@@ -399,6 +475,14 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
       await execGit('checkout', branchName).catch(() => {});
     }
   } catch {}
+
+  // Reconciliation abort: the human changed the ticket — respect their decision, don't override state
+  if (result.cancelled) {
+    await addComment(task.id, '小工', 'action', '🛑 偵測到 ticket 在執行中被改動，已中止本次執行（reconciliation）。');
+    logDiscussion('engineer', sessionId, 'execution', `Task #${task.id} 因 ticket 被改動而中止`, { taskId: task.id });
+    await execGit('checkout', 'main').catch(() => {});
+    return { success: false, hitMaxTurns: false, status: 'error', summary: 'Cancelled by reconciliation', branchName };
+  }
 
   // Record work output
   const outputTruncated = result.output.slice(0, 4000);
@@ -474,6 +558,9 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
     return { success: false, hitMaxTurns: false, status: 'blocked', summary: 'No changes detected', branchName };
   }
 
+  // 10b. File any out-of-scope discoveries as proposals for 懶懶 (don't expand this task's scope)
+  await fileFollowups(sessionId, task.id, result.output);
+
   // 11. Move to review
   const summary = `Branch: ${branchName}\n${changes.summary}\n\n${result.output.slice(0, 500)}`;
   await updateTask(task.id, {
@@ -521,9 +608,15 @@ export async function resumeTask(
   // Fetch comments
   const comments = await apiFetch<{ comments: TaskComment[] }>(`/api/tasks/${task.id}/comments`).then(r => r.comments).catch(() => []);
 
-  // Run Claude Code
+  // Run Claude Code (with reconciliation)
   const prompt = buildResumePrompt(task, branchName, comments, userReply);
-  const result = await runClaudeCode(prompt);
+  const result = await runClaudeCode(prompt, task.id);
+
+  if (result.cancelled) {
+    await addComment(task.id, '小工', 'action', '🛑 偵測到 ticket 在執行中被改動，已中止恢復執行（reconciliation）。');
+    await execGit('checkout', 'main').catch(() => {});
+    return { success: false, hitMaxTurns: false, status: 'error', summary: 'Cancelled by reconciliation', branchName };
+  }
 
   const outputTruncated = result.output.slice(0, 4000);
   await addComment(task.id, '小工', 'action', `🔧 恢復工作紀錄:\n${outputTruncated}`);
@@ -569,6 +662,8 @@ export async function resumeTask(
     await execGit('checkout', 'main').catch(() => {});
     return { success: false, hitMaxTurns: false, status: 'blocked', summary: 'No changes after resume', branchName };
   }
+
+  await fileFollowups(sessionId, task.id, result.output);
 
   const summary = `Branch: ${branchName}\n${changes.summary}`;
   await updateTask(task.id, { status: 'review', completed_by: '小工', result_notes: summary.slice(0, 1000) });
