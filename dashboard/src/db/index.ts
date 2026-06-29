@@ -356,6 +356,66 @@ export function getDb(): Database.Database {
   `);
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_scan_runs_started ON trend_scan_runs(started_at)');
 
+  // Resources curation tables (學習資源策展：爬 → 評分 → Threads 草稿)
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS curated_resources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guid TEXT UNIQUE NOT NULL,
+      content_type TEXT NOT NULL,
+      title TEXT,
+      description TEXT,
+      url TEXT,
+      author TEXT,
+      published_at TEXT,
+      source TEXT,
+      stars INTEGER,
+      last_stars INTEGER,
+      last_stars_at TEXT,
+      star_velocity REAL,
+      social_buzz REAL DEFAULT 0,
+      freshness_score REAL DEFAULT 0,
+      freshness_reason TEXT,
+      ai_score REAL,
+      ai_reasoning TEXT,
+      ai_highlights TEXT,
+      ai_angle TEXT,
+      status TEXT DEFAULT 'new',
+      first_seen_at TEXT DEFAULT (datetime('now')),
+      last_surfaced_at TEXT,
+      scan_run_id INTEGER
+    )
+  `);
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS resource_drafts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      resource_guid TEXT NOT NULL,
+      draft_text TEXT,
+      viral_score REAL,
+      status TEXT DEFAULT 'new',
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS resource_scan_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at TEXT,
+      finished_at TEXT,
+      duration_ms INTEGER,
+      trigger TEXT,
+      scraped INTEGER DEFAULT 0,
+      below_gate INTEGER DEFAULT 0,
+      deduped INTEGER DEFAULT 0,
+      scored INTEGER DEFAULT 0,
+      drafted INTEGER DEFAULT 0,
+      recorded INTEGER DEFAULT 0,
+      error TEXT,
+      dropped TEXT
+    )
+  `);
+  safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_curated_resources_guid ON curated_resources(guid)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_curated_resources_status ON curated_resources(status)');
+  safeIndex('CREATE INDEX IF NOT EXISTS idx_resource_drafts_guid ON resource_drafts(resource_guid)');
+
   // Inspiration Library tables (insights + insight_drafts)
   _db!.exec(`
     CREATE TABLE IF NOT EXISTS insights (
