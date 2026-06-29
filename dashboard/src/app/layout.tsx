@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
@@ -22,6 +22,19 @@ const notoSansTC = Noto_Sans_TC({
 export const metadata: Metadata = {
   title: "AI懶人報 Dashboard",
   description: "AI懶人報 — Podcast Automation Dashboard",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "AI懶人報",
+  },
+  icons: {
+    apple: "/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({

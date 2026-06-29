@@ -16,6 +16,7 @@
     "@langchain/langgraph": "^1.2.9",
     "@tailwindcss/typography": "^0.5.19",
     "@types/sharp": "^0.31.1",
+    "@types/web-push": "^3.6.4",
     "better-sqlite3": "^12.9.0",
     "fs-extra": "^11.3.4",
     "googleapis": "^171.4.0",
@@ -30,7 +31,8 @@
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "sharp": "^0.34.5",
-    "sqlite-vec": "^0.1.9"
+    "sqlite-vec": "^0.1.9",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -147,6 +147,70 @@ async function signPayload(body: string, secret: string): Promise<string> {
   return createHmac('sha256', secret).update(body).digest('hex');
 }
 
+// ── Web Push Channel ──
+// Pushes selected events straight to Tommy's iPhone (PWA on home screen).
+// Which events buzz the phone is controlled by the `push_event_filter` setting
+// (治「太雜」: published is FYI-only by default). Deep-links into the dashboard
+// so approve/reject happens on the real review page.
+
+function buildPushUrl(payload: EventPayload): string {
+  switch (payload.type) {
+    case 'episode.published':
+      return payload.urls?.youtube || payload.urls?.soundon || '/episodes';
+    default:
+      // review / failures all deep-link to the episode's review page
+      return payload.episodeId ? `/episodes/${payload.episodeId}/review` : '/episodes';
+  }
+}
+
+function buildPushNotification(payload: EventPayload): { title: string; body: string } {
+  const segment = SEGMENT_LABELS[payload.segmentType || ''] || payload.segmentType || '';
+  const epLabel = payload.episodeNumber ? `EP#${payload.episodeNumber}` : `ID:${payload.episodeId}`;
+  const seg = segment ? `（${segment}）` : '';
+
+  switch (payload.type) {
+    case 'episode.ready_for_review':
+      return { title: `🎧 待審核 ${epLabel}`, body: `${seg}${payload.candidateTitles?.[0] || '節目已備妥，等你審核'}`.trim() };
+    case 'pipeline.completed':
+      return { title: `✅ Pipeline 完成 ${epLabel}`, body: `${seg}${payload.candidateTitles?.[0] || '等待 review'}`.trim() };
+    case 'pipeline.failed':
+      return { title: `⚠️ Pipeline 失敗 ${epLabel}`, body: `${seg} ${payload.error || 'Unknown'}（60 秒後自動重試）`.trim() };
+    case 'pipeline.retry.failed':
+      return { title: `❌ 重試也失敗 ${epLabel}`, body: `${seg}需要手動介入：${payload.retryError || payload.error || ''}`.trim() };
+    case 'pipeline.retry.success':
+      return { title: `🔄 重試成功 ${epLabel}`, body: `${seg}Pipeline 已恢復，等待 review`.trim() };
+    case 'episode.published':
+      return { title: `✅ 已發布 ${epLabel}`, body: payload.title || segment || '已發布到各平台' };
+    case 'episode.publish.partial_failure': {
+      const platforms = payload.publishErrors?.map(e => e.platform).join('、') || '';
+      return { title: `⚠️ 部分發布失敗 ${epLabel}`, body: `失敗平台：${platforms}` };
+    }
+    default:
+      return { title: `${payload.type} ${epLabel}`, body: segment };
+  }
+}
+
+registerChannel({
+  name: 'web-push',
+  send: async (payload) => {
+    // Lazy imports: keep web-push + db out of module-eval (channel registers regardless of config).
+    const { sendPushToAll, isPushConfigured } = await import('./webPush');
+    if (!isPushConfigured()) return;
+
+    // Per-event opt-in filter (治「太雜」). Missing setting → push everything.
+    const { getDb } = await import('@/db');
+    let allowed: string[] | null = null;
+    try {
+      const row = getDb().prepare("SELECT value FROM settings WHERE key = 'push_event_filter'").get() as { value?: string } | undefined;
+      if (row?.value) allowed = JSON.parse(row.value);
+    } catch { /* fall through to push-all */ }
+    if (allowed && !allowed.includes(payload.type)) return;
+
+    const { title, body } = buildPushNotification(payload);
+    await sendPushToAll({ title, body, url: buildPushUrl(payload), tag: `ep-${payload.episodeId}` });
+  },
+});
+
 if (HERMES_WEBHOOK_URL) {
   registerChannel({
     name: 'hermes-webhook',

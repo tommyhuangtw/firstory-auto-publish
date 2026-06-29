@@ -592,6 +592,14 @@ export async function sendBossBrief(sessionId: string): Promise<void> {
     return;
   }
 
+  // ── iPhone push (parallel to Telegram) — only when something needs a decision ──
+  if (decisionCount > 0) {
+    await sendBossBriefPush(
+      `☀️ 老闆快報 ${dateStr}`,
+      `有 ${decisionCount} 件需要你拍板（${reviewTasks.length} 件等上線 / ${askBossTasks.length} 件高風險）`,
+    );
+  }
+
   // ── Header ──
   await sendTelegram(
     `☀️ <b>老闆快報 ${dateStr}</b>\n` +
@@ -681,6 +689,27 @@ export async function sendBossBrief(sessionId: string): Promise<void> {
 
   logDiscussion('pm', sessionId, 'report',
     `老闆快報已發送：${decisionCount} 件待拍板（${reviewTasks.length} 上線 / ${askBossTasks.length} 高風險）, ${fyiDone.length} 件自動完成`, {});
+}
+
+/**
+ * Fire an iPhone push for the 老闆快報 (parallel to Telegram). Best-effort:
+ * posts to the dashboard's internal push endpoint; silently no-ops if push
+ * isn't configured or the server is unreachable.
+ */
+async function sendBossBriefPush(title: string, body: string): Promise<void> {
+  const baseUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
+  try {
+    await fetch(`${baseUrl}/api/push/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-push-secret': process.env.PUSH_INTERNAL_SECRET || '',
+      },
+      body: JSON.stringify({ title, body, url: '/tasks', tag: 'boss-brief' }),
+    });
+  } catch (err) {
+    log('warn', `Boss brief push failed (non-fatal): ${(err as Error).message}`);
+  }
 }
 
 /**
