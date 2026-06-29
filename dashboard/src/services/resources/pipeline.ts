@@ -66,12 +66,13 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
 
     const upsert = db.prepare(`
       INSERT INTO curated_resources (guid, content_type, title, description, url, author, published_at, source,
-        stars, last_stars, last_stars_at, star_velocity, social_buzz, freshness_score, freshness_reason,
+        stars, likes, comments, reposts, last_stars, last_stars_at, star_velocity, social_buzz, freshness_score, freshness_reason,
         ai_score, ai_summary, ai_reasoning, ai_highlights, ai_angle, status, last_surfaced_at, scan_run_id)
       VALUES (@guid,@content_type,@title,@description,@url,@author,@published_at,@source,
-        @stars,@stars,datetime('now'),@star_velocity,@social_buzz,@freshness_score,@freshness_reason,
+        @stars,@likes,@comments,@reposts,@stars,datetime('now'),@star_velocity,@social_buzz,@freshness_score,@freshness_reason,
         @ai_score,@ai_summary,@ai_reasoning,@ai_highlights,@ai_angle,'surfaced',datetime('now'),@scan_run_id)
       ON CONFLICT(guid) DO UPDATE SET
+        likes=@likes, comments=@comments, reposts=@reposts,
         star_velocity=@star_velocity, social_buzz=@social_buzz, freshness_score=@freshness_score,
         freshness_reason=@freshness_reason, ai_score=@ai_score, ai_summary=@ai_summary, ai_reasoning=@ai_reasoning,
         ai_highlights=@ai_highlights, ai_angle=@ai_angle, status='surfaced', last_surfaced_at=datetime('now'),
@@ -82,6 +83,7 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
         upsert.run({
           guid: r.guid, content_type: r.contentType, title: r.title, description: r.description, url: r.url,
           author: r.author, published_at: r.publishedAt ?? null, source: r.source, stars: r.stars ?? null,
+          likes: r.engagement?.likes ?? null, comments: r.engagement?.comments ?? null, reposts: r.engagement?.reposts ?? null,
           star_velocity: r.starVelocity ?? null, social_buzz: r.socialBuzz, freshness_score: r.freshnessScore,
           freshness_reason: r.freshnessReason, ai_score: r.aiScore, ai_summary: r.aiSummary, ai_reasoning: r.aiReasoning,
           ai_highlights: JSON.stringify(r.aiHighlights), ai_angle: r.aiAngle, scan_run_id: runId,

@@ -28,10 +28,15 @@ export async function sendResourceDigest(
             ? '🆕 剛上線新工具'
             : '🔥 社群熱議';
       const postDate = r.publishedAt ? new Date(r.publishedAt).toISOString().split('T')[0] : '';
+      const eng = r.contentType === 'github'
+        ? `⭐ ${r.stars ?? 0} stars${postDate ? ` ｜ 📅 發布 ${postDate}` : ''}`
+        : `👍 ${r.engagement?.likes ?? 0} ｜ 💬 ${r.engagement?.comments ?? 0} ｜ 🔁 ${r.engagement?.reposts ?? 0}${postDate ? ` ｜ 📅 ${postDate}` : ''}`;
       return `<div style="border:1px solid #e0e0e0;border-radius:12px;padding:18px;margin:16px 0;background:#fafafa">
       <h3 style="margin:0 0 6px">#${i + 1} ${esc(r.title)}</h3>
-      <p style="margin:4px 0;color:#555">📊 ${r.aiScore}/100 ｜ ${esc(r.author || r.contentType)} ｜ ${why}${postDate ? ` ｜ 📅 ${postDate}` : ''}</p>
+      <p style="margin:4px 0;color:#555">📊 ${r.aiScore}/100 ｜ ${esc(r.author || r.contentType)} ｜ ${why}</p>
+      <p style="margin:4px 0;color:#555">${eng}</p>
       <p style="margin:8px 0;font-size:15px;line-height:1.6">📌 ${esc(r.aiSummary || r.aiHighlights.join('、'))}</p>
+      ${r.description ? `<p style="margin:8px 0;padding-left:12px;border-left:3px solid #ccc;color:#666;font-size:13px;line-height:1.6;white-space:pre-wrap">${esc(r.description.length > 250 ? r.description.slice(0, 250).trimEnd() + '…' : r.description)}</p>` : ''}
       <p>🔗 <a href="${esc(r.url)}">${esc(r.url)}</a></p>
     </div>`;
     })

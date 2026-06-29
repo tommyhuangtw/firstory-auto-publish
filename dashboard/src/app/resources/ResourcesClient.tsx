@@ -8,9 +8,13 @@ interface Row {
   guid: string;
   content_type: string;
   title: string;
+  description: string | null;
   url: string;
   author: string | null;
   stars: number | null;
+  likes: number | null;
+  comments: number | null;
+  reposts: number | null;
   star_velocity: number | null;
   published_at: string | null;
   freshness_reason: string;
@@ -59,6 +63,17 @@ function repoAge(iso: string | null): string {
   if (!Number.isFinite(d) || d < 0) return '';
   return d < 31 ? `${d} 天` : `${Math.floor(d / 30)} 個月`;
 }
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString().split('T')[0] : '';
+}
+
+const clip = (s: string | null, n = 250): string => {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const splitList = (v: string): string[] => v.split(',').map((s) => s.trim()).filter(Boolean);
@@ -435,13 +450,24 @@ export default function ResourcesClient() {
 
                 <p className="text-xs text-zinc-500 mt-1.5 break-words">
                   {whyHot(r)}
-                  {r.stars != null && `　｜⭐ ${r.stars}`}
                   {r.published_at && repoAge(r.published_at) && `　｜${repoAge(r.published_at)}`}
                   {r.ai_score != null && `　｜評分 ${r.ai_score}/100`}
                 </p>
 
+                <p className="text-xs text-zinc-400 mt-1 break-words">
+                  {r.content_type === 'github'
+                    ? `⭐ ${r.stars ?? 0} stars${r.published_at ? `　｜📅 發布 ${fmtDate(r.published_at)}` : ''}`
+                    : `👍 ${r.likes ?? 0}　💬 ${r.comments ?? 0}　🔁 ${r.reposts ?? 0}${r.published_at ? `　｜📅 ${fmtDate(r.published_at)}` : ''}`}
+                </p>
+
                 {r.ai_summary && (
                   <p className="text-sm text-zinc-200 mt-2.5 break-words">📌 {r.ai_summary}</p>
+                )}
+
+                {r.description && (
+                  <p className="text-xs text-zinc-400 mt-2 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed">
+                    {clip(r.description, 250)}
+                  </p>
                 )}
 
                 {draft ? (

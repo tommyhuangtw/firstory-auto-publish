@@ -369,6 +369,9 @@ export function getDb(): Database.Database {
       published_at TEXT,
       source TEXT,
       stars INTEGER,
+      likes INTEGER,
+      comments INTEGER,
+      reposts INTEGER,
       last_stars INTEGER,
       last_stars_at TEXT,
       star_velocity REAL,
@@ -416,6 +419,9 @@ export function getDb(): Database.Database {
   `);
   safeAlter('ALTER TABLE resource_scan_runs ADD COLUMN cost_usd REAL DEFAULT 0'); // 既有 DB 補欄位
   safeAlter('ALTER TABLE curated_resources ADD COLUMN ai_summary TEXT');           // 中文重點說明
+  safeAlter('ALTER TABLE curated_resources ADD COLUMN likes INTEGER');             // X 讚數
+  safeAlter('ALTER TABLE curated_resources ADD COLUMN comments INTEGER');          // X 留言數
+  safeAlter('ALTER TABLE curated_resources ADD COLUMN reposts INTEGER');           // X 轉推數
   safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_curated_resources_guid ON curated_resources(guid)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_curated_resources_status ON curated_resources(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_resource_drafts_guid ON resource_drafts(resource_guid)');
