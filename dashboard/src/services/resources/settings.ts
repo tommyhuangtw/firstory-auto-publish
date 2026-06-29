@@ -22,7 +22,10 @@ export function rget(key: ResourceSettingKey): string {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
   return row?.value ?? DEFAULTS[key];
 }
-export function rgetNum(key: ResourceSettingKey): number { return parseFloat(rget(key)); }
+export function rgetNum(key: ResourceSettingKey): number {
+  const n = parseFloat(rget(key));
+  return Number.isFinite(n) ? n : parseFloat(DEFAULTS[key]);
+}
 export function rgetList(key: ResourceSettingKey, sep = ','): string[] {
   return rget(key).split(sep).map((s) => s.trim()).filter(Boolean);
 }
