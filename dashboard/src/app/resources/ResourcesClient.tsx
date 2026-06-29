@@ -70,11 +70,6 @@ function fmtDate(iso: string | null): string {
   return Number.isFinite(t) ? new Date(t).toISOString().split('T')[0] : '';
 }
 
-const clip = (s: string | null, n = 250): string => {
-  if (!s) return '';
-  return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
-};
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const splitList = (v: string): string[] => v.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -465,9 +460,9 @@ export default function ResourcesClient() {
                 )}
 
                 {r.description && (
-                  <p className="text-xs text-zinc-400 mt-2 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed">
-                    {clip(r.description, 250)}
-                  </p>
+                  <div className="text-xs text-zinc-400 mt-2 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed max-h-36 overflow-y-auto">
+                    {r.description}
+                  </div>
                 )}
 
                 {draft ? (
