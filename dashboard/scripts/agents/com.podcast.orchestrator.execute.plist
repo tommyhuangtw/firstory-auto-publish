@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.podcast.orchestrator.heartbeat</string>
+  <string>com.podcast.orchestrator.execute</string>
 
   <key>WorkingDirectory</key>
   <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard</string>
@@ -24,13 +24,26 @@
     <string>/Users/tommyhuang</string>
   </dict>
 
-  <key>StartInterval</key>
-  <integer>7200</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key>
+      <integer>12</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>
+      <integer>0</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
 
   <key>StandardOutPath</key>
-  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-heartbeat.log</string>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-execute.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-heartbeat.err</string>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-execute.err</string>
 
   <key>RunAtLoad</key>
   <false/>
