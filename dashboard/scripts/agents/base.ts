@@ -94,6 +94,57 @@ interface LLMResponse {
   durationMs: number;
 }
 
+// ── WORKFLOW.md (externalized agent policy: tunable knobs + system prompts) ──
+let _workflowCache: { config: Record<string, string>; prompts: Record<string, string> } | null = null;
+
+/** Read + parse scripts/agents/WORKFLOW.md (flat front-matter knobs + `## AGENT:<id>` prompt sections). */
+function loadWorkflow(): { config: Record<string, string>; prompts: Record<string, string> } {
+  if (_workflowCache) return _workflowCache;
+  const config: Record<string, string> = {};
+  const prompts: Record<string, string> = {};
+  try {
+    const raw = readFileSync(path.join(__dirname, 'WORKFLOW.md'), 'utf-8');
+    let body = raw;
+    if (raw.startsWith('---')) {
+      const end = raw.indexOf('\n---', 3);
+      if (end > 0) {
+        for (const line of raw.slice(3, end).split('\n')) {
+          const t = line.trim();
+          if (!t || t.startsWith('#')) continue;
+          const i = t.indexOf(':');
+          if (i > 0) config[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+        }
+        body = raw.slice(end + 4);
+      }
+    }
+    // Split on `## AGENT:<id>` markers; the id is the rest of that line, prompt is until the next marker.
+    const parts = body.split(/^##\s*AGENT:/m);
+    for (let k = 1; k < parts.length; k++) {
+      const nl = parts[k].indexOf('\n');
+      if (nl < 0) continue;
+      prompts[parts[k].slice(0, nl).trim()] = parts[k].slice(nl + 1).trim();
+    }
+  } catch (e) {
+    log('warn', `Could not load WORKFLOW.md: ${String(e)}`);
+  }
+  _workflowCache = { config, prompts };
+  return _workflowCache;
+}
+
+/** Get an agent's system prompt from WORKFLOW.md (falls back to `fallback` if missing). */
+export function getAgentSystemPrompt(agentId: string, fallback = ''): string {
+  const p = loadWorkflow().prompts[agentId];
+  if (!p) { log('warn', `WORKFLOW.md has no prompt for '${agentId}', using fallback`); return fallback; }
+  return p;
+}
+
+/** Get a numeric knob from WORKFLOW.md front matter (falls back to `def`). */
+export function getWorkflowNumber(key: string, def: number): number {
+  const v = loadWorkflow().config[key];
+  const n = v != null ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : def;
+}
+
 // ── Logging ──────────────────────────────────────────────────────────
 export function log(level: string, msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString();

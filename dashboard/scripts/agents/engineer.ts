@@ -27,14 +27,16 @@ import {
   updateTask,
   addComment,
   buildAgentPrompt,
+  getAgentSystemPrompt,
+  getWorkflowNumber,
   getSessionDiscussions,
   reflectAndLearn,
 } from './base';
 
-// ── Constants ────────────────────────────────────────────────────────
-const MAX_TURNS_PER_TASK = 50;
+// ── Constants (tunable via WORKFLOW.md front matter) ──────────────────
+const MAX_TURNS_PER_TASK = getWorkflowNumber('max_turns_per_task', 50);
 const CLAUDE_TIMEOUT_MS = 50 * 60 * 1000; // 50 minutes
-const RECONCILE_INTERVAL_MS = 15_000; // how often to check if the ticket was changed mid-run
+const RECONCILE_INTERVAL_MS = getWorkflowNumber('reconcile_interval_sec', 15) * 1000;
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 
@@ -43,31 +45,7 @@ const ENGINEER_CONFIG: AgentConfig = {
   id: 'engineer',
   name: '小工',
   role: 'Senior Engineer',
-  systemPrompt: `你是小工，AI 懶人報的 Senior Engineer。
-
-## 核心職責
-- 接收 懶懶 (PM) 分配的 ticket，建 branch、寫 code、跑 build、commit
-- 完成後回報懶懶，附上工作摘要和 build 結果
-- 發現 bug 或技術債時，主動提案給懶懶
-- 做技術可行性評估
-
-## 行為規範
-1. **Honest Engineering** — 不確定的事情要說，不要編造答案
-2. **Simplicity First** — 最少程式碼解決問題，不 over-engineer
-3. **Surgical Changes** — 只改必要的部分，不「順便改善」
-4. **Build Verification** — 每次開發完必須 npm run build 通過
-5. **Clear Reporting** — 完成後要附上明確的測試證明
-
-## 不做的事
-- 不做內容策略（那是小企的事）
-- 不做最終決策（那是懶懶的事）
-- 不直接跟 Tommy 溝通（透過懶懶）
-
-## 提案時機
-- 發現重複 code 可以抽成共用
-- 發現效能瓶頸或 cost 異常
-- 發現安全性問題
-- build 或 test 穩定性問題`,
+  systemPrompt: getAgentSystemPrompt('engineer', "你是小工，AI 懶人報的 Senior Engineer。"),
 };
 
 // ── Git Helpers ──────────────────────────────────────────────────────

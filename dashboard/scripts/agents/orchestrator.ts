@@ -23,6 +23,7 @@ import {
   apiFetch,
   updateTask,
   getTaskBoardState,
+  getWorkflowNumber,
   reflectAndLearn,
 } from './base';
 
@@ -31,7 +32,7 @@ import { evaluateProposals, reviewPendingTasks, reviewTask, sendBossBrief } from
 import { executeTask, resumeTask, type ExecutionResult } from './engineer';
 
 // ── Constants ────────────────────────────────────────────────────────
-const MAX_TASKS_PER_RUN = 10; // safety backstop per run; the queue is drained until empty up to this cap
+const MAX_TASKS_PER_RUN = getWorkflowNumber('max_tasks_per_run', 10); // backstop; queue drains until empty up to this cap
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 const LOCKFILE = path.join(DASHBOARD_DIR, 'data', 'orchestrator.lock');
 const LOG_DIR = path.join(DASHBOARD_DIR, 'data', 'logs');
