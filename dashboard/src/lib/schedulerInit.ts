@@ -141,6 +141,10 @@ export function initializeSchedulerJobs(): void {
     scheduler.register(INSPIRATION_CRAWL_JOB, insp.cron, runInspirationCrawl);
   }
 
+  // Resource curation — scrape AI/dev resources, gate on freshness, score, dedup,
+  // draft, and record the top picks. Daily at 08:00.
+  scheduler.register('資源策展掃描', '0 8 * * *', runResourceScanJob);
+
   // Thumbnail style auto-discovery — fires every Sunday 09:00 but only proceeds once
   // every ~2 weeks (node-cron has no biweekly syntax; the handler gates on a stored
   // last-run timestamp). Generates 10 new styles + sample previews for human review.
@@ -283,6 +287,17 @@ async function runVoiceSync(): Promise<void> {
     log.info(result, 'Threads voice sync complete');
   } catch (err) {
     log.error({ err: (err as Error).message }, 'Threads voice sync failed');
+  }
+}
+
+async function runResourceScanJob(): Promise<void> {
+  log.info('Running resource curation scan...');
+  try {
+    const { runResourceScan } = await import('@/services/resources/pipeline');
+    const result = await runResourceScan({ trigger: 'cron' });
+    log.info(result, 'Resource curation scan complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Resource curation scan failed');
   }
 }
 
