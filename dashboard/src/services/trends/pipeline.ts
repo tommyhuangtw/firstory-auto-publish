@@ -13,6 +13,7 @@ import { runScrape } from './crawler';
 import { engagementVelocity, isAIRelevant, isNicheRelevant } from './scorer';
 import { embedTexts } from './embeddings';
 import { sendTrendAlert } from './digest';
+import { maybePushContentEvent } from '@/services/webPush';
 import type { TrendScanResult, RawThreadPost } from './types';
 
 const log = createChildLogger('trend-pipeline');
@@ -125,6 +126,19 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
     stale: result.stale, deduped: result.deduped, recorded: result.postsRecorded,
     dropped: JSON.stringify(dropped),
   });
+
+  // 回覆專區有新貼文 → 推播到 iPhone（只算這輪 niche 命中，沒命中就不吵）
+  const nicheCount = (db.prepare(
+    'SELECT COUNT(*) AS c FROM trend_posts WHERE scan_run_id = ? AND niche = 1'
+  ).get(runId) as { c: number }).c;
+  if (nicheCount > 0) {
+    await maybePushContentEvent('trends.reply_zone.new', {
+      title: '💬 回覆專區有新貼文',
+      body: `掃到 ${nicheCount} 則可回覆的貼文`,
+      url: '/trends',
+      tag: 'trends-reply',
+    });
+  }
 
   log.info(
     { runId, scraped: result.scraped, belowFloor: result.belowFloor, stale: result.stale,

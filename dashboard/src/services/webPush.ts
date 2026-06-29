@@ -53,6 +53,24 @@ interface SubRow {
 }
 
 /**
+ * Push a content-discovery event (trends 回覆專區 / resources), gated by the same
+ * `push_event_filter` setting so it stays toggleable alongside pipeline events.
+ * Best-effort — never throws into the caller's scan flow.
+ */
+export async function maybePushContentEvent(eventKey: string, notification: PushNotification): Promise<void> {
+  try {
+    const row = getDb().prepare("SELECT value FROM settings WHERE key = 'push_event_filter'").get() as { value?: string } | undefined;
+    if (row?.value) {
+      const allowed = JSON.parse(row.value) as string[];
+      if (!allowed.includes(eventKey)) return;  // user toggled this event off
+    }
+    await sendPushToAll(notification);
+  } catch (err) {
+    log.error({ eventKey, error: (err as Error).message }, 'content push failed');
+  }
+}
+
+/**
  * Send a notification to every enabled subscription.
  * Returns how many were delivered. Prunes dead subscriptions.
  */

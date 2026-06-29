@@ -8,6 +8,7 @@ import { applyFreshnessGate, dedupeForSurface } from './freshness';
 import { scoreAll } from './scorer';
 import { sendResourceDigest } from './digest';
 import { rgetNum } from './settings';
+import { maybePushContentEvent } from '@/services/webPush';
 import type { ResourceScanResult } from './types';
 
 const log = createChildLogger('resource-pipeline');
@@ -64,6 +65,15 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     // 草稿改成 /resources 頁上對某篇有興趣時「✍️ 改寫成我的貼文」按鈕 on-demand 生成。
     const topN = worthy.slice(0, rgetNum('resource_top_n'));
 
+    // Which of the top-N are genuinely NEW (vs already-seen re-surfaced)? Count before upsert
+    // so the iPhone push only fires for fresh finds, not every re-scan of the same resources.
+    const newGuids = topN.length
+      ? new Set(topN.map((r) => r.guid)).size -
+        (db.prepare(
+          `SELECT COUNT(*) AS c FROM curated_resources WHERE guid IN (${topN.map(() => '?').join(',')})`
+        ).get(...topN.map((r) => r.guid)) as { c: number }).c
+      : 0;
+
     const upsert = db.prepare(`
       INSERT INTO curated_resources (guid, content_type, title, description, url, author, published_at, source,
         stars, likes, comments, reposts, last_stars, last_stars_at, star_velocity, social_buzz, freshness_score, freshness_reason,
@@ -92,6 +102,16 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
       }
     });
     tx();
+
+    // 學習資源掃到「高分新資源」→ 推播到 iPhone（只算真正新的，re-surface 不吵）
+    if (newGuids > 0) {
+      await maybePushContentEvent('resources.new', {
+        title: '📚 學習資源有新內容',
+        body: `掃到 ${newGuids} 則高分新資源`,
+        url: '/resources',
+        tag: 'resources-new',
+      });
+    }
 
     // 寫入已 commit → 本次掃描在資料層已成功。Email digest 是副作用，失敗只記 warn，
     // 不可讓它把整輪 run 標成 error（否則 audit 信號反轉、funnel 計數遺失）。

@@ -613,14 +613,28 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_jitter_minutes', '25');  // schedule jitter window in minutes (anti-detection)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 
-  // Web Push: which pipeline events actually buzz your iPhone (治「太雜」— published 預設關掉當 FYI)
+  // Web Push: which events actually buzz your iPhone (治「太雜」— published 預設關掉當 FYI)
   seedSetting('push_event_filter', JSON.stringify([
     'episode.ready_for_review',
     'pipeline.failed',
     'pipeline.retry.failed',
     'episode.publish.partial_failure',
     'boss.brief',
+    'trends.reply_zone.new',   // 回覆專區有新貼文
+    'resources.new',           // 學習資源掃到高分新資源
   ]));
+  // Merge newly-added push keys into existing DBs (seed above is INSERT OR IGNORE only).
+  try {
+    const existing = _db!.prepare("SELECT value FROM settings WHERE key = 'push_event_filter'").get() as { value?: string } | undefined;
+    if (existing?.value) {
+      const arr = JSON.parse(existing.value) as string[];
+      let changed = false;
+      for (const k of ['trends.reply_zone.new', 'resources.new']) {
+        if (!arr.includes(k)) { arr.push(k); changed = true; }
+      }
+      if (changed) _db!.prepare("UPDATE settings SET value = ? WHERE key = 'push_event_filter'").run(JSON.stringify(arr));
+    }
+  } catch { /* setting malformed — leave as-is */ }
 
   // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).
   // Inlined here (not imported) to avoid a circular import with the registry service.
