@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   // stuck loading. Allow the public host so dev resources load cross-origin.
   allowedDevOrigins: ['hub.ailanbao.org'],
 
+  // Prod is served by `next dev`, so the on-screen dev indicator (bottom-left "N")
+  // would otherwise sit on top of the mobile bottom-nav 首頁 button. Hide it.
+  devIndicators: false,
+
   // Never cache the service worker so push-handler updates take effect immediately.
   async headers() {
     return [

@@ -378,7 +378,7 @@ export default function Navigation() {
         <div className="md:hidden fixed inset-0 z-40" onClick={() => setShowMore(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div
-            className="absolute bottom-16 inset-x-0 bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-4 pb-2"
+            className="absolute bottom-[calc(3.75rem+env(safe-area-inset-bottom))] inset-x-0 bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-4 pb-2"
             onClick={e => e.stopPropagation()}
           >
             <div className="w-8 h-1 rounded-full bg-zinc-700 mx-auto mb-3" />
@@ -415,36 +415,45 @@ export default function Navigation() {
         </div>
       )}
 
-      {/* Mobile bottom bar — 4 primary + More */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900 border-t border-zinc-800 z-50">
+      {/* Mobile bottom bar — 4 primary + More.
+          pb safe-area keeps tap targets above the iPhone home indicator (was 太下面);
+          active tab gets a top accent bar for a clearer current-page cue. */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900/95 backdrop-blur border-t border-zinc-800 z-50 pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
-          {primaryItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setShowMore(false)}
-              className={`relative flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
-                isActive(item.href) ? 'text-brand' : 'text-zinc-400'
-              }`}
-            >
-              {item.icon}
-              {item.href === '/trends' && trendsUnread > 0 && (
-                <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
-              )}
-              {item.href === '/inspiration' && inspirationUnread > 0 && (
-                <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
-              )}
-              <span className="mt-1">{item.label}</span>
-            </Link>
-          ))}
+          {primaryItems.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setShowMore(false)}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${
+                  active ? 'text-brand' : 'text-zinc-400 active:text-brand-cream'
+                }`}
+              >
+                {active && <span className="absolute top-0 inset-x-[30%] h-0.5 rounded-full bg-brand" />}
+                {item.icon}
+                {item.href === '/trends' && trendsUnread > 0 && (
+                  <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
+                )}
+                {item.href === '/inspiration' && inspirationUnread > 0 && (
+                  <span className="absolute top-1.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-red-500" />
+                )}
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
           <button
             onClick={() => setShowMore(prev => !prev)}
-            className={`flex-1 flex flex-col items-center py-2.5 text-[11px] transition-colors ${
-              showMore ? 'text-brand' : 'text-zinc-400'
+            aria-expanded={showMore}
+            className={`relative flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${
+              showMore ? 'text-brand' : 'text-zinc-400 active:text-brand-cream'
             }`}
           >
+            {showMore && <span className="absolute top-0 inset-x-[30%] h-0.5 rounded-full bg-brand" />}
             {moreIcon}
-            <span className="mt-1">更多</span>
+            <span>更多</span>
           </button>
         </div>
       </nav>

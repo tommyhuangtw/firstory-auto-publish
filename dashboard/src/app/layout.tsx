@@ -33,6 +33,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#09090b",
+  // Let content extend into the iOS safe areas so env(safe-area-inset-*) is non-zero,
+  // which the mobile bottom-nav uses to sit above the home indicator.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -47,7 +50,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-zinc-950 text-zinc-100">
         <Navigation />
-        <main className="md:ml-56 pb-16 md:pb-0">{children}</main>
+        <main className="md:ml-56 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       </body>
     </html>
   );
