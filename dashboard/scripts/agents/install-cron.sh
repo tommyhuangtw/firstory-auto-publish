@@ -29,8 +29,8 @@ case "${1:-install}" in
     done
     echo ""
     echo "Orchestrator cron installed:"
-    echo "  Morning (08:00) — propose + evaluate + execute"
-    echo "  Evening (20:00) — execute + review + summary"
+    echo "  Morning (08:00) — review leftovers + send 老闆快報 (the one daily boss touchpoint)"
+    echo "  Evening (20:00) — propose + evaluate + execute + review (silent)"
     echo ""
     echo "Check status: launchctl list | grep podcast"
     echo "View logs:    tail -f dashboard/data/logs/orchestrator-*.log"
