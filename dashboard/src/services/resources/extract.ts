@@ -19,7 +19,7 @@ export function extractRepos(text: string): string[] {
 /** 對每條 social 資源填 mentionedRepos。 */
 export function annotateMentions(resources: RawResource[]): RawResource[] {
   return resources.map((r) => {
-    if (r.contentType === 'x' || r.contentType === 'reddit') {
+    if (r.contentType === 'x') {
       const repos = extractRepos(`${r.description} ${r.url}`);
       if (repos.length) return { ...r, mentionedRepos: repos };
     }

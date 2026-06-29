@@ -2,7 +2,6 @@
 import { getDb } from '@/db';
 
 const DEFAULTS = {
-  resource_reddit_subs: 'ChatGPTCoding,ClaudeAI,LocalLLaMA,artificial,programming',
   resource_x_queries: 'Claude Code,Codex CLI,MCP server,AI agent skill',
   resource_x_max_items: '20',
   resource_github_queries: 'topic:mcp|topic:ai-agent|claude code in:name,description,readme|codex in:name,description',

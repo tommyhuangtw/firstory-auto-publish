@@ -10,36 +10,6 @@ function hash(s: string): string {
   return Math.abs(h).toString(36);
 }
 
-export async function crawlReddit(): Promise<RawResource[]> {
-  const subs = rgetList('resource_reddit_subs');
-  const out: RawResource[] = [];
-  for (const sub of subs) {
-    try {
-      const res = await fetch(`https://www.reddit.com/r/${sub}/top.json?t=week&limit=25`, {
-        headers: { 'User-Agent': 'ailanbao-resources/1.0' },
-      });
-      if (!res.ok) { log.warn({ sub, status: res.status }, 'reddit fetch failed'); continue; }
-      const data = await res.json() as { data?: { children?: Array<{ data: Record<string, unknown> }> } };
-      for (const c of data.data?.children ?? []) {
-        const d = c.data;
-        if (d.stickied) continue;
-        out.push({
-          guid: `reddit_${d.id}`,
-          contentType: 'reddit',
-          title: String(d.title ?? ''),
-          description: String(d.selftext ?? '').slice(0, 500),
-          url: `https://reddit.com${d.permalink}`,
-          author: String(d.author ?? ''),
-          publishedAt: new Date(Number(d.created_utc ?? 0) * 1000).toISOString(),
-          source: `r/${sub}`,
-          engagement: { likes: Number(d.score ?? 0), comments: Number(d.num_comments ?? 0) },
-        });
-      }
-    } catch (e) { log.warn({ sub, err: (e as Error).message }, 'reddit error'); }
-  }
-  return out;
-}
-
 export async function crawlGitHub(): Promise<RawResource[]> {
   const pushedDays = rgetNum('resource_github_pushed_days');
   const minStars = rgetNum('resource_github_min_stars');
@@ -109,7 +79,7 @@ export async function crawlX(): Promise<RawResource[]> {
 }
 
 export async function crawlAll(): Promise<RawResource[]> {
-  const [reddit, github, x] = await Promise.all([crawlReddit(), crawlGitHub(), crawlX()]);
-  log.info({ reddit: reddit.length, github: github.length, x: x.length }, 'crawl done');
-  return [...reddit, ...github, ...x];
+  const [github, x] = await Promise.all([crawlGitHub(), crawlX()]);
+  log.info({ github: github.length, x: x.length }, 'crawl done');
+  return [...github, ...x];
 }
