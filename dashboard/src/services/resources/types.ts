@@ -30,6 +30,7 @@ export interface EnrichedResource extends RawResource {
 /** LLM 評分後。 */
 export interface ScoredResource extends EnrichedResource {
   aiScore: number;         // 0-100
+  aiSummary: string;       // 中文重點：這則資源在講什麼、為什麼有用（給 Tommy 快速掃）
   aiReasoning: string;
   aiHighlights: string[];
   aiAngle: string;

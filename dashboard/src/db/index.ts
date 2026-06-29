@@ -376,6 +376,7 @@ export function getDb(): Database.Database {
       freshness_score REAL DEFAULT 0,
       freshness_reason TEXT,
       ai_score REAL,
+      ai_summary TEXT,
       ai_reasoning TEXT,
       ai_highlights TEXT,
       ai_angle TEXT,
@@ -414,6 +415,7 @@ export function getDb(): Database.Database {
     )
   `);
   safeAlter('ALTER TABLE resource_scan_runs ADD COLUMN cost_usd REAL DEFAULT 0'); // 既有 DB 補欄位
+  safeAlter('ALTER TABLE curated_resources ADD COLUMN ai_summary TEXT');           // 中文重點說明
   safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_curated_resources_guid ON curated_resources(guid)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_curated_resources_status ON curated_resources(status)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_resource_drafts_guid ON resource_drafts(resource_guid)');

@@ -60,10 +60,12 @@ export async function crawlX(): Promise<RawResource[]> {
   const minFaves = rgetNum('resource_x_min_faves');
   const sinceDate = new Date(Date.now() - rgetNum('resource_recency_days') * 86_400_000)
     .toISOString().split('T')[0]; // YYYY-MM-DD
+  // 排除大廠官方帳號：他們的即時公告很多人 cover，不是我們要的「社群實證有用」內容。
+  const excludeClause = rgetList('resource_x_exclude_accounts').map((a) => `-from:${a}`).join(' ');
   // 把過濾條件直接寫進 Twitter 進階搜尋語法（actor 的 top-level since/min_faves 不可靠、會漏舊文/雜訊進來）：
-  // 只要原創貼文（排除回覆/轉推）、夠多讚（已被驗證會紅）、夠新、英文 → 來源端就先把雜訊砍掉，省 Apify 錢也提升訊號。
+  // 只要原創貼文（排除回覆/轉推）、夠多讚（已被驗證會紅）、夠新、英文、非大廠官方 → 來源端先砍雜訊，省 Apify 錢也提升訊號。
   const searchTerms = terms.map(
-    (t) => `${t} min_faves:${minFaves} -filter:replies -filter:retweets lang:en since:${sinceDate}`,
+    (t) => `${t} min_faves:${minFaves} -filter:replies -filter:retweets lang:en since:${sinceDate} ${excludeClause}`.trim(),
   );
   try {
     const res = await fetch(

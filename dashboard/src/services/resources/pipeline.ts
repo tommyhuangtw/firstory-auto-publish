@@ -6,10 +6,9 @@ import { annotateMentions } from './extract';
 import { enrichAll, expandMentionedRepos } from './enrich';
 import { applyFreshnessGate, dedupeForSurface } from './freshness';
 import { scoreAll } from './scorer';
-import { draftResource } from './draft';
 import { sendResourceDigest } from './digest';
 import { rgetNum } from './settings';
-import type { ResourceScanResult, ScoredResource } from './types';
+import type { ResourceScanResult } from './types';
 
 const log = createChildLogger('resource-pipeline');
 
@@ -61,38 +60,32 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     const scored = await scoreAll(fresh);
     result.scored = scored.length;
     const worthy = scored.filter((r) => r.worthSharing).sort((a, b) => b.aiScore - a.aiScore);
+    // 不再自動生草稿（best-of-N 太貴又非每篇都要）。改：surface top-N 帶「中文重點 summary」，
+    // 草稿改成 /resources 頁上對某篇有興趣時「✍️ 改寫成我的貼文」按鈕 on-demand 生成。
     const topN = worthy.slice(0, rgetNum('resource_top_n'));
-
-    const drafts: Array<{ r: ScoredResource; text: string; viral: number }> = [];
-    for (const r of topN) {
-      try { const d = await draftResource(r); drafts.push({ r, text: d.draftText, viral: d.viralScore }); result.drafted++; }
-      catch (e) { log.warn({ guid: r.guid, err: (e as Error).message }, 'draft failed'); }
-    }
 
     const upsert = db.prepare(`
       INSERT INTO curated_resources (guid, content_type, title, description, url, author, published_at, source,
         stars, last_stars, last_stars_at, star_velocity, social_buzz, freshness_score, freshness_reason,
-        ai_score, ai_reasoning, ai_highlights, ai_angle, status, last_surfaced_at, scan_run_id)
+        ai_score, ai_summary, ai_reasoning, ai_highlights, ai_angle, status, last_surfaced_at, scan_run_id)
       VALUES (@guid,@content_type,@title,@description,@url,@author,@published_at,@source,
         @stars,@stars,datetime('now'),@star_velocity,@social_buzz,@freshness_score,@freshness_reason,
-        @ai_score,@ai_reasoning,@ai_highlights,@ai_angle,'surfaced',datetime('now'),@scan_run_id)
+        @ai_score,@ai_summary,@ai_reasoning,@ai_highlights,@ai_angle,'surfaced',datetime('now'),@scan_run_id)
       ON CONFLICT(guid) DO UPDATE SET
         star_velocity=@star_velocity, social_buzz=@social_buzz, freshness_score=@freshness_score,
-        freshness_reason=@freshness_reason, ai_score=@ai_score, ai_reasoning=@ai_reasoning,
+        freshness_reason=@freshness_reason, ai_score=@ai_score, ai_summary=@ai_summary, ai_reasoning=@ai_reasoning,
         ai_highlights=@ai_highlights, ai_angle=@ai_angle, status='surfaced', last_surfaced_at=datetime('now'),
         scan_run_id=@scan_run_id
     `);
-    const insDraft = db.prepare('INSERT INTO resource_drafts (resource_guid, draft_text, viral_score) VALUES (?, ?, ?)');
     const tx = db.transaction(() => {
-      for (const { r, text, viral } of drafts) {
+      for (const r of topN) {
         upsert.run({
           guid: r.guid, content_type: r.contentType, title: r.title, description: r.description, url: r.url,
           author: r.author, published_at: r.publishedAt ?? null, source: r.source, stars: r.stars ?? null,
           star_velocity: r.starVelocity ?? null, social_buzz: r.socialBuzz, freshness_score: r.freshnessScore,
-          freshness_reason: r.freshnessReason, ai_score: r.aiScore, ai_reasoning: r.aiReasoning,
+          freshness_reason: r.freshnessReason, ai_score: r.aiScore, ai_summary: r.aiSummary, ai_reasoning: r.aiReasoning,
           ai_highlights: JSON.stringify(r.aiHighlights), ai_angle: r.aiAngle, scan_run_id: runId,
         });
-        insDraft.run(r.guid, text, viral);
         result.recorded++;
       }
     });
@@ -103,8 +96,8 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     // 成本：LLM 差值 + Apify X（每則估價 × 結果數）。GitHub API 免費、無其他付費呼叫。
     const costUsd = (sumLlmCost() - llmCostBefore) + xCount * rgetNum('resource_apify_cost_per_item');
 
-    if (drafts.length) {
-      try { await sendResourceDigest(drafts, costUsd); }
+    if (topN.length) {
+      try { await sendResourceDigest(topN, costUsd); }
       catch (e) { log.warn({ runId, err: (e as Error).message }, 'digest send failed (run still succeeded)'); }
     }
 

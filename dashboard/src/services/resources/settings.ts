@@ -5,6 +5,7 @@ const DEFAULTS = {
   resource_x_queries: 'Claude Code,Codex CLI,MCP server,Claude agent skills,AI coding tools,how I use Claude Code,free AI resource',
   resource_x_max_items: '20',
   resource_x_min_faves: '80',            // X 來源端讚數門檻（已爆過＝Threads 上也可能爆的訊號）
+  resource_x_exclude_accounts: 'AnthropicAI,OpenAI,OpenAIDevs,GoogleAI,GoogleDeepMind,GeminiApp', // 大廠官方帳號的即時公告很多人 cover，排除→專注社群實證有用內容
   resource_github_queries: 'topic:mcp|topic:ai-agent|claude code in:name,description,readme|codex in:name,description',
   resource_recency_days: '2',
   resource_social_buzz_floor: '120',
@@ -31,3 +32,16 @@ export function rgetNum(key: ResourceSettingKey): number {
 export function rgetList(key: ResourceSettingKey, sep = ','): string[] {
   return rget(key).split(sep).map((s) => s.trim()).filter(Boolean);
 }
+
+/** 寫入設定（UI 可調的爬取設定）。upsert 進 settings 表，覆蓋 DEFAULTS。 */
+export function rset(key: ResourceSettingKey, value: string): void {
+  const db = getDb();
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(key, value);
+}
+
+/** UI 可調的爬取設定（含目前值與預設）。 */
+export const EDITABLE_KEYS: ResourceSettingKey[] = [
+  'resource_x_queries', 'resource_x_exclude_accounts', 'resource_x_min_faves',
+  'resource_recency_days', 'resource_max_post_age_days', 'resource_top_n',
+];
