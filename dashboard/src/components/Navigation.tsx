@@ -64,6 +64,14 @@ const allNavItems: NavItem[] = [
     ),
   },
   {
+    href: '/resources', label: '學習資源', group: 'social',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-[18px] h-[18px]">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+      </svg>
+    ),
+  },
+  {
     href: '/voice', label: '我的風格', group: 'social',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-[18px] h-[18px]">
@@ -203,6 +211,7 @@ export default function Navigation() {
   const [trendsUnread, setTrendsUnread] = useState(0);
   const [inspirationUnread, setInspirationUnread] = useState(0);
   const [thumbnailUnread, setThumbnailUnread] = useState(0);
+  const [resourcesUnread, setResourcesUnread] = useState(0);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -213,15 +222,17 @@ export default function Navigation() {
     let cancelled = false;
     const check = async () => {
       try {
-        const [t, i, th] = await Promise.all([
+        const [t, i, th, r] = await Promise.all([
           fetch('/api/trends/niche/unread').then(r => r.json()).catch(() => null),
           fetch('/api/inspiration/unread').then(r => r.json()).catch(() => null),
           fetch('/api/thumbnail-styles/unread').then(r => r.json()).catch(() => null),
+          fetch('/api/resources/unread').then(r => r.json()).catch(() => null),
         ]);
         if (cancelled) return;
         if (t) setTrendsUnread(t.count ?? 0);
         if (i) setInspirationUnread(i.count ?? 0);
         if (th) setThumbnailUnread(th.count ?? 0);
+        if (r) setResourcesUnread(r.unread ?? r.count ?? 0);
       } catch {
         /* offline / dev — leave counts as-is */
       }
@@ -240,6 +251,7 @@ export default function Navigation() {
       if (key === 'trends') setTrendsUnread(0);
       else if (key === 'inspiration') setInspirationUnread(0);
       else if (key === 'thumbnail') setThumbnailUnread(0);
+      else if (key === 'resources') setResourcesUnread(0);
     };
     window.addEventListener('nav:unread-seen', onSeen);
     return () => window.removeEventListener('nav:unread-seen', onSeen);
@@ -347,6 +359,9 @@ export default function Navigation() {
                     {item.href === '/inspiration' && inspirationUnread > 0 && (
                       <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新爬到的靈感" />
                     )}
+                    {item.href === '/resources' && resourcesUnread > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新學習資源待 review" />
+                    )}
                     {item.href === '/thumbnail-compare' && thumbnailUnread > 0 && (
                       <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新縮圖風格待 review" />
                     )}
@@ -384,6 +399,9 @@ export default function Navigation() {
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
                   )}
                   {item.href === '/inspiration' && inspirationUnread > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+                  )}
+                  {item.href === '/resources' && resourcesUnread > 0 && (
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
                   )}
                   {item.href === '/thumbnail-compare' && thumbnailUnread > 0 && (
