@@ -548,6 +548,21 @@ export function getDb(): Database.Database {
   safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_type ON voice_assets(type)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_status ON voice_assets(status)');
 
+  // Web Push subscriptions (iPhone/desktop PWA push). One row per device/browser.
+  _db!.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint    TEXT    UNIQUE NOT NULL,
+      p256dh      TEXT    NOT NULL,
+      auth        TEXT    NOT NULL,
+      user_agent  TEXT,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    DEFAULT (datetime('now')),
+      last_used_at TEXT
+    )
+  `);
+  safeIndex('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_sub_endpoint ON push_subscriptions(endpoint)');
+
   // Seed tool families
   try {
     seedFamilies();
@@ -597,6 +612,15 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_topics_per_scan', '5');  // topic rotation: # of seed topics searched per scan
   seedSetting('trend_jitter_minutes', '25');  // schedule jitter window in minutes (anti-detection)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
+
+  // Web Push: which pipeline events actually buzz your iPhone (治「太雜」— published 預設關掉當 FYI)
+  seedSetting('push_event_filter', JSON.stringify([
+    'episode.ready_for_review',
+    'pipeline.failed',
+    'pipeline.retry.failed',
+    'episode.publish.partial_failure',
+    'boss.brief',
+  ]));
 
   // Current AI model versions reference (kept fresh via modelVersionRegistry web refresh).
   // Inlined here (not imported) to avoid a circular import with the registry service.

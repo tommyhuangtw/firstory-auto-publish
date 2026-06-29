@@ -11,6 +11,19 @@ const nextConfig: NextConfig = {
   // tunnel host — leaving all buttons dead and client-fetched panels (Pipeline Timeline, etc.)
   // stuck loading. Allow the public host so dev resources load cross-origin.
   allowedDevOrigins: ['hub.ailanbao.org'],
+
+  // Never cache the service worker so push-handler updates take effect immediately.
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

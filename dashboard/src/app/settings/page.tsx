@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import PageHeader from '@/components/PageHeader';
+import PushNotificationSettings from '@/components/PushNotificationSettings';
 
 interface FbStatus {
   connected: boolean;
@@ -168,6 +169,9 @@ export default function SettingsPage() {
       <PageHeader title="設定" />
 
       <div className="space-y-8">
+        {/* Push Notifications (iPhone) */}
+        <PushNotificationSettings />
+
         {/* Facebook Page Connection */}
         <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
           <h2 className="text-sm font-medium text-zinc-200 mb-1">Facebook Page 連結</h2>
