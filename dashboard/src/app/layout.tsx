@@ -28,9 +28,7 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "AI懶人報",
   },
-  icons: {
-    apple: "/icon-192.png",
-  },
+  // Browser-tab favicon + apple-touch icon come from app/icon.png & app/apple-icon.png
 };
 
 export const viewport: Viewport = {
