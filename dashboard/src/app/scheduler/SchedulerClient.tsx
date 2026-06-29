@@ -29,12 +29,19 @@ const SEGMENT_COLORS: Record<string, string> = {
   sysdesign: 'bg-purple-400',
 };
 
+interface AgentSchedule {
+  enabled: boolean;
+  steps: { time: string; label: string }[];
+  enableCmd: string;
+}
+
 export default function SchedulerClient() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [skippingJob, setSkippingJob] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [agent, setAgent] = useState<AgentSchedule | null>(null);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -50,6 +57,7 @@ export default function SchedulerClient() {
 
   useEffect(() => {
     fetchJobs();
+    fetch('/api/system/agent-schedule').then((r) => r.json()).then(setAgent).catch(() => {});
   }, [fetchJobs]);
 
   async function handleTrigger(name: string) {
@@ -228,6 +236,40 @@ export default function SchedulerClient() {
           </>
         );
       })()}
+
+      {/* Multi-agent orchestrator — launchd-based, shown with its real on/off state */}
+      {agent && (
+        <div className="mt-4 bg-zinc-900/60 rounded-xl border border-zinc-800/80 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-zinc-800/80 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-200">系統任務 · 多 Agent 自動排程</h2>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${
+              agent.enabled ? 'bg-green-950/40 text-green-400' : 'bg-zinc-800 text-zinc-400'
+            }`}>
+              {agent.enabled ? '● 啟用中' : '○ 已關閉'}
+            </span>
+          </div>
+          <div className="px-4 py-3">
+            <p className="text-[11px] text-zinc-500 mb-2.5">
+              小企提案 → 懶懶評估 → 小工執行 → 早上老闆快報。
+              {agent.enabled ? ' 目前每天自動執行。' : ' 目前已停用，需要時再啟用（之後可優化）。'}
+            </p>
+            <div className="space-y-1">
+              {agent.steps.map((s) => (
+                <div key={s.time} className="flex items-center gap-2 text-[12px]">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${agent.enabled ? 'bg-zinc-400' : 'bg-zinc-700'}`} />
+                  <code className="text-[10px] text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded shrink-0">{s.time}</code>
+                  <span className={agent.enabled ? 'text-zinc-300' : 'text-zinc-600 line-through decoration-zinc-700'}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+            {!agent.enabled && (
+              <p className="text-[11px] text-zinc-600 mt-3">
+                啟用：<code className="bg-zinc-800/80 text-zinc-400 px-1.5 py-0.5 rounded">{agent.enableCmd}</code>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
