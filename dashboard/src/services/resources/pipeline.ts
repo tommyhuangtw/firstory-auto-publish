@@ -24,6 +24,30 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     const raw = annotateMentions(await crawlAll());
     result.scraped = raw.length;
     const enriched = await enrichAll(expandMentionedRepos(raw));
+
+    // Star-history snapshot for ALL enriched GitHub repos (not just drafted ones), so
+    // cross-run star-velocity has a baseline even for repos that never get surfaced.
+    // status='tracked' on insert; on conflict only star columns move (status preserved,
+    // so a 'surfaced' row is never downgraded).
+    const snap = db.prepare(`
+      INSERT INTO curated_resources (guid, content_type, title, url, author, published_at, stars, last_stars, last_stars_at, star_velocity, status, scan_run_id)
+      VALUES (@guid,@content_type,@title,@url,@author,@published_at,@stars,@stars,datetime('now'),@star_velocity,'tracked',@scan_run_id)
+      ON CONFLICT(guid) DO UPDATE SET
+        last_stars = curated_resources.stars,
+        stars = @stars,
+        last_stars_at = datetime('now'),
+        star_velocity = @star_velocity
+    `);
+    const snapTx = db.transaction(() => {
+      for (const r of enriched) {
+        if (r.contentType !== 'github' || r.stars == null) continue;
+        snap.run({ guid: r.guid, content_type: r.contentType, title: r.title, url: r.url,
+          author: r.author, published_at: r.createdAt ?? r.publishedAt ?? null,
+          stars: r.stars, star_velocity: r.starVelocity ?? null, scan_run_id: runId });
+      }
+    });
+    snapTx();
+
     const gate = applyFreshnessGate(enriched);
     result.belowGate = gate.belowGate;
     const { fresh, deduped } = dedupeForSurface(gate.passed);
@@ -47,7 +71,7 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
       VALUES (@guid,@content_type,@title,@description,@url,@author,@published_at,@source,
         @stars,@stars,datetime('now'),@star_velocity,@social_buzz,@freshness_score,@freshness_reason,
         @ai_score,@ai_reasoning,@ai_highlights,@ai_angle,'surfaced',datetime('now'),@scan_run_id)
-      ON CONFLICT(guid) DO UPDATE SET stars=@stars, last_stars=curated_resources.stars, last_stars_at=datetime('now'),
+      ON CONFLICT(guid) DO UPDATE SET
         star_velocity=@star_velocity, social_buzz=@social_buzz, freshness_score=@freshness_score,
         freshness_reason=@freshness_reason, ai_score=@ai_score, ai_reasoning=@ai_reasoning,
         ai_highlights=@ai_highlights, ai_angle=@ai_angle, status='surfaced', last_surfaced_at=datetime('now'),
