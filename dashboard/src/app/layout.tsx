@@ -50,7 +50,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-zinc-950 text-zinc-100">
         <Navigation />
-        <main className="md:ml-56 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
+        <main className="md:ml-56 pt-[env(safe-area-inset-top)] md:pt-0 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       </body>
     </html>
   );

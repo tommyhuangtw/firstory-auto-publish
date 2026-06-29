@@ -418,7 +418,7 @@ export default function Navigation() {
       {/* Mobile bottom bar — 4 primary + More.
           pb safe-area keeps tap targets above the iPhone home indicator (was 太下面);
           active tab gets a top accent bar for a clearer current-page cue. */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900/95 backdrop-blur border-t border-zinc-800 z-50 pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900 border-t border-zinc-800 z-50 pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
           {primaryItems.map((item) => {
             const active = isActive(item.href);
