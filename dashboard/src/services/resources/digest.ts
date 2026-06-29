@@ -27,9 +27,10 @@ export async function sendResourceDigest(
           : r.freshnessReason === 'youth'
             ? '🆕 剛上線新工具'
             : '🔥 社群熱議';
+      const postDate = r.publishedAt ? new Date(r.publishedAt).toISOString().split('T')[0] : '';
       return `<div style="border:1px solid #e0e0e0;border-radius:12px;padding:18px;margin:16px 0;background:#fafafa">
       <h3 style="margin:0 0 6px">#${i + 1} ${esc(r.title)}</h3>
-      <p style="margin:4px 0;color:#555">📊 ${r.aiScore}/100 ｜ ${r.contentType} ｜ ${why} ｜ 爆文分 ${(viral * 100).toFixed(0)}</p>
+      <p style="margin:4px 0;color:#555">📊 ${r.aiScore}/100 ｜ ${r.contentType} ｜ ${why}${postDate ? ` ｜ 📅 ${postDate}` : ''} ｜ 爆文分 ${(viral * 100).toFixed(0)}</p>
       <p style="margin:4px 0">✨ ${esc(r.aiHighlights.join('、'))}</p>
       <div style="background:#fff;padding:14px;border-radius:8px;border-left:4px solid #6366f1;white-space:pre-wrap">${esc(text)}</div>
       <p>🔗 <a href="${esc(r.url)}">${esc(r.url)}</a></p>
