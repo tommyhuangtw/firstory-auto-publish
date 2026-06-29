@@ -707,15 +707,25 @@ export async function sendBossBrief(sessionId: string): Promise<void> {
     `老闆快報已發送：${decisionCount} 件待拍板（${reviewTasks.length} 上線 / ${askBossTasks.length} 高風險）, ${fyiDone.length} 件自動完成`, {});
 }
 
-/** Send one decision item with approve/reject buttons (falls back to plain text if no public URL). */
+/**
+ * Send one decision item with approve/reject buttons + a "comment first" option
+ * (opens a small form where Tommy can attach guidance before deciding).
+ * Falls back to plain text if no public URL is configured.
+ */
 async function sendDecisionMessage(taskId: number, msg: string, approveLabel: string, rejectLabel: string): Promise<void> {
   const approveUrl = buildQuickActionUrl(taskId, 'approve');
   const rejectUrl = buildQuickActionUrl(taskId, 'reject');
-  if (approveUrl && rejectUrl) {
-    await sendTelegramWithButtons(msg, [[
-      { text: approveLabel, url: approveUrl },
-      { text: rejectLabel, url: rejectUrl },
-    ]]);
+  const commentUrl = buildQuickActionUrl(taskId, 'comment');
+  if (approveUrl && rejectUrl && commentUrl) {
+    await sendTelegramWithButtons(msg, [
+      [
+        { text: approveLabel, url: approveUrl },
+        { text: rejectLabel, url: rejectUrl },
+      ],
+      [
+        { text: '💬 加註再決定', url: commentUrl },
+      ],
+    ]);
   } else {
     await sendTelegram(msg);
   }

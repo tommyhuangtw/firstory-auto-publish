@@ -31,7 +31,7 @@ import { evaluateProposals, reviewPendingTasks, reviewTask, sendBossBrief } from
 import { executeTask, resumeTask, type ExecutionResult } from './engineer';
 
 // ── Constants ────────────────────────────────────────────────────────
-const MAX_TASKS_PER_RUN = 3;
+const MAX_TASKS_PER_RUN = 10; // safety backstop per run; the queue is drained until empty up to this cap
 const DASHBOARD_DIR = path.resolve(__dirname, '..');
 const LOCKFILE = path.join(DASHBOARD_DIR, 'data', 'orchestrator.lock');
 const LOG_DIR = path.join(DASHBOARD_DIR, 'data', 'logs');
@@ -273,38 +273,34 @@ async function executeAvailableTasks(sessionId: string): Promise<void> {
     }
   }
 
-  // New tasks
-  if (processed < MAX_TASKS_PER_RUN && !stopEarly) {
+  // Drain the approved queue: process every auto_execute=1 todo, re-querying after each one
+  // so tickets approved mid-run (e.g. just approved via Telegram) get picked up in the same run.
+  // Each executed task leaves 'todo', so the queue naturally shrinks; MAX_TASKS_PER_RUN is a backstop.
+  while (!stopEarly && processed < MAX_TASKS_PER_RUN) {
     const { tasks: todoTasks } = await apiFetch<{ tasks: Task[] }>('/api/tasks?status=todo&limit=20');
-    const autoTasks = todoTasks.filter(t => t.auto_execute);
-    const sorted = sortTasks(autoTasks);
+    const autoTasks = sortTasks(todoTasks.filter(t => t.auto_execute));
+    if (autoTasks.length === 0) break;
 
-    if (sorted.length > 0) {
-      log('info', `Found ${sorted.length} new task(s) to execute`);
-    }
-
-    for (const task of sorted) {
-      if (processed >= MAX_TASKS_PER_RUN || stopEarly) {
-        log('info', `Stopping: processed=${processed}, stopEarly=${stopEarly}`);
-        break;
+    const task = autoTasks[0];
+    try {
+      log('info', `小工 executing task #${task.id}: ${task.title}... (${autoTasks.length} in queue)`);
+      const result = await executeTask(task, sessionId);
+      processed++;
+      if (result.hitMaxTurns) {
+        log('info', `Task #${task.id} hit max turns — stopping early`);
+        stopEarly = true;
       }
+    } catch (e) {
+      log('error', `Execute task #${task.id} failed: ${String(e)}`);
       try {
-        log('info', `小工 executing task #${task.id}: ${task.title}...`);
-        const result = await executeTask(task, sessionId);
-        processed++;
-        if (result.hitMaxTurns) {
-          log('info', `Task #${task.id} hit max turns — stopping early`);
-          stopEarly = true;
-        }
-      } catch (e) {
-        log('error', `Execute task #${task.id} failed: ${String(e)}`);
-        try {
-          await updateTask(task.id, { status: 'blocked', result_notes: `Orchestrator error: ${String(e)}` });
-        } catch {}
-      }
+        await updateTask(task.id, { status: 'blocked', result_notes: `Orchestrator error: ${String(e)}` });
+      } catch {}
     }
   }
 
+  if (processed >= MAX_TASKS_PER_RUN) {
+    log('warn', `Hit drain cap (${MAX_TASKS_PER_RUN}); any remaining approved tasks run next cycle`);
+  }
   log('info', `小工 processed ${processed} task(s) total`);
 }
 

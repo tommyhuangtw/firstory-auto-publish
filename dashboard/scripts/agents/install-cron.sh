@@ -8,7 +8,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
-PLISTS=("com.podcast.orchestrator.morning" "com.podcast.orchestrator.evening")
+PLISTS=("com.podcast.orchestrator.morning" "com.podcast.orchestrator.evening" "com.podcast.orchestrator.heartbeat")
 
 # Ensure logs directory exists
 mkdir -p "$SCRIPT_DIR/../data/logs"
@@ -29,8 +29,9 @@ case "${1:-install}" in
     done
     echo ""
     echo "Orchestrator cron installed:"
-    echo "  Morning (08:00) — review leftovers + send 老闆快報 (the one daily boss touchpoint)"
-    echo "  Evening (20:00) — propose + evaluate + execute + review (silent)"
+    echo "  Morning (08:00)   — review leftovers + send 老闆快報 (the one daily boss touchpoint)"
+    echo "  Heartbeat (~2h)   — drain the approved queue when the working tree is clean (WIP-safe)"
+    echo "  Evening (20:00)   — propose + evaluate + execute + review (silent)"
     echo ""
     echo "Check status: launchctl list | grep podcast"
     echo "View logs:    tail -f dashboard/data/logs/orchestrator-*.log"

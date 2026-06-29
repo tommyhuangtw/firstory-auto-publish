@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast.orchestrator.heartbeat</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/tommyhuang/.nvm/versions/node/v22.22.0/bin/npx</string>
+    <string>tsx</string>
+    <string>scripts/agents/orchestrator.ts</string>
+    <string>--execute-only</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/tommyhuang/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/tommyhuang</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>7200</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-heartbeat.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tommyhuang/Desktop/ai_projects/firstory-podcast-automation/dashboard/data/logs/orchestrator-heartbeat.err</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

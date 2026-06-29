@@ -278,7 +278,7 @@ export function verifyQuickActionToken(taskId: number, action: string, token: st
 }
 
 /** Build quick-action URL for a task. Returns null if no public URL is configured. */
-export function buildQuickActionUrl(taskId: number, action: 'approve' | 'reject'): string | null {
+export function buildQuickActionUrl(taskId: number, action: 'approve' | 'reject' | 'comment'): string | null {
   const publicUrl = process.env.DASHBOARD_PUBLIC_URL;
   if (!publicUrl) return null; // No public URL → buttons not available
   const token = generateQuickActionToken(taskId, action);
