@@ -226,6 +226,21 @@ async function fullRun(sessionId: string): Promise<void> {
 async function executeAvailableTasks(sessionId: string): Promise<void> {
   log('info', '小工 looking for tasks to execute...');
 
+  // WIP safety guard: never run autonomous execution while the working tree has uncommitted
+  // changes — task execution does `git stash --include-untracked` and would clobber the
+  // human's in-progress work (leaving it stranded in a stash). Skip the whole cycle instead.
+  try {
+    const root = path.resolve(__dirname, '..', '..');
+    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf-8', timeout: 10_000 }).trim();
+    if (dirty) {
+      log('warn', `Working tree has uncommitted changes (${dirty.split('\n').length} files) — skipping execution to protect WIP. Commit or stash to let it run.`);
+      return;
+    }
+  } catch (e) {
+    log('warn', `Could not verify clean working tree — skipping execution to be safe: ${String(e)}`);
+    return;
+  }
+
   let processed = 0;
   let stopEarly = false;
 

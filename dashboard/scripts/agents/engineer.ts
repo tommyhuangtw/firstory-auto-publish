@@ -304,7 +304,10 @@ ${task.description || '(no description provided)'}`;
 **FIRST LINE**: One-sentence summary of what was done.
 **What was done**: Bullet list of changes/findings.
 **What to verify**: Specific things to check.
-**Blockers** (if any): What couldn't be resolved.
+
+## If you are blocked
+ONLY if you genuinely could not complete the task, make the VERY FIRST LINE start with "BLOCKED:" followed by the reason.
+If you finished, do NOT write the words "blocked" or "blocker" anywhere — just give the summary.
 Keep it concise.
 `;
 
@@ -410,9 +413,12 @@ export async function executeTask(task: Task, sessionId: string): Promise<Execut
   }
 
   // 6. Check for blockers or max turns
+  // Blocker detection uses an explicit first-line "BLOCKED:" sentinel (set by the prompt),
+  // NOT substring matching — otherwise a completed task that writes "Blockers: none" gets
+  // false-flagged as blocked.
   const outputLower = result.output.toLowerCase();
-  const hasBlocker = (outputLower.includes('blocker') || outputLower.includes('blocked') || outputLower.includes('cannot resolve'))
-    && !outputLower.includes('resolved the blocker') && !outputLower.includes('blocker resolved');
+  const firstLine = (result.output.trim().split('\n')[0] || '').trim().toUpperCase();
+  const hasBlocker = firstLine.startsWith('BLOCKED:') || firstLine.startsWith('BLOCKED ');
   const hasMaxTurns = outputLower.includes('max turns') || outputLower.includes('reached max');
 
   if (hasMaxTurns) {
