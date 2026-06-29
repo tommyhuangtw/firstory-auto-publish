@@ -23,6 +23,7 @@ export async function crawlGitHub(): Promise<RawResource[]> {
   const since = new Date(Date.now() - pushedDays * 86_400_000).toISOString().split('T')[0];
   const queries = rget('resource_github_queries').split('|').map((q) => q.trim()).filter(Boolean);
   const token = process.env.GITHUB_TOKEN;
+  const excludeSet = new Set(rgetList('resource_x_exclude_accounts').map((a) => a.toLowerCase())); // 共用排除名單（owner login）
   const out: RawResource[] = [];
   for (const base of queries) {
     const q = `${base} pushed:>${since} stars:>${minStars}`;
@@ -35,6 +36,8 @@ export async function crawlGitHub(): Promise<RawResource[]> {
       if (!res.ok) { log.warn({ q, status: res.status }, 'github fetch failed'); continue; }
       const data = await res.json() as { items?: Array<Record<string, unknown>> };
       for (const r of data.items ?? []) {
+        const owner = String((r.owner as Record<string, unknown>)?.login ?? '');
+        if (owner && excludeSet.has(owner.toLowerCase())) continue; // 被排除的 owner 跳過
         out.push({
           guid: `github_${r.full_name}`,
           contentType: 'github',

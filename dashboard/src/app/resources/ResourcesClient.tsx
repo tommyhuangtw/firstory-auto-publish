@@ -78,6 +78,13 @@ function nf(n: number | null): string {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
+/** 排除名單比對的是 @handle 不是顯示名稱：X 從推文 URL 抓 handle，github 用 owner login。 */
+function excludeHandle(r: Row): string {
+  if (r.content_type === 'github') return (r.author ?? '').split('/')[0] || (r.author ?? '');
+  const m = (r.url ?? '').match(/(?:twitter|x)\.com\/([^/?#]+)/i);
+  return m && m[1] && m[1].toLowerCase() !== 'i' ? m[1] : (r.author ?? '');
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const splitList = (v: string): string[] => v.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -471,7 +478,7 @@ export default function ResourcesClient() {
                   )}
                   {r.author && (
                     <button
-                      onClick={() => excludeAuthor(r.author!)}
+                      onClick={() => excludeAuthor(excludeHandle(r))}
                       className="text-[11px] text-zinc-500 hover:text-rose-400"
                     >
                       🚫 排除帳號
