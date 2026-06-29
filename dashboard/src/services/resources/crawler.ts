@@ -57,13 +57,19 @@ export async function crawlX(): Promise<RawResource[]> {
   if (!token) { log.warn('no APIFY_API_TOKEN, skip X'); return []; }
   const terms = rgetList('resource_x_queries');
   const maxItems = rgetNum('resource_x_max_items');
-  const since = new Date(Date.now() - rgetNum('resource_recency_days') * 86_400_000)
-    .toISOString().split('T')[0] + '_00:00:00_UTC';
+  const minFaves = rgetNum('resource_x_min_faves');
+  const sinceDate = new Date(Date.now() - rgetNum('resource_recency_days') * 86_400_000)
+    .toISOString().split('T')[0]; // YYYY-MM-DD
+  // 把過濾條件直接寫進 Twitter 進階搜尋語法（actor 的 top-level since/min_faves 不可靠、會漏舊文/雜訊進來）：
+  // 只要原創貼文（排除回覆/轉推）、夠多讚（已被驗證會紅）、夠新、英文 → 來源端就先把雜訊砍掉，省 Apify 錢也提升訊號。
+  const searchTerms = terms.map(
+    (t) => `${t} min_faves:${minFaves} -filter:replies -filter:retweets lang:en since:${sinceDate}`,
+  );
   try {
     const res = await fetch(
       `https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=${token}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lang: 'en', maxItems, queryType: 'Top', min_faves: 60, searchTerms: terms, since }) },
+        body: JSON.stringify({ maxItems, queryType: 'Top', searchTerms }) },
     );
     if (!res.ok) { log.warn({ status: res.status }, 'apify X failed'); return []; }
     const items = await res.json() as Array<Record<string, unknown>>;

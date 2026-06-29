@@ -2,8 +2,9 @@
 import { getDb } from '@/db';
 
 const DEFAULTS = {
-  resource_x_queries: 'Claude Code,Codex CLI,MCP server,AI agent skill',
+  resource_x_queries: 'Claude Code,Codex CLI,MCP server,Claude agent skills,AI coding tools,how I use Claude Code,free AI resource',
   resource_x_max_items: '20',
+  resource_x_min_faves: '80',            // X 來源端讚數門檻（已爆過＝Threads 上也可能爆的訊號）
   resource_github_queries: 'topic:mcp|topic:ai-agent|claude code in:name,description,readme|codex in:name,description',
   resource_recency_days: '2',
   resource_social_buzz_floor: '120',
