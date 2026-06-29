@@ -57,17 +57,25 @@ function whyHot(r: Row): string {
   return '🔥 社群熱議';
 }
 
-function repoAge(iso: string | null): string {
-  if (!iso) return '';
-  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (!Number.isFinite(d) || d < 0) return '';
-  return d < 31 ? `${d} 天` : `${Math.floor(d / 30)} 個月`;
-}
-
 function fmtDate(iso: string | null): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? new Date(t).toISOString().split('T')[0] : '';
+}
+
+function scoreCls(s: number): string {
+  if (s >= 90) return 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20';
+  if (s >= 80) return 'bg-brand/15 text-brand ring-1 ring-brand/20';
+  return 'bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700';
+}
+
+function typeLabel(t: string): string {
+  return t === 'github' ? 'GitHub' : t === 'x' ? '𝕏' : t === 'reddit' ? 'Reddit' : '連結';
+}
+
+function nf(n: number | null): string {
+  const v = n ?? 0;
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -415,53 +423,76 @@ export default function ResourcesClient() {
       ) : rows.length === 0 ? (
         <p className="text-zinc-400 text-center py-10">尚無資源，按「立即執行」跑一輪。</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {rows.map((r) => {
             const draft = draftFor(r);
             const gen = genState[r.id];
             return (
               <div
                 key={r.id}
-                className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
+                className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 transition-colors hover:border-zinc-700"
               >
-                <div className="flex justify-between items-start gap-2 min-w-0">
-                  <h3 className="font-semibold text-zinc-100 break-words">{r.title}</h3>
-                  <span className="shrink-0 text-[11px] md:text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                    {r.content_type}
-                  </span>
+                {/* header: type + why-hot chips, title, score badge */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                        {typeLabel(r.content_type)}
+                      </span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-400">
+                        {whyHot(r)}
+                      </span>
+                      {r.published_at && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-500">
+                          📅 {fmtDate(r.published_at)}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-semibold text-[15px] leading-snug text-zinc-100 break-words">{r.title}</h3>
+                  </div>
+                  {r.ai_score != null && (
+                    <span className={`shrink-0 text-sm font-bold tabular-nums px-2.5 py-1 rounded-lg ${scoreCls(r.ai_score)}`}>
+                      {r.ai_score}
+                    </span>
+                  )}
                 </div>
 
-                {r.author && (
-                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                    <span className="text-xs text-zinc-400 break-words">@{r.author}</span>
+                {/* meta: author + engagement stats + exclude */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 text-xs text-zinc-400">
+                  {r.author && <span className="text-zinc-300 break-words">@{r.author}</span>}
+                  {r.content_type === 'github' ? (
+                    <span className="tabular-nums">⭐ <b className="text-zinc-200">{nf(r.stars)}</b></span>
+                  ) : (
+                    <span className="flex items-center gap-3 tabular-nums">
+                      <span>👍 <b className="text-zinc-200">{nf(r.likes)}</b></span>
+                      <span>💬 <b className="text-zinc-200">{nf(r.comments)}</b></span>
+                      <span>🔁 <b className="text-zinc-200">{nf(r.reposts)}</b></span>
+                    </span>
+                  )}
+                  {r.author && (
                     <button
                       onClick={() => excludeAuthor(r.author!)}
-                      className="text-[11px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-rose-400 hover:bg-zinc-700"
+                      className="text-[11px] text-zinc-500 hover:text-rose-400"
                     >
                       🚫 排除帳號
                     </button>
+                  )}
+                </div>
+
+                {/* 中文重點 — the scannable insight, visually anchored */}
+                {r.ai_summary && (
+                  <div className="mt-3.5 rounded-xl bg-brand/[0.06] border border-brand/15 px-4 py-3">
+                    <p className="text-[15px] leading-relaxed text-zinc-100 break-words">{r.ai_summary}</p>
                   </div>
                 )}
 
-                <p className="text-xs text-zinc-500 mt-1.5 break-words">
-                  {whyHot(r)}
-                  {r.published_at && repoAge(r.published_at) && `　｜${repoAge(r.published_at)}`}
-                  {r.ai_score != null && `　｜評分 ${r.ai_score}/100`}
-                </p>
-
-                <p className="text-xs text-zinc-400 mt-1 break-words">
-                  {r.content_type === 'github'
-                    ? `⭐ ${r.stars ?? 0} stars${r.published_at ? `　｜📅 發布 ${fmtDate(r.published_at)}` : ''}`
-                    : `👍 ${r.likes ?? 0}　💬 ${r.comments ?? 0}　🔁 ${r.reposts ?? 0}${r.published_at ? `　｜📅 ${fmtDate(r.published_at)}` : ''}`}
-                </p>
-
-                {r.ai_summary && (
-                  <p className="text-sm text-zinc-200 mt-2.5 break-words">📌 {r.ai_summary}</p>
-                )}
-
+                {/* 原文 — labeled, scrollable, clearly secondary */}
                 {r.description && (
-                  <div className="text-xs text-zinc-400 mt-2 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed max-h-36 overflow-y-auto">
-                    {r.description}
+                  <div className="mt-3">
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-600 mb-1">原文</p>
+                    <div className="text-xs text-zinc-400 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed max-h-40 overflow-y-auto">
+                      {r.description}
+                    </div>
                   </div>
                 )}
 
@@ -472,12 +503,12 @@ export default function ResourcesClient() {
                       onChange={(e) => setEdited((m) => ({ ...m, [draft.draftId]: e.target.value }))}
                       onBlur={(e) => saveDraft(r.id, draft.draftId, e.target.value)}
                       rows={6}
-                      className="w-full mt-3 p-2.5 text-sm rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 resize-y focus:outline-none focus:border-brand/50"
+                      className="w-full mt-4 p-3 text-sm rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-200 resize-y leading-relaxed focus:outline-none focus:border-brand/50"
                     />
                     {saveError[draft.draftId] && (
                       <p className="text-xs text-rose-400 mt-1">儲存失敗</p>
                     )}
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <div className="flex flex-wrap items-center gap-2 mt-2.5">
                       <button
                         onClick={() => copyText(draft.draftId, currentText(draft.draftId, draft.draftText))}
                         className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
@@ -495,11 +526,11 @@ export default function ResourcesClient() {
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3">
+                  <div className="mt-4">
                     <button
                       onClick={() => generateDraft(r.id)}
                       disabled={gen?.running}
-                      className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50"
+                      className="text-sm font-medium px-4 py-2.5 md:py-2 rounded-xl bg-brand text-white hover:bg-brand/90 disabled:opacity-50 shadow-sm"
                     >
                       {gen?.running ? `生成中…（已 ${gen.elapsed}s）` : '✍️ 改寫成我的貼文'}
                     </button>
@@ -507,18 +538,19 @@ export default function ResourcesClient() {
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-2 mt-3">
+                {/* actions footer */}
+                <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-zinc-800/70">
                   <a
                     href={r.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25"
+                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                   >
                     🔗 來源
                   </a>
                   <button
                     onClick={() => dismiss(r.id)}
-                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-rose-400 hover:bg-zinc-700 ml-auto"
+                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 ml-auto"
                   >
                     ❌ 不要
                   </button>
