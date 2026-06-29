@@ -10,6 +10,13 @@ function hash(s: string): string {
   return Math.abs(h).toString(36);
 }
 
+/** X 沒有標題 → 取推文前 N 字當標題，但在字詞邊界切、加 …，避免切在半個字中間。 */
+function cleanTitle(text: string, max = 100): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  return t.slice(0, max).replace(/\s+\S*$/, '') + '…';
+}
+
 export async function crawlGitHub(): Promise<RawResource[]> {
   const pushedDays = rgetNum('resource_github_pushed_days');
   const minStars = rgetNum('resource_github_min_stars');
@@ -66,7 +73,7 @@ export async function crawlX(): Promise<RawResource[]> {
       return {
         guid: `x_${id}`,
         contentType: 'x' as const,
-        title: String(t.text ?? '').replace(/\n/g, ' ').slice(0, 80),
+        title: cleanTitle(String(t.text ?? '')),
         description: String(t.text ?? '').slice(0, 500),
         url: String(t.twitterUrl ?? t.url ?? ''),
         author: String(author?.name ?? author?.userName ?? ''),
