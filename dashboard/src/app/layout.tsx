@@ -48,13 +48,14 @@ export default function RootLayout({
       lang="zh-TW"
       className={`${geistSans.variable} ${geistMono.variable} ${notoSansTC.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col">
+      <body className="min-h-full bg-zinc-950 text-zinc-100">
         <Navigation />
-        {/* main fills the viewport; on mobile, short pages center vertically (my-auto)
-            so a short form isn't stranded at the top with a big void above the nav.
-            my-auto is overflow-safe: when content is taller than the screen the margins
-            collapse and the page scrolls normally from the top. Desktop is unaffected. */}
-        <main className="flex-1 flex flex-col md:ml-56 pt-[env(safe-area-inset-top)] md:pt-0 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
+        {/* On mobile, short pages center vertically so a short form isn't stranded at
+            the top with a big void above the nav. min-h-[100dvh] (dynamic viewport —
+            reliable on iOS, unlike a 100% height chain) gives main full height; my-auto
+            centers when content is short and is overflow-safe (margins collapse → the
+            page scrolls from the top when content is tall). Desktop is unaffected. */}
+        <main className="md:ml-56 flex flex-col min-h-[100dvh] md:block md:min-h-0 pt-[env(safe-area-inset-top)] md:pt-0 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
           <div className="my-auto md:my-0 w-full">{children}</div>
         </main>
       </body>
