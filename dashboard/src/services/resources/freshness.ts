@@ -15,12 +15,12 @@ function repoAgeDays(createdAt: string | undefined): number | null {
 /**
  * 依建立年齡分級的爆衝閘門。新生 repo 的「總星數」≈ 它在這段時間窗衝到的星數
  * （因為它總共也才存在這麼久），所以用 created_at + 總星數就能精準判斷爆衝，不需歷史快照。
- * 取最貼合年齡的窗（門檻隨窗放大）：3 天內門檻最低、兩週內最高、超過兩週不算「最新」。
+ * tiers 由小到大排（門檻隨窗放大）：取最貼合年齡的窗，超過最後一窗的年齡不算「最新」。
  */
-function githubBurst(ageDays: number, stars: number, t3: number, t7: number, t14: number): string | null {
-  if (ageDays <= 3)  return stars >= t3  ? 'burst_3d' : null;
-  if (ageDays <= 7)  return stars >= t7  ? 'burst_1w' : null;
-  if (ageDays <= 14) return stars >= t14 ? 'burst_2w' : null;
+function githubBurst(ageDays: number, stars: number, tiers: Array<[number, number, string]>): string | null {
+  for (const [maxAgeDays, floor, reason] of tiers) {
+    if (ageDays <= maxAgeDays) return stars >= floor ? reason : null;
+  }
   return null;
 }
 
@@ -29,9 +29,14 @@ export interface GateResult { passed: EnrichedResource[]; belowGate: number; }
 /** 算 freshnessScore + 硬閘門。修改傳入物件的 freshnessScore/Reason。 */
 export function applyFreshnessGate(resources: EnrichedResource[]): GateResult {
   const buzzFloor = rgetNum('resource_social_buzz_floor');
-  const t3 = rgetNum('resource_github_burst_3d_stars');
-  const t7 = rgetNum('resource_github_burst_1w_stars');
-  const t14 = rgetNum('resource_github_burst_2w_stars');
+  // 由小到大排；門檻隨窗放大。新增窗只要在這裡加一列 + 對應 setting。
+  const burstTiers: Array<[number, number, string]> = [
+    [3,  rgetNum('resource_github_burst_3d_stars'), 'burst_3d'],
+    [7,  rgetNum('resource_github_burst_1w_stars'), 'burst_1w'],
+    [14, rgetNum('resource_github_burst_2w_stars'), 'burst_2w'],
+    [30, rgetNum('resource_github_burst_1m_stars'), 'burst_1m'],
+    [60, rgetNum('resource_github_burst_2m_stars'), 'burst_2m'],
+  ];
   const maxPostAgeMs = rgetNum('resource_max_post_age_days') * 86_400_000;
   const passed: EnrichedResource[] = [];
   let belowGate = 0;
@@ -41,7 +46,7 @@ export function applyFreshnessGate(resources: EnrichedResource[]): GateResult {
       // 只要最新（≤2 週建立）且爆衝達標的 repo；老 repo 不再因近期 commit/翻紅混進來。
       const ageDays = repoAgeDays(r.createdAt);
       if (ageDays === null) { belowGate++; continue; }
-      const reason = githubBurst(ageDays, r.stars ?? 0, t3, t7, t14);
+      const reason = githubBurst(ageDays, r.stars ?? 0, burstTiers);
       if (!reason) { belowGate++; continue; }
       r.freshnessReason = reason;
       r.freshnessScore = (r.stars ?? 0) / Math.max(0.5, ageDays); // 星/天：漲最快排最前
