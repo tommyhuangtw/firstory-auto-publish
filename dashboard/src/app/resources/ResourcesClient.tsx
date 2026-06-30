@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import PageHeader from '@/components/PageHeader';
 
 interface Row {
@@ -18,6 +18,8 @@ interface Row {
   star_velocity: number | null;
   published_at: string | null;
   freshness_reason: string;
+  freshness_score: number | null;
+  status: string;
   ai_score: number | null;
   ai_summary: string | null;
   ai_highlights: string | null;
@@ -51,6 +53,12 @@ const NUM_LABELS: Record<string, string> = {
   resource_top_n: '每次收幾篇',
 };
 
+type SourceFilter = 'all' | 'github' | 'social';
+type SortBy = 'heat' | 'new';
+
+const isGithub = (r: Row) => r.content_type === 'github';
+const isSurfaced = (r: Row) => r.status === 'surfaced';
+
 function whyHot(r: Row): string {
   const burstWin: Record<string, string> = { burst_3d: '3天', burst_1w: '1週', burst_2w: '2週', burst_1m: '1個月', burst_2m: '2個月' };
   const win = burstWin[r.freshness_reason];
@@ -81,6 +89,10 @@ function nf(n: number | null): string {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
+function heatOf(r: Row): number {
+  return isGithub(r) ? (r.stars ?? 0) : (r.likes ?? 0) + (r.comments ?? 0) + (r.reposts ?? 0);
+}
+
 /** 排除名單比對的是 @handle 不是顯示名稱：X 從推文 URL 抓 handle，github 用 owner login。 */
 function excludeHandle(r: Row): string {
   if (r.content_type === 'github') return (r.author ?? '').split('/')[0] || (r.author ?? '');
@@ -100,6 +112,11 @@ export default function ResourcesClient() {
   const [copied, setCopied] = useState<number | null>(null);
   const [edited, setEdited] = useState<Record<number, string>>({});
   const [saveError, setSaveError] = useState<Record<number, boolean>>({});
+  const [expandedDesc, setExpandedDesc] = useState<Record<number, boolean>>({});
+
+  // View controls.
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('heat');
 
   // Per-resource on-demand draft state.
   const [drafts, setDrafts] = useState<Record<number, { draftId: number; draftText: string }>>({});
@@ -136,6 +153,17 @@ export default function ResourcesClient() {
     window.dispatchEvent(new CustomEvent('nav:unread-seen', { detail: 'resources' }));
     void fetch('/api/resources/unread', { method: 'POST' }).catch(() => {});
   }, [load]);
+
+  // Group → sort → filter for display.
+  const groups = useMemo(() => {
+    const sortFn = (a: Row, b: Row) =>
+      sortBy === 'new'
+        ? new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime()
+        : heatOf(b) - heatOf(a);
+    const gh = rows.filter(isGithub).sort(sortFn);
+    const social = rows.filter((r) => !isGithub(r)).sort(sortFn);
+    return { github: gh, social };
+  }, [rows, sortBy]);
 
   const runScan = async () => {
     const prevRunId = Number(runs[0]?.id ?? 0);
@@ -205,6 +233,7 @@ export default function ResourcesClient() {
   };
 
   const dismiss = async (resourceId: number) => {
+    setRows((rs) => rs.filter((r) => r.id !== resourceId)); // optimistic
     try {
       const res = await fetch(`/api/resources/${resourceId}`, {
         method: 'PATCH',
@@ -214,8 +243,8 @@ export default function ResourcesClient() {
       if (!res.ok) throw new Error(`dismiss failed: ${res.status}`);
     } catch (err) {
       console.error('dismiss failed', err);
+      void load(); // revert to server truth on failure
     }
-    void load();
   };
 
   const copyText = async (draftId: number, text: string) => {
@@ -277,8 +306,6 @@ export default function ResourcesClient() {
   };
 
   // Append an author to the exclude-accounts list and persist.
-  // NOTE: the displayed author name may differ from the X @handle used by the crawler's
-  // exclude filter — this is best-effort; we store the author string as-is.
   const excludeAuthor = async (author: string) => {
     let current = settings;
     if (!current) {
@@ -310,6 +337,188 @@ export default function ResourcesClient() {
 
   const last = runs[0];
 
+  // ---- Card renderers ----
+  const titleLink = (r: Row) => (
+    <a
+      href={r.url}
+      target="_blank"
+      rel="noreferrer"
+      className="group inline-flex items-start gap-1.5 font-semibold text-zinc-100 hover:text-brand break-words"
+    >
+      <span className="break-words">{r.title}</span>
+      <span className="shrink-0 text-zinc-500 group-hover:text-brand mt-0.5">↗</span>
+    </a>
+  );
+
+  const richCard = (r: Row) => {
+    const draft = draftFor(r);
+    const gen = genState[r.id];
+    const showDesc = expandedDesc[r.id];
+    return (
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 md:p-5 transition-colors hover:border-zinc-700">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                {typeLabel(r.content_type)}
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-300">{whyHot(r)}</span>
+              {r.published_at && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-500">📅 {fmtDate(r.published_at)}</span>
+              )}
+            </div>
+            <h3 className="text-[15px] leading-snug">{titleLink(r)}</h3>
+          </div>
+          {r.ai_score != null && (
+            <span className={`shrink-0 text-sm font-bold tabular-nums px-2.5 py-1 rounded-lg ${scoreCls(r.ai_score)}`}>
+              {r.ai_score}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 text-xs text-zinc-400">
+          {r.author && <span className="text-zinc-300 break-words">@{r.author}</span>}
+          {isGithub(r) ? (
+            <span className="tabular-nums">⭐ <b className="text-zinc-200">{nf(r.stars)}</b></span>
+          ) : (
+            <span className="flex items-center gap-3 tabular-nums">
+              <span>👍 <b className="text-zinc-200">{nf(r.likes)}</b></span>
+              <span>💬 <b className="text-zinc-200">{nf(r.comments)}</b></span>
+              <span>🔁 <b className="text-zinc-200">{nf(r.reposts)}</b></span>
+            </span>
+          )}
+          {r.author && (
+            <button onClick={() => excludeAuthor(excludeHandle(r))} className="text-[11px] text-zinc-500 hover:text-rose-400">
+              🚫 排除帳號
+            </button>
+          )}
+        </div>
+
+        {r.ai_summary && (
+          <div className="mt-3.5 rounded-xl bg-brand/[0.06] border border-brand/15 px-4 py-3">
+            <p className="text-[15px] leading-relaxed text-zinc-100 break-words">{r.ai_summary}</p>
+          </div>
+        )}
+
+        {r.description && (
+          <div className="mt-3">
+            <button
+              onClick={() => setExpandedDesc((m) => ({ ...m, [r.id]: !m[r.id] }))}
+              className="text-[11px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300"
+            >
+              原文 {showDesc ? '▲' : '▼'}
+            </button>
+            {showDesc && (
+              <div className="mt-1.5 text-xs text-zinc-400 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed max-h-40 overflow-y-auto">
+                {r.description}
+              </div>
+            )}
+          </div>
+        )}
+
+        {draft ? (
+          <>
+            <textarea
+              defaultValue={draft.draftText}
+              onChange={(e) => setEdited((m) => ({ ...m, [draft.draftId]: e.target.value }))}
+              onBlur={(e) => saveDraft(r.id, draft.draftId, e.target.value)}
+              rows={6}
+              className="w-full mt-4 p-3 text-sm rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-200 resize-y leading-relaxed focus:outline-none focus:border-brand/50"
+            />
+            {saveError[draft.draftId] && <p className="text-xs text-rose-400 mt-1">儲存失敗</p>}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5">
+              <button
+                onClick={() => copyText(draft.draftId, currentText(draft.draftId, draft.draftText))}
+                className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+              >
+                {copied === draft.draftId ? '已複製 ✓' : '📋 複製'}
+              </button>
+              <a
+                href={`https://www.threads.net/intent/post?text=${encodeURIComponent(currentText(draft.draftId, draft.draftText))}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-black text-white hover:bg-zinc-800"
+              >
+                🧵 去 Threads 發佈
+              </a>
+              <button onClick={() => dismiss(r.id)} className="text-xs px-3 py-2 md:py-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 ml-auto">
+                ❌ 不要
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 mt-4">
+            <button
+              onClick={() => generateDraft(r.id)}
+              disabled={gen?.running}
+              className="text-sm font-medium px-4 py-2.5 md:py-2 rounded-xl bg-brand text-white hover:bg-brand/90 disabled:opacity-50 shadow-sm"
+            >
+              {gen?.running ? `生成中…（已 ${gen.elapsed}s）` : '✍️ 改寫成我的貼文'}
+            </button>
+            {gen?.error && <span className="text-xs text-rose-400">生成失敗</span>}
+            <button onClick={() => dismiss(r.id)} className="text-xs px-3 py-2 md:py-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 ml-auto">
+              ❌ 不要
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Light card: latest crawled item that hasn't passed the burst gate / been scored.
+  const liteCard = (r: Row) => (
+    <div className="rounded-xl border border-zinc-800/70 bg-zinc-900/20 px-4 py-3 transition-colors hover:border-zinc-700">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">
+              {typeLabel(r.content_type)}
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800/50 text-zinc-500">🆕 最新爬取</span>
+          </div>
+          <div className="text-sm leading-snug">{titleLink(r)}</div>
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-zinc-500 tabular-nums">
+            {isGithub(r) ? (
+              <span>⭐ {nf(r.stars)}</span>
+            ) : (
+              <span>👍 {nf(r.likes)} · 💬 {nf(r.comments)}</span>
+            )}
+            {r.published_at && <span>📅 {fmtDate(r.published_at)}</span>}
+          </div>
+        </div>
+        <button onClick={() => dismiss(r.id)} className="shrink-0 text-[11px] text-zinc-600 hover:text-rose-400" aria-label="不要">
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderCard = (r: Row) => (isSurfaced(r) ? richCard(r) : liteCard(r));
+
+  const section = (key: 'github' | 'social', icon: string, name: string) => {
+    const items = groups[key];
+    if (!items.length) return null;
+    const surfacedN = items.filter(isSurfaced).length;
+    return (
+      <section key={key}>
+        <div className="flex items-baseline gap-2 mb-3 mt-1">
+          <h2 className="text-sm font-semibold text-zinc-200">{icon} {name}</h2>
+          <span className="text-xs text-zinc-500">
+            {items.length} 篇{surfacedN < items.length ? `（${surfacedN} 精選）` : ''}
+          </span>
+        </div>
+        <div className="space-y-3">{items.map((r) => <div key={r.id}>{renderCard(r)}</div>)}</div>
+      </section>
+    );
+  };
+
+  const segBtn = (active: boolean) =>
+    `px-3 py-1.5 text-xs rounded-lg transition-colors ${active ? 'bg-brand/15 text-brand font-medium' : 'text-zinc-400 hover:text-zinc-200'}`;
+
+  const showGithub = sourceFilter === 'all' || sourceFilter === 'github';
+  const showSocial = sourceFilter === 'all' || sourceFilter === 'social';
+  const total = (showGithub ? groups.github.length : 0) + (showSocial ? groups.social.length : 0);
+
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto pb-20">
       <PageHeader
@@ -323,30 +532,26 @@ export default function ResourcesClient() {
             >
               {running ? `執行中…（已 ${elapsed}s）` : '▶️ 立即執行'}
             </button>
-            {last && (
-              <span className="text-xs text-zinc-500 break-words">
-                上次：爬 {last.scraped}→閘門淘汰 {last.below_gate}→收錄 {last.recorded}
-                {Number(last.cost_usd) > 0 &&
-                  ` ｜💸 ~$${Number(last.cost_usd).toFixed(3)}/次（月估 ~$${(Number(last.cost_usd) * 30).toFixed(2)}）`}
-              </span>
-            )}
+            <button
+              onClick={openSettings}
+              className="text-sm px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+            >
+              ⚙️ 設定{settingsSaved && <span className="ml-1 text-emerald-400">✓</span>}
+            </button>
           </div>
         }
       />
 
       <p className="text-xs text-zinc-500 mb-3">
-        從 GitHub / X / Reddit 挑出近期爆紅的 AI 工具與資源，經閘門 + AI 評分後留下精華。每張卡片有
-        📌 中文重點，想發文時按「✍️ 改寫成我的貼文」用你的口吻生草稿（草稿內文不含連結，請用「🔗 來源」取得網址）。
+        從 GitHub / X 挑出近期爆紅的 AI 工具與資源，經閘門 + AI 評分留下精華（點標題 ↗ 開原始連結）。想發文時按「✍️ 改寫成我的貼文」用你的口吻生草稿。
       </p>
 
-      {/* 爬取設定 collapsible panel */}
-      <button
-        onClick={openSettings}
-        className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 mb-3"
-      >
-        ⚙️ 爬取設定 {settingsOpen ? '▲' : '▼'}
-        {settingsSaved && <span className="ml-2 text-emerald-400">已儲存 ✓</span>}
-      </button>
+      {last && (
+        <p className="text-[11px] text-zinc-600 mb-3">
+          上次：爬 {last.scraped}→閘門淘汰 {last.below_gate}→收錄 {last.recorded}
+          {Number(last.cost_usd) > 0 && ` ｜💸 ~$${Number(last.cost_usd).toFixed(3)}/次`}
+        </p>
+      )}
 
       {settingsOpen && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-4 space-y-4">
@@ -361,18 +566,9 @@ export default function ResourcesClient() {
                   </label>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {splitList(settings[key]).map((chip) => (
-                      <span
-                        key={chip}
-                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-zinc-800 text-zinc-200 break-words"
-                      >
+                      <span key={chip} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-zinc-800 text-zinc-200 break-words">
                         {chip}
-                        <button
-                          onClick={() => removeChip(key, chip)}
-                          className="text-zinc-500 hover:text-rose-400"
-                          aria-label="移除"
-                        >
-                          ×
-                        </button>
+                        <button onClick={() => removeChip(key, chip)} className="text-zinc-500 hover:text-rose-400" aria-label="移除">×</button>
                       </span>
                     ))}
                   </div>
@@ -384,12 +580,7 @@ export default function ResourcesClient() {
                       placeholder={key === 'resource_x_queries' ? '新增關鍵字…' : '新增帳號…'}
                       className="flex-1 min-w-0 px-2.5 py-2 md:py-1.5 text-sm rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200 focus:outline-none focus:border-brand/50"
                     />
-                    <button
-                      onClick={() => addChip(key)}
-                      className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 shrink-0"
-                    >
-                      新增
-                    </button>
+                    <button onClick={() => addChip(key)} className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 shrink-0">新增</button>
                   </div>
                 </div>
               ))}
@@ -409,12 +600,7 @@ export default function ResourcesClient() {
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  onClick={saveSettings}
-                  className="text-sm px-4 py-2 md:py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25"
-                >
-                  儲存
-                </button>
+                <button onClick={saveSettings} className="text-sm px-4 py-2 md:py-1.5 rounded-lg bg-brand/15 text-brand hover:bg-brand/25">儲存</button>
                 <span className="text-xs text-zinc-500">設定下一輪執行生效。</span>
               </div>
             </>
@@ -422,152 +608,36 @@ export default function ResourcesClient() {
         </div>
       )}
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-sm px-4 py-2 rounded-lg bg-zinc-800 text-zinc-100 shadow-lg">
-          {toast}
+      {/* 控制列：來源篩選 + 排序 */}
+      {!loading && rows.length > 0 && (
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-4 sticky top-0 z-10 bg-zinc-950/80 backdrop-blur py-2 -mx-1 px-1">
+          <div className="inline-flex items-center gap-0.5 rounded-xl bg-zinc-900 border border-zinc-800 p-0.5">
+            {([['all', '全部'], ['github', '🔧 GitHub'], ['social', '💬 社群']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setSourceFilter(v)} className={segBtn(sourceFilter === v)}>{label}</button>
+            ))}
+          </div>
+          <div className="inline-flex items-center gap-0.5 rounded-xl bg-zinc-900 border border-zinc-800 p-0.5">
+            {([['heat', '🔥 熱度'], ['new', '🆕 最新']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setSortBy(v)} className={segBtn(sortBy === v)}>{label}</button>
+            ))}
+          </div>
         </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-sm px-4 py-2 rounded-lg bg-zinc-800 text-zinc-100 shadow-lg">{toast}</div>
       )}
 
       {loading ? (
         <p className="text-zinc-500 text-sm">載入中…</p>
       ) : rows.length === 0 ? (
         <p className="text-zinc-400 text-center py-10">尚無資源，按「立即執行」跑一輪。</p>
+      ) : total === 0 ? (
+        <p className="text-zinc-400 text-center py-10">這個來源目前沒有內容。</p>
       ) : (
-        <div className="space-y-4">
-          {rows.map((r) => {
-            const draft = draftFor(r);
-            const gen = genState[r.id];
-            return (
-              <div
-                key={r.id}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 transition-colors hover:border-zinc-700"
-              >
-                {/* header: type + why-hot chips, title, score badge */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
-                        {typeLabel(r.content_type)}
-                      </span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-400">
-                        {whyHot(r)}
-                      </span>
-                      {r.published_at && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/70 text-zinc-500">
-                          📅 {fmtDate(r.published_at)}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-[15px] leading-snug text-zinc-100 break-words">{r.title}</h3>
-                  </div>
-                  {r.ai_score != null && (
-                    <span className={`shrink-0 text-sm font-bold tabular-nums px-2.5 py-1 rounded-lg ${scoreCls(r.ai_score)}`}>
-                      {r.ai_score}
-                    </span>
-                  )}
-                </div>
-
-                {/* meta: author + engagement stats + exclude */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 text-xs text-zinc-400">
-                  {r.author && <span className="text-zinc-300 break-words">@{r.author}</span>}
-                  {r.content_type === 'github' ? (
-                    <span className="tabular-nums">⭐ <b className="text-zinc-200">{nf(r.stars)}</b></span>
-                  ) : (
-                    <span className="flex items-center gap-3 tabular-nums">
-                      <span>👍 <b className="text-zinc-200">{nf(r.likes)}</b></span>
-                      <span>💬 <b className="text-zinc-200">{nf(r.comments)}</b></span>
-                      <span>🔁 <b className="text-zinc-200">{nf(r.reposts)}</b></span>
-                    </span>
-                  )}
-                  {r.author && (
-                    <button
-                      onClick={() => excludeAuthor(excludeHandle(r))}
-                      className="text-[11px] text-zinc-500 hover:text-rose-400"
-                    >
-                      🚫 排除帳號
-                    </button>
-                  )}
-                </div>
-
-                {/* 中文重點 — the scannable insight, visually anchored */}
-                {r.ai_summary && (
-                  <div className="mt-3.5 rounded-xl bg-brand/[0.06] border border-brand/15 px-4 py-3">
-                    <p className="text-[15px] leading-relaxed text-zinc-100 break-words">{r.ai_summary}</p>
-                  </div>
-                )}
-
-                {/* 原文 — labeled, scrollable, clearly secondary */}
-                {r.description && (
-                  <div className="mt-3">
-                    <p className="text-[11px] uppercase tracking-wide text-zinc-600 mb-1">原文</p>
-                    <div className="text-xs text-zinc-400 break-words whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 leading-relaxed max-h-40 overflow-y-auto">
-                      {r.description}
-                    </div>
-                  </div>
-                )}
-
-                {draft ? (
-                  <>
-                    <textarea
-                      defaultValue={draft.draftText}
-                      onChange={(e) => setEdited((m) => ({ ...m, [draft.draftId]: e.target.value }))}
-                      onBlur={(e) => saveDraft(r.id, draft.draftId, e.target.value)}
-                      rows={6}
-                      className="w-full mt-4 p-3 text-sm rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-200 resize-y leading-relaxed focus:outline-none focus:border-brand/50"
-                    />
-                    {saveError[draft.draftId] && (
-                      <p className="text-xs text-rose-400 mt-1">儲存失敗</p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                      <button
-                        onClick={() => copyText(draft.draftId, currentText(draft.draftId, draft.draftText))}
-                        className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-                      >
-                        {copied === draft.draftId ? '已複製 ✓' : '📋 複製'}
-                      </button>
-                      <a
-                        href={`https://www.threads.net/intent/post?text=${encodeURIComponent(currentText(draft.draftId, draft.draftText))}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-black text-white hover:bg-zinc-800"
-                      >
-                        🧵 去 Threads 發佈
-                      </a>
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-4">
-                    <button
-                      onClick={() => generateDraft(r.id)}
-                      disabled={gen?.running}
-                      className="text-sm font-medium px-4 py-2.5 md:py-2 rounded-xl bg-brand text-white hover:bg-brand/90 disabled:opacity-50 shadow-sm"
-                    >
-                      {gen?.running ? `生成中…（已 ${gen.elapsed}s）` : '✍️ 改寫成我的貼文'}
-                    </button>
-                    {gen?.error && <span className="text-xs text-rose-400 ml-2">生成失敗</span>}
-                  </div>
-                )}
-
-                {/* actions footer */}
-                <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-zinc-800/70">
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                  >
-                    🔗 來源
-                  </a>
-                  <button
-                    onClick={() => dismiss(r.id)}
-                    className="text-xs px-3 py-2 md:py-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 ml-auto"
-                  >
-                    ❌ 不要
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-6">
+          {showGithub && section('github', '🔧', 'GitHub')}
+          {showSocial && section('social', '💬', '社群')}
         </div>
       )}
     </div>
