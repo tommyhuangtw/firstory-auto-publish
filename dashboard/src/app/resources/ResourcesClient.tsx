@@ -117,6 +117,7 @@ export default function ResourcesClient() {
   // View controls.
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('heat');
+  const [socialWindow, setSocialWindow] = useState<number>(14); // 社群顯示範圍（天）；github 不受限
 
   // Per-resource on-demand draft state.
   const [drafts, setDrafts] = useState<Record<number, { draftId: number; draftText: string }>>({});
@@ -161,9 +162,13 @@ export default function ResourcesClient() {
         ? new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime()
         : heatOf(b) - heatOf(a);
     const gh = rows.filter(isGithub).sort(sortFn);
-    const social = rows.filter((r) => !isGithub(r)).sort(sortFn);
+    // 社群依使用者選的時間範圍過濾（github 不受限，永久保留）。
+    const cutoff = Date.now() - socialWindow * 86_400_000;
+    const social = rows
+      .filter((r) => !isGithub(r) && new Date(r.published_at ?? 0).getTime() >= cutoff)
+      .sort(sortFn);
     return { github: gh, social };
-  }, [rows, sortBy]);
+  }, [rows, sortBy, socialWindow]);
 
   const runScan = async () => {
     const prevRunId = Number(runs[0]?.id ?? 0);
@@ -619,6 +624,18 @@ export default function ResourcesClient() {
           <div className="inline-flex items-center gap-0.5 rounded-xl bg-zinc-900 border border-zinc-800 p-0.5">
             {([['heat', '🔥 熱度'], ['new', '🆕 最新']] as const).map(([v, label]) => (
               <button key={v} onClick={() => setSortBy(v)} className={segBtn(sortBy === v)}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 社群顯示範圍（github 永久保留、不受此限） */}
+      {!loading && rows.length > 0 && showSocial && (
+        <div className="flex items-center gap-2 flex-wrap mb-4 -mt-1">
+          <span className="text-[11px] text-zinc-500">💬 社群範圍</span>
+          <div className="inline-flex items-center gap-0.5 rounded-xl bg-zinc-900 border border-zinc-800 p-0.5">
+            {([[2, '最新2天'], [7, '最新1週'], [14, '最新2週']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setSocialWindow(v)} className={segBtn(socialWindow === v)}>{label}</button>
             ))}
           </div>
         </div>

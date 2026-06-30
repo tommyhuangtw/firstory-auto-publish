@@ -112,6 +112,12 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
     });
     tx();
 
+    // 保留策略：社群貼文只留兩週（published_at 超過 14 天就清掉，避免無限累積）；
+    // github 永久保留（新生爆款 repo 值得一直放著當 radar，不清）。
+    db.prepare(
+      "DELETE FROM curated_resources WHERE content_type != 'github' AND published_at IS NOT NULL AND published_at < date('now','-14 days')",
+    ).run();
+
     // 學習資源掃到「高分新資源」→ 推播到 iPhone（只算真正新的，re-surface 不吵）
     if (newGuids > 0) {
       await maybePushContentEvent('resources.new', {

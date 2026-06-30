@@ -16,6 +16,7 @@ export async function GET() {
       SELECT id FROM resource_drafts WHERE resource_guid = r.guid AND status != 'dismissed' ORDER BY id DESC LIMIT 1
     )
     WHERE r.status = 'surfaced'
+      AND (r.content_type = 'github' OR r.published_at >= date('now','-14 days'))
     ORDER BY r.last_surfaced_at DESC
     LIMIT 100
   `).all() as Array<{ id: number; content_type: string }>;
@@ -25,6 +26,7 @@ export async function GET() {
     SELECT ${FIELDS}, NULL AS draft_id, NULL AS draft_text, NULL AS viral_score
     FROM curated_resources r
     WHERE r.content_type = ? AND r.status != 'dismissed'
+      AND (r.content_type = 'github' OR r.published_at >= date('now','-14 days'))
     ORDER BY r.published_at DESC
     LIMIT 5
   `);
