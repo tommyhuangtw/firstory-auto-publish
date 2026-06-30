@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getToolByName, getToolMentions } from '@/services/memory/memoryService';
 
+// Reads SQLite at render — render per-request, never statically prerendered at build.
+export const dynamic = 'force-dynamic';
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '-';
   const d = new Date(dateStr);

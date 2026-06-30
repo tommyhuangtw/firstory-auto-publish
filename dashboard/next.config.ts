@@ -5,15 +5,12 @@ const nextConfig: NextConfig = {
   // import.meta.resolve (unsupported by Turbopack) to find its native binary.
   serverExternalPackages: ['better-sqlite3', 'sqlite-vec'],
 
-  // The dashboard is served publicly via Cloudflare Tunnel (hub.ailanbao.org → localhost:3000)
-  // while still running `next dev`. Next dev blocks cross-origin dev resources (Turbopack HMR
-  // runtime) by default, which prevents the client bundle from hydrating when accessed via the
-  // tunnel host — leaving all buttons dead and client-fetched panels (Pipeline Timeline, etc.)
-  // stuck loading. Allow the public host so dev resources load cross-origin.
+  // Prod now runs `next start` (built bundle) behind Cloudflare Tunnel
+  // (hub.ailanbao.org → localhost:3000). These two are dev-only no-ops in production but
+  // kept so `npm run dev` (local development) still behaves: allowedDevOrigins lets the
+  // tunnel host load dev resources cross-origin; devIndicators hides the dev overlay that
+  // would otherwise sit on the mobile bottom-nav.
   allowedDevOrigins: ['hub.ailanbao.org'],
-
-  // Prod is served by `next dev`, so the on-screen dev indicator (bottom-left "N")
-  // would otherwise sit on top of the mobile bottom-nav 首頁 button. Hide it.
   devIndicators: false,
 
   // Never cache the service worker so push-handler updates take effect immediately.

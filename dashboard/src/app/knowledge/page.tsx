@@ -2,6 +2,9 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { getAllDocs, getDocCategories, getDocContent } from '@/services/knowledgeService';
 
+// Reads SQLite/filesystem at render — must render per-request, never statically prerendered.
+export const dynamic = 'force-dynamic';
+
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;

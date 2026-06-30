@@ -2,6 +2,9 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { getAllTools, getToolCategories } from '@/services/memory/memoryService';
 
+// Reads SQLite at render — must render per-request, never statically prerendered at build.
+export const dynamic = 'force-dynamic';
+
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getMonth() + 1}/${d.getDate()}`;

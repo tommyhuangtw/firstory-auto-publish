@@ -4,6 +4,9 @@ import { getDocByFilename, getDocContent } from '@/services/knowledgeService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// Reads SQLite/filesystem at render — render per-request, never statically prerendered.
+export const dynamic = 'force-dynamic';
+
 const categoryColors: Record<string, string> = {
   content:      'bg-purple-900/50 text-purple-300',
   infra:        'bg-zinc-800 text-zinc-400',
