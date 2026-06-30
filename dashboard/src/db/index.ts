@@ -329,6 +329,7 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE trend_posts ADD COLUMN scan_run_id INTEGER');         // which scan recorded it
   safeAlter('ALTER TABLE trend_posts ADD COLUMN niche INTEGER DEFAULT 0');      // 回覆專區命中(niche keyword + 讚≥30 + 近2天)
   safeAlter('ALTER TABLE trend_posts ADD COLUMN reply_draft TEXT');             // AI 生成的回覆草稿
+  safeAlter('ALTER TABLE trend_posts ADD COLUMN dismissed INTEGER DEFAULT 0');   // 回覆專區手動移除(看過了)
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_niche ON trend_posts(niche)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_interested ON trend_posts(interested)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_trend_posts_topic ON trend_posts(topic_id)');

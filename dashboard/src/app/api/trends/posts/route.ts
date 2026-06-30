@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
   const days = parseInt(searchParams.get('days') || '7', 10);
   const limit = parseInt(searchParams.get('limit') || '200', 10);
   const sort = searchParams.get('sort');
+  const minLikes = parseInt(searchParams.get('minLikes') || '0', 10);          // 讚數門檻 (0 = 不限)
+  const postedDays = searchParams.has('postedDays') ? parseFloat(searchParams.get('postedDays') || '0') : null; // 發文時間窗 (posted_at)
   const showAll = searchParams.get('all') === '1';
   const includeDisliked = searchParams.get('includeDisliked') === '1';
   const INTEREST_THRESHOLD = 15; // # of 👍 before auto-switching to interest-ranking
@@ -54,8 +56,11 @@ export async function GET(request: NextRequest) {
     WHERE p.scraped_at > datetime('now', ?)
       AND (p.source IS NULL OR p.source != 'seed_csv')
       AND (p.like_count + p.reply_count) >= ?
+      AND COALESCE(p.dismissed, 0) = 0
   `;
   const qp: unknown[] = [`-${days} days`, minEng];
+  if (minLikes > 0) { query += ' AND p.like_count >= ?'; qp.push(minLikes); }
+  if (postedDays != null) { query += " AND p.posted_at IS NOT NULL AND datetime(p.posted_at) > datetime('now', ?)"; qp.push(`-${postedDays} days`); }
   if (topicId) { query += ' AND p.topic_id = ?'; qp.push(parseInt(topicId, 10)); }
   if (!includeDisliked) query += ' AND p.interested != -1'; // hide 👎 不要 posts by default
   query += ' ORDER BY p.relevant DESC, p.velocity DESC, p.scraped_at DESC';
@@ -80,13 +85,17 @@ export async function GET(request: NextRequest) {
     posts = posts.filter((p) => p.interest_score == null || p.interest_score >= minScore);
   }
 
-  // Sort is independent of the filter. Explicit ?sort wins (interest / newest / heat);
+  // Sort is independent of the filter. Explicit ?sort wins (interest / newest / heat / scraped);
   // otherwise default to interest when we have a profile, else newest.
-  const sortMode = sort === 'newest' || sort === 'heat' || sort === 'interest'
+  const sortMode = sort === 'newest' || sort === 'heat' || sort === 'interest' || sort === 'scraped'
     ? sort
     : (hasProfile && (filtered || likedVecs.length >= INTEREST_THRESHOLD) ? 'interest' : 'newest');
   const timeMs = (p: Record<string, unknown>) => {
     const ms = Date.parse((p.posted_at as string) || (p.scraped_at as string) || '');
+    return isNaN(ms) ? 0 : ms;
+  };
+  const scrapedMs = (p: Record<string, unknown>) => {
+    const ms = Date.parse((p.scraped_at as string) || '');
     return isNaN(ms) ? 0 : ms;
   };
   const heat = (p: Record<string, unknown>) => Number(p.velocity) || 0;
@@ -94,6 +103,8 @@ export async function GET(request: NextRequest) {
     posts.sort((a, b) => (b.interest_score ?? -1) - (a.interest_score ?? -1));
   } else if (sortMode === 'heat') {
     posts.sort((a, b) => heat(b) - heat(a));
+  } else if (sortMode === 'scraped') {
+    posts.sort((a, b) => scrapedMs(b) - scrapedMs(a)); // most recently crawled
   } else {
     posts.sort((a, b) => timeMs(b) - timeMs(a)); // newest
   }
