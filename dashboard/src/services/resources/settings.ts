@@ -12,9 +12,9 @@ const DEFAULTS = {
   resource_github_created_days: '15',    // 只撈最近半個月「建立」的新 repo（created:>），不是最後 commit 日
   resource_github_min_stars: '80',
   // 依建立年齡分級的爆衝門檻：新生 repo 的總星數≈該時間窗衝到的星數。任一窗達標即挑出。
-  resource_github_burst_3d_stars: '500',    // ≤ 3 天建立 且 ≥ 此星數
-  resource_github_burst_1w_stars: '1500',   // ≤ 7 天建立 且 ≥ 此星數
-  resource_github_burst_2w_stars: '3000',   // ≤ 14 天建立 且 ≥ 此星數
+  resource_github_burst_3d_stars: '800',    // ≤ 3 天建立 且 ≥ 此星數
+  resource_github_burst_1w_stars: '2500',   // ≤ 7 天建立 且 ≥ 此星數
+  resource_github_burst_2w_stars: '5000',   // ≤ 14 天建立 且 ≥ 此星數
   resource_top_n: '5',
   resource_max_post_age_days: '2',       // 社群貼文超過幾天就算舊、直接淘汰（不論互動多高）— 只要最新 1-2 天
   resource_apify_cost_per_item: '0.0004', // Apify X 每則結果估價（USD），用於成本估算
