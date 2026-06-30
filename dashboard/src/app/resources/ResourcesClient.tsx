@@ -52,6 +52,9 @@ const NUM_LABELS: Record<string, string> = {
 };
 
 function whyHot(r: Row): string {
+  const burstWin: Record<string, string> = { burst_3d: '3天', burst_1w: '1週', burst_2w: '2週' };
+  const win = burstWin[r.freshness_reason];
+  if (win) return `🚀 ${win}衝 ${(r.stars ?? 0).toLocaleString()}★`;
   if (r.freshness_reason === 'star_spike') return `⭐ ${(r.star_velocity ?? 0).toFixed(0)}/day`;
   if (r.freshness_reason === 'youth') return '🆕 新工具';
   return '🔥 社群熱議';

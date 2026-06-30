@@ -18,15 +18,17 @@ function cleanTitle(text: string, max = 100): string {
 }
 
 export async function crawlGitHub(): Promise<RawResource[]> {
-  const pushedDays = rgetNum('resource_github_pushed_days');
+  const createdDays = rgetNum('resource_github_created_days');
   const minStars = rgetNum('resource_github_min_stars');
-  const since = new Date(Date.now() - pushedDays * 86_400_000).toISOString().split('T')[0];
+  const since = new Date(Date.now() - createdDays * 86_400_000).toISOString().split('T')[0];
   const queries = rget('resource_github_queries').split('|').map((q) => q.trim()).filter(Boolean);
   const token = process.env.GITHUB_TOKEN;
   const excludeSet = new Set(rgetList('resource_x_exclude_accounts').map((a) => a.toLowerCase())); // 共用排除名單（owner login）
   const out: RawResource[] = [];
   for (const base of queries) {
-    const q = `${base} pushed:>${since} stars:>${minStars}`;
+    // created:>（建立日）而非 pushed:>（最後 commit 日）：只要最近三個月「新生」的 repo，
+    // 排除老 repo 因近期 commit/被重新討論而混進來（Tommy 要的是新專案，不是老專案翻紅）。
+    const q = `${base} created:>${since} stars:>${minStars}`;
     try {
       const res = await fetch(
         `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=20`,

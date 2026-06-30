@@ -60,10 +60,19 @@ export async function runResourceScan(opts: { trigger?: string } = {}): Promise<
 
     const scored = await scoreAll(fresh);
     result.scored = scored.length;
-    const worthy = scored.filter((r) => r.worthSharing).sort((a, b) => b.aiScore - a.aiScore);
-    // 不再自動生草稿（best-of-N 太貴又非每篇都要）。改：surface top-N 帶「中文重點 summary」，
+    const worthy = scored.filter((r) => r.worthSharing);
+    // github（新生爆衝 repo）與社群貼文分開各取名額：否則 X 聳動貼文 aiScore 高就把 top-N
+    // 名額全占，github 永遠上不了榜。github 依 stars/day（freshnessScore）排＝漲最快優先；社群依 aiScore 排。
+    const n = rgetNum('resource_top_n');
+    // github 爆衝閘門（星數爆衝）就是篩選標準，不再讓 LLM worthSharing 二次否決 → 漲最快的一定上 radar
+    // （仍保留 AI 摘要供判斷）。社群貼文則維持 worthSharing 把關。
+    const ghTop = scored.filter((r) => r.contentType === 'github')
+      .sort((a, b) => b.freshnessScore - a.freshnessScore).slice(0, n);
+    const socialTop = worthy.filter((r) => r.contentType !== 'github')
+      .sort((a, b) => b.aiScore - a.aiScore).slice(0, n);
+    // 不再自動生草稿（best-of-N 太貴又非每篇都要）。改：surface 帶「中文重點 summary」，
     // 草稿改成 /resources 頁上對某篇有興趣時「✍️ 改寫成我的貼文」按鈕 on-demand 生成。
-    const topN = worthy.slice(0, rgetNum('resource_top_n'));
+    const topN = [...ghTop, ...socialTop];
 
     // Which of the top-N are genuinely NEW (vs already-seen re-surfaced)? Count before upsert
     // so the iPhone push only fires for fresh finds, not every re-scan of the same resources.

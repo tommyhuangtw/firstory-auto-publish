@@ -3,15 +3,25 @@ import { getDb } from '@/db';
 import { rgetNum } from './settings';
 import type { EnrichedResource } from './types';
 
-/** repo 年齡加權：窗口內滿分，之後線性衰減到 0。 */
-function youthBonus(createdAt: string | undefined, windowDays: number): number {
-  if (!createdAt) return 0;
+/** repo 建立至今天數；壞日期回 null，未來日期 clamp 在 0（視為剛建立）。 */
+function repoAgeDays(createdAt: string | undefined): number | null {
+  if (!createdAt) return null;
   const t = new Date(createdAt).getTime();
-  if (!Number.isFinite(t)) return 0;   // 壞日期 → 不加權，避免 NaN 污染整串排序
-  const ageDays = (Date.now() - t) / 86_400_000;
-  if (ageDays < 0) return 1;           // 未來日期（時鐘偏差/壞資料）→ 視為最新，clamp 在 1
-  if (ageDays <= windowDays) return 1 - (ageDays / windowDays) * 0.5; // 0.5~1
-  return Math.max(0, 0.5 - (ageDays - windowDays) / (windowDays * 4)); // 之後快速衰減
+  if (!Number.isFinite(t)) return null;   // 壞日期 → 淘汰，避免 NaN 污染
+  const d = (Date.now() - t) / 86_400_000;
+  return d < 0 ? 0 : d;                    // 未來日期（時鐘偏差/壞資料）→ 視為剛建立
+}
+
+/**
+ * 依建立年齡分級的爆衝閘門。新生 repo 的「總星數」≈ 它在這段時間窗衝到的星數
+ * （因為它總共也才存在這麼久），所以用 created_at + 總星數就能精準判斷爆衝，不需歷史快照。
+ * 取最貼合年齡的窗（門檻隨窗放大）：3 天內門檻最低、兩週內最高、超過兩週不算「最新」。
+ */
+function githubBurst(ageDays: number, stars: number, t3: number, t7: number, t14: number): string | null {
+  if (ageDays <= 3)  return stars >= t3  ? 'burst_3d' : null;
+  if (ageDays <= 7)  return stars >= t7  ? 'burst_1w' : null;
+  if (ageDays <= 14) return stars >= t14 ? 'burst_2w' : null;
+  return null;
 }
 
 export interface GateResult { passed: EnrichedResource[]; belowGate: number; }
@@ -19,35 +29,34 @@ export interface GateResult { passed: EnrichedResource[]; belowGate: number; }
 /** 算 freshnessScore + 硬閘門。修改傳入物件的 freshnessScore/Reason。 */
 export function applyFreshnessGate(resources: EnrichedResource[]): GateResult {
   const buzzFloor = rgetNum('resource_social_buzz_floor');
-  const velFloor = rgetNum('resource_star_velocity_floor');
-  const youthWindow = rgetNum('resource_youth_window_days');
+  const t3 = rgetNum('resource_github_burst_3d_stars');
+  const t7 = rgetNum('resource_github_burst_1w_stars');
+  const t14 = rgetNum('resource_github_burst_2w_stars');
   const maxPostAgeMs = rgetNum('resource_max_post_age_days') * 86_400_000;
   const passed: EnrichedResource[] = [];
   let belowGate = 0;
 
   for (const r of resources) {
-    // 社群貼文（非 github）必須夠新：一篇一年前的爆文（8M views）互動再高也是舊聞，直接淘汰。
-    // github 不套用此規則 —— 老 repo「現在星數暴衝」正是我們要的「被重新討論」訊號。
-    if (r.contentType !== 'github' && r.publishedAt) {
+    if (r.contentType === 'github') {
+      // 只要最新（≤2 週建立）且爆衝達標的 repo；老 repo 不再因近期 commit/翻紅混進來。
+      const ageDays = repoAgeDays(r.createdAt);
+      if (ageDays === null) { belowGate++; continue; }
+      const reason = githubBurst(ageDays, r.stars ?? 0, t3, t7, t14);
+      if (!reason) { belowGate++; continue; }
+      r.freshnessReason = reason;
+      r.freshnessScore = (r.stars ?? 0) / Math.max(0.5, ageDays); // 星/天：漲最快排最前
+      passed.push(r);
+      continue;
+    }
+
+    // 非 github（社群貼文）：必須夠新（一年前的爆文互動再高也是舊聞）+ 互動夠高。
+    if (r.publishedAt) {
       const ageMs = Date.now() - new Date(r.publishedAt).getTime();
       if (Number.isFinite(ageMs) && ageMs > maxPostAgeMs) { belowGate++; continue; }
     }
-
-    const youth = r.contentType === 'github' ? youthBonus(r.createdAt, youthWindow) : 0;
-    const vel = r.starVelocity ?? 0;
-
-    const socialOk = r.socialBuzz > buzzFloor;
-    const starOk = vel > velFloor;
-    // 非 github 原生資源：用貼文互動本身（socialBuzz）當門檻
-    const nativeOk = r.contentType !== 'github' && r.socialBuzz > buzzFloor;
-    // 首見新生 repo（無 velocity 歷史）：youthBonus 高就放行
-    const youthOk = r.contentType === 'github' && r.starVelocity === undefined && youth > 0.7;
-
-    if (socialOk || starOk || nativeOk || youthOk) {
-      // 分數：星速度 × youth 疊加，社群 buzz 正規化加總
-      r.freshnessScore = vel * (1 + youth) + r.socialBuzz / 50 + youth * 20;
-      // nativeOk 先於 socialOk：非 github 原生熱資源標 native_post；github 因被討論而過則標 social_buzz
-      r.freshnessReason = starOk ? 'star_spike' : nativeOk ? 'native_post' : socialOk ? 'social_buzz' : 'youth';
+    if (r.socialBuzz > buzzFloor) {
+      r.freshnessScore = r.socialBuzz / 50;
+      r.freshnessReason = 'native_post';
       passed.push(r);
     } else {
       belowGate++;
