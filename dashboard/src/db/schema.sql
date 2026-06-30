@@ -349,6 +349,20 @@ CREATE TABLE IF NOT EXISTS thumbnail_styles (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Idea inbox: quick-capture post ideas on the go, develop into posts later
+-- Phase 1: text capture only (voice/link capture reserved for later phases).
+CREATE TABLE IF NOT EXISTS ideas (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  content     TEXT    NOT NULL,                  -- raw idea / working draft
+  source_type TEXT    NOT NULL DEFAULT 'text',   -- 'text' | 'voice' | 'link' (Phase 2/3)
+  source_url  TEXT,                              -- set when captured from a link
+  status      TEXT    NOT NULL DEFAULT 'new',    -- 'new' | 'developing' | 'posted' | 'archived'
+  tags        TEXT,                              -- reserved (JSON array); not used in Phase 1
+  posted_url  TEXT,                              -- optional Threads URL after publishing
+  created_at  TEXT    DEFAULT (datetime('now')),
+  updated_at  TEXT    DEFAULT (datetime('now'))
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_segment ON episodes(segment_type);
@@ -372,6 +386,8 @@ CREATE INDEX IF NOT EXISTS idx_digests_milestone ON episode_digests(is_milestone
 CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(theme_name);
 CREATE INDEX IF NOT EXISTS idx_episode_themes_episode ON episode_themes(episode_id);
 CREATE INDEX IF NOT EXISTS idx_episode_themes_theme ON episode_themes(theme_id);
+CREATE INDEX IF NOT EXISTS idx_ideas_status ON ideas(status);
+CREATE INDEX IF NOT EXISTS idx_ideas_created ON ideas(created_at);
 
 -- ── Tasks (Kanban / Project Management) ─────────────────────────────
 CREATE TABLE IF NOT EXISTS tasks (

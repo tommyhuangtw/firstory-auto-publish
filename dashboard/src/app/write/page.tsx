@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import PageHeader from '@/components/PageHeader';
 
 interface DraftScore {
@@ -41,6 +41,20 @@ export default function WritePage() {
   const [showRefs, setShowRefs] = useState(false);
   const [showCandidates, setShowCandidates] = useState(false);
   const [error, setError] = useState('');
+
+  // Prefill the idea from `/write?idea=...` (e.g. sent over from 靈感速記).
+  // One-shot read of the URL after mount (can't read window during SSR without a
+  // hydration mismatch), then strip the param so a refresh won't re-inject stale text.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const seed = params.get('idea');
+    if (seed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time URL → state hydration on mount
+      setMode('rewrite');
+      setIdea(seed);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   const switchMode = useCallback((m: 'rewrite' | 'autonomous') => {
     setMode(m);
