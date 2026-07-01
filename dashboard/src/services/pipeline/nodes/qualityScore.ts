@@ -113,6 +113,7 @@ const SCORING_SYSTEM_PROMPT = `你是一位經驗豐富、標準明確的 Podcas
    — 0-5 分：中英夾雜嚴重，影響聽眾理解
    ✅ 加分指標：僅保留必要專有名詞（如 ChatGPT、workflow automation、Gemini Pro）；使用自然中文替代通用詞（如「流程順」「寫得很順」勝過「很 smooth」）；台灣工程師熟悉的字眼保留英文（GitHub / Bug / MCP / Debug / Prompt）
    ❌ 扣分指標：非必要詞彙使用英文；語意不清的英文詞彙或混合式語句（如「UI 很 friendly」「這個 tool 的功能很強」）
+   ❌ 括號夾註英文重扣（TTS 會唸壞）：出現「中文（英文）」或「英文（中文）」這種一個概念用兩種語言並列的括號對照（如「規劃模式（Plan Mode）」「中等（Medium）」）一律重扣，並在 comments 中要求二選一（純中文或純英文）
 
 3. 台灣用語友善度（20 分）
    評估是否使用偏向中國大陸詞彙、語感不符合台灣聽眾習慣。
