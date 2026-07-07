@@ -212,6 +212,18 @@ export async function startPipeline(
     return { pipelineRunId, state: finalState };
   } catch (error) {
     const errMsg = (error as Error).message;
+
+    // User-initiated cancel: run is already 'cancelled'; mark the episode and stop quietly
+    // (no 'failed' status, no failure notification, no auto-retry).
+    if (error instanceof PipelineCancelledError) {
+      db.prepare(
+        `UPDATE pipeline_runs SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?`
+      ).run(pipelineRunId);
+      db.prepare(`UPDATE episodes SET status = 'cancelled' WHERE id = ?`).run(episodeId);
+      log.info({ episodeId, pipelineRunId }, 'Pipeline cancelled by user');
+      throw error;
+    }
+
     db.prepare(
       `UPDATE pipeline_runs SET status = 'failed', error_log = ?, completed_at = datetime('now')
        WHERE id = ?`
@@ -476,6 +488,17 @@ export async function retryFromStage(
 // ── Helpers ──
 
 /**
+ * Thrown by wrapNode when a run has been marked 'cancelled' — aborts graph.invoke
+ * cleanly at the next node boundary (cooperative cancel; the in-flight node still finishes).
+ */
+export class PipelineCancelledError extends Error {
+  constructor(stage: string) {
+    super(`Pipeline cancelled by user (before ${stage})`);
+    this.name = 'PipelineCancelledError';
+  }
+}
+
+/**
  * Wrap a node function with logging and DB stage tracking.
  */
 function wrapNode(
@@ -484,10 +507,19 @@ function wrapNode(
 ) {
   return async (state: AnnotatedState): Promise<Partial<AnnotatedState>> => {
     const start = Date.now();
+    const db = getDb();
+
+    // Cooperative cancel: if the run was marked 'cancelled' (via /api/pipeline/cancel),
+    // stop here instead of starting the next node.
+    const runRow = db.prepare('SELECT status FROM pipeline_runs WHERE id = ?').get(state.pipelineRunId) as { status: string } | undefined;
+    if (runRow?.status === 'cancelled') {
+      log.info({ node: name, episodeId: state.episodeId }, 'Pipeline cancelled — aborting before node');
+      throw new PipelineCancelledError(name);
+    }
+
     log.info({ node: name, episodeId: state.episodeId }, 'Node started');
 
     // Update current stage in pipeline_runs
-    const db = getDb();
     db.prepare('UPDATE pipeline_runs SET current_stage = ? WHERE id = ?').run(name, state.pipelineRunId);
 
     const result = await fn(state as PipelineState);

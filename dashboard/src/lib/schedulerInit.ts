@@ -94,15 +94,13 @@ function slotsToCronJobs(slots: ScheduleSlot[]): Array<{ name: string; cron: str
   return jobs;
 }
 
-function registerJobs(config: WeeklyScheduleConfig): void {
-  const scheduler = getScheduler();
-  const cronJobs = slotsToCronJobs(config.slots);
-
-  for (const { name, cron, segment } of cronJobs) {
-    scheduler.register(name, cron, async () => {
-      await runPipeline(segment);
-    });
-  }
+function registerJobs(_config: WeeklyScheduleConfig): void {
+  // Auto-generation is deliberately DISABLED. Episodes are now hand-picked from the
+  // /candidates board (see candidateCrawler + runCandidateCrawl). We no longer register
+  // daily/weekly/robot pipeline cron jobs, regardless of the `weekly_schedule` setting.
+  // `runPipeline` stays live for the manual /api/pipeline/start path (board → 做成一集).
+  // ponytail: intentional no-op — do NOT re-enable auto-gen here.
+  void slotsToCronJobs; // kept for reference; no longer wired to cron
 }
 
 export function initializeSchedulerJobs(): void {
@@ -140,6 +138,10 @@ export function initializeSchedulerJobs(): void {
   if (insp.enabled) {
     scheduler.register(INSPIRATION_CRAWL_JOB, insp.cron, runInspirationCrawl);
   }
+
+  // Episode candidate crawl — daily metadata-only pull (queries + curated podcast channels)
+  // that feeds the /candidates 選題板. This replaces daily auto-generation. 06:30 daily.
+  scheduler.register(CANDIDATE_CRAWL_JOB, '30 6 * * *', runCandidateCrawl);
 
   // Resource curation — scrape AI/dev resources, gate on freshness, score, dedup,
   // draft, and record the top picks. Daily at 08:00.
@@ -209,6 +211,19 @@ export function applyInspirationCrawlConfig(): { cron: string; enabled: boolean 
   else { scheduler.disable(name); }
   log.info(cfg, 'Inspiration crawl config applied to scheduler');
   return cfg;
+}
+
+const CANDIDATE_CRAWL_JOB = '選題候選爬取';
+
+async function runCandidateCrawl(): Promise<void> {
+  log.info('Running episode candidate crawl...');
+  try {
+    const { crawlAll } = await import('@/services/candidateCrawler');
+    const result = await crawlAll();
+    log.info(result, 'Episode candidate crawl complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Episode candidate crawl failed');
+  }
 }
 
 async function runInspirationCrawl(): Promise<void> {
@@ -472,6 +487,15 @@ async function catchUpMissedSyncs(): Promise<void> {
       log.info({ today }, 'Catch-up: inspiration crawl missing for today, running now');
       await runInspirationCrawl();
     }
+  }
+
+  // Candidate crawl: if nothing was crawled today, run it now (covers Mac-asleep-at-06:30).
+  const candidateToday = db.prepare(
+    "SELECT 1 FROM episode_candidates WHERE date(crawled_at, 'localtime') = date('now', 'localtime') LIMIT 1",
+  ).get();
+  if (!candidateToday) {
+    log.info({ today }, 'Catch-up: candidate crawl missing for today, running now');
+    await runCandidateCrawl();
   }
 }
 

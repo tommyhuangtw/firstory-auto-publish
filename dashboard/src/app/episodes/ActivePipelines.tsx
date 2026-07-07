@@ -42,7 +42,19 @@ interface Props {
 export default function ActivePipelines({ initialRuns }: Props) {
   const router = useRouter();
   const [runs, setRuns] = useState(initialRuns);
+  const [cancelling, setCancelling] = useState<Set<number>>(new Set());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const cancel = async (episodeId: number) => {
+    if (!window.confirm('確定要停止生成這集嗎？（會在目前這個步驟結束後中止）')) return;
+    setCancelling((prev) => new Set(prev).add(episodeId));
+    await fetch('/api/pipeline/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ episodeId }),
+    }).catch(() => {});
+    setRuns((prev) => prev.filter((r) => r.episode_id !== episodeId));
+    router.refresh();
+  };
 
   useEffect(() => {
     intervalRef.current = setInterval(async () => {
@@ -117,9 +129,18 @@ export default function ActivePipelines({ initialRuns }: Props) {
                     生成中
                   </span>
                 </div>
-                <span className="text-xs text-zinc-400 tabular-nums">
-                  {currentIdx + 1} / {STAGES.length}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-zinc-400 tabular-nums">
+                    {currentIdx + 1} / {STAGES.length}
+                  </span>
+                  <button
+                    onClick={() => cancel(run.episode_id)}
+                    disabled={cancelling.has(run.episode_id)}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 cursor-pointer transition-colors disabled:opacity-50"
+                  >
+                    {cancelling.has(run.episode_id) ? '停止中…' : '停止生成'}
+                  </button>
+                </div>
               </div>
 
               {/* Horizontal stepper */}

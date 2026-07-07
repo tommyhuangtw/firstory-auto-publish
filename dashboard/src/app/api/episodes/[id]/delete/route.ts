@@ -41,6 +41,10 @@ export async function DELETE(
       db.prepare('DELETE FROM episode_tool_mentions WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM llm_calls WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM service_costs WHERE episode_id = ?').run(episodeId);
+      // Other tables with a FK → episodes.id (would otherwise fail the constraint).
+      db.prepare('DELETE FROM episode_digests WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM episode_themes WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM substack_drafts WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM pipeline_runs WHERE episode_id = ?').run(episodeId);
       db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
     });

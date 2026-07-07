@@ -31,6 +31,14 @@ const allNavItems: NavItem[] = [
     ),
   },
   {
+    href: '/candidates', label: '選題板', group: 'core',
+    icon: (
+      <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+      </svg>
+    ),
+  },
+  {
     href: '/scheduler', label: '排程', group: 'core',
     icon: (
       <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -220,6 +228,7 @@ export default function Navigation() {
   const [inspirationUnread, setInspirationUnread] = useState(0);
   const [thumbnailUnread, setThumbnailUnread] = useState(0);
   const [resourcesUnread, setResourcesUnread] = useState(0);
+  const [candidatesUnread, setCandidatesUnread] = useState(0);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -230,17 +239,19 @@ export default function Navigation() {
     let cancelled = false;
     const check = async () => {
       try {
-        const [t, i, th, r] = await Promise.all([
+        const [t, i, th, r, c] = await Promise.all([
           fetch('/api/trends/niche/unread').then(r => r.json()).catch(() => null),
           fetch('/api/inspiration/unread').then(r => r.json()).catch(() => null),
           fetch('/api/thumbnail-styles/unread').then(r => r.json()).catch(() => null),
           fetch('/api/resources/unread').then(r => r.json()).catch(() => null),
+          fetch('/api/candidates/unread').then(r => r.json()).catch(() => null),
         ]);
         if (cancelled) return;
         if (t) setTrendsUnread(t.count ?? 0);
         if (i) setInspirationUnread(i.count ?? 0);
         if (th) setThumbnailUnread(th.count ?? 0);
         if (r) setResourcesUnread(r.unread ?? r.count ?? 0);
+        if (c) setCandidatesUnread(c.count ?? 0);
       } catch {
         /* offline / dev — leave counts as-is */
       }
@@ -260,6 +271,7 @@ export default function Navigation() {
       else if (key === 'inspiration') setInspirationUnread(0);
       else if (key === 'thumbnail') setThumbnailUnread(0);
       else if (key === 'resources') setResourcesUnread(0);
+      else if (key === 'candidates') setCandidatesUnread(0);
     };
     window.addEventListener('nav:unread-seen', onSeen);
     return () => window.removeEventListener('nav:unread-seen', onSeen);
@@ -361,6 +373,9 @@ export default function Navigation() {
                   <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
                     {item.icon}
                     {item.label}
+                    {item.href === '/candidates' && candidatesUnread > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新候選影片" />
+                    )}
                     {item.href === '/trends' && trendsUnread > 0 && (
                       <span className="ml-auto w-2 h-2 rounded-full bg-red-500" title="有新貼文可回覆" />
                     )}
@@ -403,6 +418,9 @@ export default function Navigation() {
                   }`}
                 >
                   {item.icon}
+                  {item.href === '/candidates' && candidatesUnread > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+                  )}
                   {item.href === '/trends' && trendsUnread > 0 && (
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
                   )}

@@ -180,6 +180,27 @@ CREATE TABLE IF NOT EXISTS weekly_youtube_sources (
   fetched_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Episode candidate board: daily-crawled videos (queries + curated podcast channels),
+-- metadata only (NO transcript — transcription happens later, only if made into an episode).
+-- Tommy manually picks from these; there is no more auto-generation.
+CREATE TABLE IF NOT EXISTS episode_candidates (
+  id INTEGER PRIMARY KEY,
+  video_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  channel_name TEXT,
+  thumbnail_url TEXT,
+  published_at TEXT,
+  view_count INTEGER DEFAULT 0,
+  duration_seconds INTEGER DEFAULT 0,
+  source TEXT,                        -- 'query' | 'channel'
+  source_detail TEXT,                 -- the query string, or the channel handle
+  status TEXT DEFAULT 'new',          -- 'new' | 'saved' | 'dismissed' | 'used'
+  tags TEXT,                          -- CSV of topical tags, delimited e.g. ',創業,AI工具,' (NULL = not tagged yet)
+  crawled_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_episode_candidates_status ON episode_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_episode_candidates_published ON episode_candidates(published_at);
+
 CREATE TABLE IF NOT EXISTS platform_analytics (
   id INTEGER PRIMARY KEY,
   episode_number INTEGER,

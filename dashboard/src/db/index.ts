@@ -544,6 +544,7 @@ export function getDb(): Database.Database {
   // Embedding columns for the voice writer (added post-hoc for existing DBs).
   safeAlter('ALTER TABLE threads_posts ADD COLUMN embedding TEXT');
   safeAlter('ALTER TABLE voice_assets ADD COLUMN embedding TEXT');
+  safeAlter('ALTER TABLE episode_candidates ADD COLUMN tags TEXT');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_engagement ON threads_posts(engagement_rate)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_threads_posts_posted ON threads_posts(posted_at)');
   safeIndex('CREATE INDEX IF NOT EXISTS idx_voice_assets_type ON voice_assets(type)');
