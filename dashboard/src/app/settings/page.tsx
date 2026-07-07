@@ -78,6 +78,8 @@ export default function SettingsPage() {
   const [fbDisconnecting, setFbDisconnecting] = useState(false);
   const [threadsStatus, setThreadsStatus] = useState<ThreadsStatus | null>(null);
   const [threadsDisconnecting, setThreadsDisconnecting] = useState(false);
+  const [cleaningAudio, setCleaningAudio] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState('');
 
   const loadData = useCallback(async () => {
     const [settingsRes, fbRes, threadsRes] = await Promise.all([
@@ -133,6 +135,28 @@ export default function SettingsPage() {
       setMessage('斷開失敗');
     } finally {
       setThreadsDisconnecting(false);
+    }
+  }
+
+  async function handleCleanupAudio() {
+    if (!confirm('清理超過 60 天的本地音檔？（會先確認 Drive 上有備份才刪，之後點播會自動從雲端還原）')) return;
+    setCleaningAudio(true);
+    setCleanupResult('');
+    try {
+      const res = await fetch('/api/audio/cleanup', { method: 'POST' });
+      const d = await res.json();
+      if (d.error) {
+        setCleanupResult(`失敗：${d.error}`);
+      } else {
+        setCleanupResult(
+          `完成：掃描 ${d.scanned} 集、刪除 ${d.deleted} 檔、釋放 ${d.freedMB} MB` +
+          (d.skippedNotOnDrive ? `；${d.skippedNotOnDrive} 檔 Drive 上找不到已保留` : '')
+        );
+      }
+    } catch (e) {
+      setCleanupResult(`失敗：${(e as Error).message}`);
+    } finally {
+      setCleaningAudio(false);
     }
   }
 
@@ -344,6 +368,24 @@ export default function SettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-200 mb-1">本地儲存空間</h2>
+          <p className="text-[11px] text-zinc-500 mb-4">
+            清理超過 60 天的本地音檔以釋放空間。刪除前會確認 Drive 上有備份，之後點播會自動從雲端還原。
+            系統每週一 04:00 也會自動執行一次。
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCleanupAudio}
+              disabled={cleaningAudio}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-300 transition-colors cursor-pointer"
+            >
+              {cleaningAudio ? '清理中…' : '立即清理舊音檔'}
+            </button>
+            {cleanupResult && <span className="text-[11px] text-zinc-400">{cleanupResult}</span>}
           </div>
         </section>
 

@@ -104,6 +104,50 @@ export class GoogleDriveService {
     });
   }
 
+  /**
+   * Find a file by exact name within a folder. Returns null if not found.
+   * Used to verify an asset exists on Drive before deleting the local copy,
+   * and to locate it for on-demand restore.
+   */
+  async findFileByName(folderId: string, name: string): Promise<DriveFile | null> {
+    const drive = this.ensureDrive();
+    const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+    const response = await drive.files.list({
+      q: `name = '${escaped}' and '${folderId}' in parents and trashed = false`,
+      orderBy: 'modifiedTime desc',
+      fields: 'files(id, name, mimeType, modifiedTime, size)',
+      pageSize: 5,
+    });
+
+    const files = response.data.files as DriveFile[] | undefined;
+    if (!files || files.length === 0) return null;
+    return files[0];
+  }
+
+  /** Download a file to an explicit destination path (creates parent dirs). */
+  async downloadFileTo(fileId: string, destPath: string): Promise<string> {
+    const drive = this.ensureDrive();
+    await fs.ensureDir(path.dirname(destPath));
+
+    const response = await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream' }
+    );
+
+    const writeStream = fs.createWriteStream(destPath);
+
+    return new Promise((resolve, reject) => {
+      (response.data as NodeJS.ReadableStream)
+        .pipe(writeStream)
+        .on('finish', () => {
+          log.info({ destPath }, 'File downloaded to path');
+          resolve(destPath);
+        })
+        .on('error', reject);
+    });
+  }
+
   async downloadLatestAudio(): Promise<DownloadResult> {
     const file = await this.getLatestFileFromFolder(AUDIO_FOLDER_ID, ['audio']);
     const filePath = await this.downloadFile(file.id, file.name);

@@ -32,7 +32,18 @@ export async function GET(
   }
 
   if (!fs.existsSync(filePath)) {
-    return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    // Old audio may have been cleaned up locally but still lives on Drive.
+    // Transparently restore it so playback just works (first load is slower).
+    const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
+    if (AUDIO_EXTS.includes(ext)) {
+      const { restoreAudioFile } = await import('@/services/audioRetention');
+      const restored = await restoreAudioFile(filePath);
+      if (!restored) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 });
+      }
+    } else {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
   }
 
   const stat = fs.statSync(filePath);
