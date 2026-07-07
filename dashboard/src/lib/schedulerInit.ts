@@ -150,6 +150,14 @@ export function initializeSchedulerJobs(): void {
   // last-run timestamp). Generates 10 new styles + sample previews for human review.
   scheduler.register('縮圖風格雙週生成', '0 9 * * 0', runThumbnailStyleBiweekly);
 
+  // Old-audio cleanup — every Monday 04:00. Deletes local episode audio older
+  // than the retention window, but only after verifying it exists on Drive.
+  // Missing files are transparently restored on playback via /api/audio.
+  scheduler.register('舊音檔清理', '0 4 * * 1', async () => {
+    const { cleanupOldAudioFiles } = await import('@/services/audioRetention');
+    await cleanupOldAudioFiles();
+  });
+
   scheduler.start();
   log.info({ slots: config.slots.length }, 'Scheduler jobs registered and started');
 
