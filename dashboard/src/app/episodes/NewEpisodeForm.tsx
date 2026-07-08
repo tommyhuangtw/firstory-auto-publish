@@ -106,7 +106,7 @@ export default function NewEpisodeForm() {
     setTracking(null);
     try {
       const body: Record<string, unknown> = { segmentType };
-      if (segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily') {
+      if (segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily' || segmentType === 'robot') {
         const urls = manualUrls.split('\n').map(u => u.trim()).filter(Boolean);
         if ((segmentType === 'sysdesign' || segmentType === 'quickchat') && urls.length === 0) {
           setMessage('請至少貼入一個 YouTube URL');
@@ -344,11 +344,11 @@ export default function NewEpisodeForm() {
           })}
         </div>
 
-        {/* Manual URL input for sysdesign / quickchat / daily */}
-        {(segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily') && (
+        {/* Manual URL input for sysdesign / quickchat / daily / robot */}
+        {(segmentType === 'sysdesign' || segmentType === 'quickchat' || segmentType === 'daily' || segmentType === 'robot') && (
           <div className="mb-4">
             <label className="block text-xs text-zinc-400 mb-1.5">
-              YouTube URL（一行一個）{segmentType === 'daily' && <span className="text-zinc-500">（選填，留空則自動搜尋）</span>}
+              YouTube URL（一行一個）{(segmentType === 'daily' || segmentType === 'robot') && <span className="text-zinc-500">（選填，留空則自動搜尋）</span>}
               {manualUrls.trim() && (
                 <span className="ml-2 text-teal-400">
                   {manualUrls.split('\n').filter(u => u.trim()).length} 個影片

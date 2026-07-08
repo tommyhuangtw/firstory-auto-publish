@@ -143,6 +143,10 @@ export function initializeSchedulerJobs(): void {
   // that feeds the /candidates 選題板. This replaces daily auto-generation. 06:30 daily.
   scheduler.register(CANDIDATE_CRAWL_JOB, '30 6 * * *', runCandidateCrawl);
 
+  // Robot-topic candidate crawl — feeds the same 選題板 (auto-tagged 機器人), queries only,
+  // past-week window. Mon/Wed/Fri 07:00 so robot picks refresh a few times a week.
+  scheduler.register(ROBOT_CANDIDATE_CRAWL_JOB, '0 7 * * 1,3,5', runRobotCandidateCrawl);
+
   // Resource curation — scrape AI/dev resources, gate on freshness, score, dedup,
   // draft, and record the top picks. Daily at 08:00.
   scheduler.register('資源策展掃描', '0 8 * * *', runResourceScanJob);
@@ -222,6 +226,7 @@ export function applyInspirationCrawlConfig(): { cron: string; enabled: boolean 
 }
 
 const CANDIDATE_CRAWL_JOB = '選題候選爬取';
+const ROBOT_CANDIDATE_CRAWL_JOB = '機器人選題爬取';
 
 async function runCandidateCrawl(): Promise<void> {
   log.info('Running episode candidate crawl...');
@@ -231,6 +236,17 @@ async function runCandidateCrawl(): Promise<void> {
     log.info(result, 'Episode candidate crawl complete');
   } catch (err) {
     log.error({ err: (err as Error).message }, 'Episode candidate crawl failed');
+  }
+}
+
+async function runRobotCandidateCrawl(): Promise<void> {
+  log.info('Running robot candidate crawl...');
+  try {
+    const { crawlRobot } = await import('@/services/candidateCrawler');
+    const result = await crawlRobot();
+    log.info(result, 'Robot candidate crawl complete');
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'Robot candidate crawl failed');
   }
 }
 

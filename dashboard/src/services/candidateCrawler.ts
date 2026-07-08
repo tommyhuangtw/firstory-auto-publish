@@ -25,6 +25,8 @@ const log = createChildLogger('candidate-crawler');
 // channel's latest long-form episode(s) reliably land.
 const QUERY_RECENCY_DAYS = 5;
 const CHANNEL_RECENCY_DAYS = 14;
+const ROBOT_RECENCY_DAYS = 7;   // robot crawl runs a few times/week → cover the past week
+const ROBOT_MIN_VIEWS = 8_000;  // robot niche is smaller than mainstream AI; lower bar than daily's 10k
 const CHANNEL_FETCH = 15; // latest uploads to scan per channel (clips + episodes; filtered after)
 const DEFAULT_MIN_VIEWS = 10_000;
 const RETENTION_DAYS = 14;
@@ -53,6 +55,11 @@ function getSetting(key: string): string | undefined {
 function getMinViews(): number {
   const n = parseInt(getSetting('candidate_min_views') || '', 10);
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MIN_VIEWS;
+}
+
+function getRobotMinViews(): number {
+  const n = parseInt(getSetting('candidate_robot_min_views') || '', 10);
+  return Number.isFinite(n) && n >= 0 ? n : ROBOT_MIN_VIEWS;
 }
 
 function getChannelHandles(): string[] {
@@ -129,10 +136,9 @@ async function fetchStats(videoIds: string[]): Promise<Map<string, Stats>> {
   return out;
 }
 
-/** Search the existing daily keywords for recent, high-view videos. */
-async function collectQueryVideoIds(publishedAfter: string): Promise<Map<string, string>> {
+/** Search the given keywords for recent, high-view videos. */
+async function collectQueryVideoIds(queries: string[], publishedAfter: string): Promise<Map<string, string>> {
   const map = new Map<string, string>(); // videoId → query
-  const queries = getSearchQueries().daily || [];
   for (const q of queries) {
     try {
       const resp = await fetchWithKeyRotation((key) => {
@@ -204,7 +210,7 @@ export async function crawlAll(): Promise<CrawlResult> {
   const now = Date.now();
   const minViews = getMinViews();
 
-  const queryIds = await collectQueryVideoIds(new Date(now - QUERY_RECENCY_DAYS * 86_400_000).toISOString());
+  const queryIds = await collectQueryVideoIds(getSearchQueries().daily || [], new Date(now - QUERY_RECENCY_DAYS * 86_400_000).toISOString());
   const channelIds = await collectChannelVideoIds(new Date(now - CHANNEL_RECENCY_DAYS * 86_400_000));
 
   // One stats call for everything (channel rows override query source if a video appears in both).
@@ -246,5 +252,42 @@ export async function crawlAll(): Promise<CrawlResult> {
 
   const result = { queryAdded, channelAdded, deleted: del.changes };
   log.info(result, 'Candidate crawl complete');
+  return result;
+}
+
+/**
+ * Robot-topic crawl — feeds the SAME /candidates 選題板 (auto-tagged 機器人 by candidateTagger).
+ * Queries only (the robot search keywords), no curated channels, past-week window, lower view
+ * bar than daily. Runs a few times/week; dedup + pruning are handled by crawlAll's daily run.
+ */
+export async function crawlRobot(): Promise<CrawlResult> {
+  if (!getYouTubeApiKey()) {
+    log.warn('No YouTube API key — skipping robot candidate crawl');
+    return { queryAdded: 0, channelAdded: 0, deleted: 0 };
+  }
+  const minViews = getRobotMinViews();
+  const queries = getSearchQueries().robot || [];
+  const queryIds = await collectQueryVideoIds(queries, new Date(Date.now() - ROBOT_RECENCY_DAYS * 86_400_000).toISOString());
+  const stats = await fetchStats([...queryIds.keys()]);
+
+  let queryAdded = 0;
+  for (const [videoId, q] of queryIds) {
+    const s = stats.get(videoId);
+    if (!s || s.viewCount < minViews) continue;
+    if (s.durationSeconds < MIN_DURATION_SEC) continue;
+    if (isNonEnglish(s.title, s.audioLang)) continue;
+    if (upsert({ videoId, stats: s, source: 'query', sourceDetail: q })) queryAdded++;
+  }
+
+  // Tag the newly-added rows (best-effort) — this is what stamps them 機器人.
+  try {
+    const { tagUntagged } = await import('@/services/candidateTagger');
+    await tagUntagged();
+  } catch (e) {
+    log.warn({ err: (e as Error).message }, 'robot candidate tagging skipped');
+  }
+
+  const result = { queryAdded, channelAdded: 0, deleted: 0 };
+  log.info(result, 'Robot candidate crawl complete');
   return result;
 }
