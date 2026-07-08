@@ -612,7 +612,9 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_min_engagement', '80');    // keep posts with 讚+留言 ≥ this (flat, AI too)
   seedSetting('trend_scrape_times', '10:00,21:00'); // 2x/day auto-scan times (HH:MM, comma-separated)
   seedSetting('trend_topics_per_scan', '5');  // topic rotation: # of seed topics searched per scan
-  seedSetting('trend_jitter_minutes', '25');  // schedule jitter window in minutes (anti-detection)
+  seedSetting('trend_niche_per_scan', '6');   // niche rotation: # of niche keywords searched per scan (anti-detection)
+  seedSetting('trend_warmup_until', '');      // ISO date; while future → feed-only browsing (fresh-account warm-up)
+  seedSetting('trend_jitter_minutes', '40');  // schedule jitter window in minutes (anti-detection)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 
   // Web Push: which events actually buzz your iPhone (治「太雜」— published 預設關掉當 FYI)

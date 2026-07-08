@@ -39,6 +39,37 @@ function rand(min: number, max: number): number {
 async function humanPause(page: import('playwright').Page, min = 1500, max = 4000): Promise<void> {
   await page.waitForTimeout(rand(min, max));
 }
+/** True with probability p (0..1) — used to add irregular, human-ish behaviour. */
+function chance(p: number): boolean {
+  return Math.random() < p;
+}
+/** Fisher-Yates shuffle (returns a new array). Randomising topic order per scan makes
+ *  the search sequence non-deterministic — a fixed order is a scraper tell. */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Stealth init script — patches the biggest headless/automation fingerprints that
+ *  survive `--disable-blink-features=AutomationControlled`. Injected into every page
+ *  BEFORE site scripts run, so Threads' bot checks see a normal-looking browser. */
+const STEALTH_INIT = `
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  Object.defineProperty(navigator, 'languages', { get: () => ['zh-TW', 'zh', 'en-US', 'en'] });
+  Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+  window.chrome = window.chrome || { runtime: {} };
+  const _query = window.navigator.permissions && window.navigator.permissions.query;
+  if (_query) {
+    window.navigator.permissions.query = (p) =>
+      p && p.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : _query(p);
+  }
+`;
 
 function getThreadsCreds(): { username: string; password: string } | null {
   const db = getDb();
@@ -207,26 +238,46 @@ export function getNicheKeywords(): string[] {
 }
 
 /**
- * Rotate seed topics so each scan only searches a SUBSET (window = `trend_topics_per_scan`,
- * default 5), cycling through all of them across runs. Halves the per-scan search footprint
- * — fewer back-to-back searches looks less scraper-like to Meta. The rotation pointer is
- * persisted in `trend_topic_rotation_offset` and advanced each scan.
+ * Rotate a keyword list so each scan only searches a SUBSET (window = `perScanKey` setting),
+ * cycling through all of them across runs. Shrinks the per-scan search footprint — fewer
+ * back-to-back searches looks less scraper-like to Meta. The rotation pointer is persisted
+ * in `offsetKey` and advanced each scan. Applied to BOTH seed topics and niche keywords.
  */
-function rotateSeeds(all: string[]): string[] {
+function rotate(all: string[], perScanKey: string, perScanDefault: number, offsetKey: string): string[] {
   if (all.length === 0) return [];
   const db = getDb();
   const get = (k: string, d: string) =>
     (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined)?.value ?? d;
-  const perScan = Math.max(1, parseInt(get('trend_topics_per_scan', '5'), 10));
+  const perScan = Math.max(1, parseInt(get(perScanKey, String(perScanDefault)), 10));
   if (all.length <= perScan) return all;
-  const offset = ((parseInt(get('trend_topic_rotation_offset', '0'), 10) % all.length) + all.length) % all.length;
+  const offset = ((parseInt(get(offsetKey, '0'), 10) % all.length) + all.length) % all.length;
   const picked: string[] = [];
   for (let i = 0; i < perScan; i++) picked.push(all[(offset + i) % all.length]);
   db.prepare(
-    `INSERT INTO settings (key, value, updated_at) VALUES ('trend_topic_rotation_offset', ?, datetime('now'))
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  ).run(String((offset + perScan) % all.length));
+  ).run(offsetKey, String((offset + perScan) % all.length));
   return picked;
+}
+const rotateSeeds = (all: string[]) => rotate(all, 'trend_topics_per_scan', 5, 'trend_topic_rotation_offset');
+const rotateNiche = (all: string[]) => rotate(all, 'trend_niche_per_scan', 6, 'trend_niche_rotation_offset');
+
+/**
+ * Warm-up gate for a fresh (re-logged-in) account. While `trend_warmup_until` (an ISO date)
+ * is in the future, the scan does ONLY passive For You browsing — NO keyword searches at all
+ * — so a brand-new account builds normal-browsing history before it ever looks like a scraper.
+ * Auto-expires: once the date passes, full crawling resumes with no further action needed.
+ */
+function isWarmup(): { active: boolean; until?: string } {
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_warmup_until') as
+      { value: string } | undefined;
+    const until = row?.value?.trim();
+    if (!until) return { active: false };
+    // Compare as date-only (local): warm-up runs THROUGH the given day.
+    const active = new Date().toISOString().slice(0, 10) < until.slice(0, 10);
+    return { active, until };
+  } catch { return { active: false }; }
 }
 
 /** Extract whatever posts are currently rendered in the DOM (For You feed or search). */
@@ -353,40 +404,72 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
     if (existing) { if (niche) existing.niche = true; return; }
     byKey.set(key, { ...p, source, niche: niche || undefined });
   };
+  await browser.addInitScript(STEALTH_INIT);   // hide automation/headless fingerprints
   const page = browser.pages()[0] || await browser.newPage();
   const topicsSearched: string[] = ['為你推薦'];
+
+  // Between-search idle: sometimes a quick beat, occasionally a long "got distracted"
+  // pause + a peek back at the home feed — breaks the uniform search→scroll→search rhythm.
+  const betweenSearches = async () => {
+    if (chance(0.25)) {
+      // "Distraction": drift back to the feed and scroll a bit, like a real user.
+      await page.goto(`${THREADS_BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => {});
+      await humanPause(page, 2000, 4000);
+      await page.mouse.wheel(0, rand(800, 2000));
+      await humanPause(page, 8000, 20000);
+    } else {
+      await humanPause(page, 4000, 11000);
+    }
+  };
 
   try {
     await ensureLoggedIn(page);
 
-    // 1) For You feed — freshest, algorithm-pushed signal.
+    // 1) For You feed — freshest, algorithm-pushed signal. (Always run; this is the most
+    //    normal-human action and the backbone of warm-up.)
     for (const p of await scrapeForYouFeed(page, opts.maxPosts ?? 30)) add(p, '為你推薦');
 
-    // 2) Targeted seed topics — only a rotating subset per scan (anti-detection).
-    const seeds = rotateSeeds(getCuratedSeeds());
-    topicsSearched.push(...seeds);
+    // Warm-up mode (fresh account): browse the feed ONLY, skip every keyword search, so a
+    // brand-new account accrues normal-looking history before it ever runs a search burst.
+    const warmup = isWarmup();
+    if (warmup.active) {
+      log.info({ until: warmup.until }, 'Warm-up mode — For You feed only, skipping all keyword searches');
+      const out = Array.from(byKey.values());
+      if (out.length === 0) throw new Error('Threads scrape produced no posts (not logged in or selectors stale)');
+      log.info({ posts: out.length }, 'Scrape complete (warm-up)');
+      return { posts: out, topics: topicsSearched };
+    }
+
+    // 2) Targeted seed topics — a rotating, shuffled subset per scan (anti-detection).
+    const seeds = shuffle(rotateSeeds(getCuratedSeeds()));
     log.info({ topics: seeds }, 'Seed topics this scan (rotating subset)');
     for (let i = 0; i < seeds.length; i++) {
+      // Occasionally skip a topic outright — real browsing isn't exhaustive.
+      if (chance(0.1)) { log.info({ topic: seeds[i] }, 'Randomly skipped a seed topic'); continue; }
+      topicsSearched.push(seeds[i]);
       try {
         for (const p of await scrapeTopicPosts(page, seeds[i], 12, 'recent')) add(p, seeds[i]);
       } catch (err) {
         log.warn({ topic: seeds[i], err: (err as Error).message }, 'Failed scraping a seed topic — continuing');
       }
-      if (i < seeds.length - 1) await humanPause(page, 4000, 9000);
+      if (i < seeds.length - 1) await betweenSearches();
     }
 
-    // 3) Niche keywords for the reply zone — searched in FULL (not rotated), tagged niche.
-    const niche = getNicheKeywords();
-    topicsSearched.push(...niche);
-    log.info({ niche }, 'Niche keywords this scan (full, for reply zone)');
+    // 3) Niche keywords for the reply zone — now ALSO rotated + shuffled (was: full every scan,
+    //    the heaviest scraper tell). Tagged niche.
+    await betweenSearches();
+    const niche = shuffle(rotateNiche(getNicheKeywords()));
+    log.info({ niche }, 'Niche keywords this scan (rotating subset, for reply zone)');
     for (let i = 0; i < niche.length; i++) {
+      if (chance(0.1)) { log.info({ keyword: niche[i] }, 'Randomly skipped a niche keyword'); continue; }
+      topicsSearched.push(niche[i]);
       try {
         // Deeper crawl for the reply zone — more posts + more scrolls per keyword.
         for (const p of await scrapeTopicPosts(page, niche[i], 30, 'recent', 4)) add(p, niche[i], true);
       } catch (err) {
         log.warn({ keyword: niche[i], err: (err as Error).message }, 'Failed scraping a niche keyword — continuing');
       }
-      if (i < niche.length - 1) await humanPause(page, 4000, 9000);
+      if (i < niche.length - 1) await betweenSearches();
     }
   } finally {
     await browser.close();
