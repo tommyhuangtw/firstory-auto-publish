@@ -9,6 +9,7 @@ import { getLLMService } from '@/services/llmService';
 import { createChildLogger } from '@/lib/logger';
 import { AI_STYLE_BLACKLIST } from '@/services/llm/aiStyleBlacklist';
 import type { PipelineState } from '../state';
+import { wordBandForLength } from './qualityScore';
 
 const log = createChildLogger('pipeline:translate');
 
@@ -646,9 +647,13 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
     : SYSTEM_PROMPT;
 
   if (isQuickchat) {
-    const wcMap: Record<number, string> = { 12: '3500-4500', 15: '5000-6000', 18: '5800-6800', 21: '7000-8000', 25: '8000-9000' };
-    const wcTarget = wcMap[state.episodeLength || 18] || '5800-6800';
-    translatePrompt = translatePrompt.replaceAll('__WORD_COUNT__', wcTarget);
+    const [lo, hi] = wordBandForLength(state.episodeLength || 18);
+    translatePrompt = translatePrompt.replaceAll('__WORD_COUNT__', `${lo}-${hi}`);
+  } else if (state.segmentType === 'daily' && state.episodeLength) {
+    // daily 帶手動 URL + 選了節目長度：SYSTEM_PROMPT 沒有 __WORD_COUNT__，翻譯預設會自由壓縮，
+    // 導致選 21 分鐘卻只產出 ~10 分鐘。這裡明確要求中文字數寫足對應長度。
+    const [lo, hi] = wordBandForLength(state.episodeLength);
+    translatePrompt += `\n\n⚠️ 字數要求：最終中文講稿必須寫足 ${lo}-${hi} 字（依你選的節目長度 ${state.episodeLength} 分鐘，約 350 字/分），內容要充分展開，不要壓縮或提早收尾。`;
   }
 
   // Inject audience memory context so translator doesn't over-explain known tools
@@ -665,7 +670,7 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
     ],
     options: {
       preferredModel: TRANSLATE_MODEL,
-      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21)) ? 16384 : 8192,
+      maxTokens: (isSysdesign || (state.episodeLength || 0) >= 21) ? 16384 : 8192,
       temperature: 0.7,
       timeoutMs: 240_000, // long scripts exceed the 90s default; sysdesign translation can take ~150-220s
     },

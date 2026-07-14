@@ -789,7 +789,11 @@ export async function scriptEnglish(state: PipelineState): Promise<Partial<Pipel
       .join('\n\n---\n\n');
   }
 
-  const lengthTargetMap: Record<number, string> = { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' };
+  // 英文稿是「原料」：翻成中文仍會精簡。非 quickchat（daily 等）刻意讓英文比中文目標更充足，
+  // 資訊才不會不夠、翻譯有得挑。quickchat 維持原本較保守的目標（系統提示同一組數字）。
+  const lengthTargetMap: Record<number, string> = isQuickchat
+    ? { 12: '4000', 15: '5500', 18: '6200', 21: '7500', 25: '8500' }
+    : { 12: '5500', 15: '7000', 18: '8000', 21: '9500', 25: '11000' };
   const hasEpisodeLength = state.episodeLength && lengthTargetMap[state.episodeLength];
   const targetWords = hasEpisodeLength ? lengthTargetMap[state.episodeLength!]
     : isSysdesign ? '10000' : isRobot ? '6000' : '5000';
@@ -814,7 +818,8 @@ You need to help generate a summarized Podcast ENGLISH Script around ${targetWor
     ],
     options: {
       preferredModel: SCRIPT_MODEL,
-      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21)) ? 16384 : 8192,
+      // 8192 tokens ≈ 6000 詞就會被截斷；daily 18 分以上英文目標已達 8000+ 詞，需要更大上限。
+      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21) || (!isQuickchat && (state.episodeLength || 0) >= 18)) ? 16384 : 8192,
       temperature: 0.7,
     },
   });

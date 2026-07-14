@@ -19,17 +19,23 @@ export function countScriptChars(text: string): number {
   return text.replace(/\s/g, '').length;
 }
 
+/** Chinese char band for a user-selected episode length. ~350 字/分（實測 331–370）。 */
+export function wordBandForLength(episodeLength: number): [number, number] {
+  const byLength: Record<number, [number, number]> = {
+    12: [3500, 4500],
+    15: [5000, 6000],
+    18: [5800, 6800],
+    21: [7000, 8000],
+    25: [8000, 9000],
+  };
+  return byLength[episodeLength] || [5800, 6800];
+}
+
 /** Read word count target from DB settings, fallback to defaults. */
 export function getWordCountTarget(segmentType: string, episodeLength?: number | null): [number, number] {
-  if (segmentType === 'quickchat' && episodeLength) {
-    const quickchatDefaults: Record<number, [number, number]> = {
-      12: [3500, 4500],
-      15: [5000, 6000],
-      18: [5800, 6800],
-      21: [7000, 8000],
-      25: [8000, 9000],
-    };
-    return quickchatDefaults[episodeLength] || [5800, 6800];
+  // quickchat + daily(帶手動 URL) 讓使用者選節目長度 → 映射成字數帶。
+  if ((segmentType === 'quickchat' || segmentType === 'daily') && episodeLength) {
+    return wordBandForLength(episodeLength);
   }
   const key = `word_count_${segmentType}`;
   const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
