@@ -818,8 +818,9 @@ You need to help generate a summarized Podcast ENGLISH Script around ${targetWor
     ],
     options: {
       preferredModel: SCRIPT_MODEL,
-      // 8192 tokens ≈ 6000 詞就會被截斷；daily 18 分以上英文目標已達 8000+ 詞，需要更大上限。
-      maxTokens: (isSysdesign || (isQuickchat && (state.episodeLength || 18) >= 21) || (!isQuickchat && (state.episodeLength || 0) >= 18)) ? 16384 : 8192,
+      // 16384 for all: long-form scripts (up to ~8000 chars / 23 min) exceed 8192 tokens
+      // and were being truncated mid-sentence. Cap only bounds output; model stops when done.
+      maxTokens: 16384,
       temperature: 0.7,
     },
   });

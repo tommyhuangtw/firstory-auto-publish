@@ -386,7 +386,14 @@ export function cleanTextForTts(raw: string): string {
     if (val && typeof val === 'string') {
       text = val.trim();
     }
-  } catch { /* not JSON, continue */ }
+  } catch {
+    // Truncated/unterminated JSON wrapper — JSON.parse fails but we must still strip the
+    // `original_script` key so it never gets spoken aloud (the 2026-07-09 bug).
+    const openKey = text.match(/\{\s*"(?:original_script|script|translated_script|content)"\s*:\s*"/);
+    if (openKey) {
+      text = text.slice((openKey.index ?? 0) + openKey[0].length).replace(/"\s*\}?\s*$/, '').replace(/\\"/g, '"');
+    }
+  }
 
   // Strip markdown fences
   text = text.replace(/^```(?:json)?\s*/g, '').replace(/\s*```$/g, '');

@@ -670,7 +670,9 @@ export async function translate(state: PipelineState): Promise<Partial<PipelineS
     ],
     options: {
       preferredModel: TRANSLATE_MODEL,
-      maxTokens: (isSysdesign || (state.episodeLength || 0) >= 21) ? 16384 : 8192,
+      // 16384 for all: Chinese scripts run up to ~8000 chars (23 min); at ~1+ token/CJK char
+      // plus any JSON wrapping, 8192 truncated mid-string. Cap only bounds output.
+      maxTokens: 16384,
       temperature: 0.7,
       timeoutMs: 240_000, // long scripts exceed the 90s default; sysdesign translation can take ~150-220s
     },
@@ -718,9 +720,29 @@ function extractScriptFromLlmResponse(content: string): string {
     } catch { /* malformed JSON, continue */ }
   }
 
+  // Tolerate truncated/unterminated JSON wrapper, e.g. `{ "original_script": "...(cut off)`
+  // — the string was cut mid-value so JSON.parse and the closed-object regex both fail,
+  // which previously leaked the `original_script` key into the spoken audio.
+  const openKey = trimmed.match(/\{\s*"(?:original_script|script|translated_script|content)"\s*:\s*"/);
+  if (openKey) {
+    return unescapeJsonStringBody(trimmed.slice((openKey.index ?? 0) + openKey[0].length));
+  }
+
   // Not JSON — strip markdown fences and return
   return trimmed
     .replace(/^```(?:json)?\s*/g, '')
     .replace(/\s*```$/g, '')
+    .trim();
+}
+
+/** Unescape a JSON string value body, dropping any trailing closing quote/brace. */
+function unescapeJsonStringBody(body: string): string {
+  return body
+    .replace(/"\s*\}?\s*$/, '')   // drop trailing `"` / `"}` if the value did terminate
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '')
+    .replace(/\\\\/g, '\\')
     .trim();
 }
