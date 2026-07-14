@@ -22,6 +22,7 @@ import SocialPromoSection from './SocialPromoSection';
 import YouTubeThumbnailSection from './YouTubeThumbnailSection';
 import SubstackDraftSection from './SubstackDraftSection';
 import { getDraftByEpisode } from '@/services/substackDraftService';
+import CopySettingsButton from '../../CopySettingsButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,7 @@ interface Episode {
   episode_number: number | null;
   segment_type: string;
   status: string;
+  generation_input: string | null;
   script_en: string | null;
   script_zh: string | null;
   candidate_titles: string | null;
@@ -237,6 +239,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               {sc.label}
             </span>
           </div>
+          <div className="flex items-center gap-2 shrink-0">
+          {episode.generation_input && <CopySettingsButton episodeId={episode.id} variant="chip" />}
           <Link
             href={`/episodes/${episode.id}/debug`}
             className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors shrink-0"
@@ -246,6 +250,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             </svg>
             除錯
           </Link>
+          </div>
         </div>
         {episode.selected_title && (
           <p className="text-zinc-400 text-sm mt-2">{episode.selected_title}</p>

@@ -4,6 +4,7 @@ import { formatLocalDate, getLocalDayOfWeek } from '@/lib/formatDate';
 import NewEpisodeForm from './NewEpisodeForm';
 import ActivePipelines from './ActivePipelines';
 import DeleteButton from './DeleteButton';
+import CopySettingsButton from './CopySettingsButton';
 import PageHeader from '@/components/PageHeader';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ interface Episode {
   current_stage: string | null;
   pipeline_status: string | null;
   error_log: string | null;
+  has_gen_input: number;
 }
 
 const segmentLabels: Record<string, string> = {
@@ -72,6 +74,7 @@ export default function EpisodesPage() {
   const episodes = db.prepare(`
     SELECT e.id, e.episode_number, e.segment_type, e.status,
            e.selected_title, e.quality_score, e.total_cost_usd, e.created_at,
+           (e.generation_input IS NOT NULL) AS has_gen_input,
            pr.current_stage, pr.status as pipeline_status, pr.error_log
     FROM episodes e
     LEFT JOIN pipeline_runs pr ON pr.id = (
@@ -165,6 +168,7 @@ export default function EpisodesPage() {
                         <span className="tabular-nums">${ep.total_cost_usd.toFixed(3)}</span>
                       )}
                       <span className="tabular-nums">{formatLocalDate(ep.created_at)}</span>
+                      {ep.has_gen_input ? <CopySettingsButton episodeId={ep.id} /> : null}
                       {ep.status !== 'published' && (
                         <DeleteButton episodeId={ep.id} />
                       )}

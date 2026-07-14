@@ -59,9 +59,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Create episode record (no episode_number yet — assigned at publish)
+    // Persist manual inputs so a bad episode can be re-generated via「複製設定」(only when there IS manual input).
+    const generationInput = (manualVideoUrls?.length || customInstructions?.trim())
+      ? JSON.stringify({ manualVideoUrls: manualVideoUrls || [], customInstructions: customInstructions || '', episodeLength: episodeLength ?? null })
+      : null;
     const epResult = db.prepare(
-      `INSERT INTO episodes (segment_type, status) VALUES (?, 'generating')`
-    ).run(segmentType);
+      `INSERT INTO episodes (segment_type, status, generation_input) VALUES (?, 'generating', ?)`
+    ).run(segmentType, generationInput);
     const episodeId = Number(epResult.lastInsertRowid);
 
     // Create pipeline run

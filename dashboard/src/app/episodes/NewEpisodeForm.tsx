@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 const SEGMENTS = [
@@ -56,6 +56,7 @@ interface TrackingState {
 
 export default function NewEpisodeForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
   const [segmentType, setSegmentType] = useState<string>('daily');
   const [manualUrls, setManualUrls] = useState('');
@@ -72,6 +73,26 @@ export default function NewEpisodeForm() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
+
+  // 「複製設定重新生成」: ?prefill=<episodeId> → 帶入該集的 URLs / 客製 prompt / 單元類型並開表單。
+  // 節目長度刻意不帶（讓你重挑）。帶完清掉 query param，避免 refresh 重觸發。
+  useEffect(() => {
+    const prefillId = searchParams.get('prefill');
+    if (!prefillId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/episodes/${prefillId}/prefill`);
+        if (res.ok) {
+          const d = await res.json();
+          if (d.segmentType) setSegmentType(d.segmentType);
+          setManualUrls((d.manualVideoUrls || []).join('\n'));
+          setCustomInstructions(d.customInstructions || '');
+          setOpen(true);
+        }
+      } catch { /* ignore — user can still fill manually */ }
+      router.replace('/episodes');
+    })();
+  }, [searchParams, router]);
 
   function startPolling(runId: number, episodeId: number, segType: string) {
     if (intervalRef.current) clearInterval(intervalRef.current);

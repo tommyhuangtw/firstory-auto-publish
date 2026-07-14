@@ -94,6 +94,7 @@ export function getDb(): Database.Database {
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_path TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN srt_content TEXT');
   safeAlter('ALTER TABLE episodes ADD COLUMN version_check TEXT');
+  safeAlter('ALTER TABLE episodes ADD COLUMN generation_input TEXT');
 
   // Create indexes on new columns (after safe ALTER ensures columns exist)
   const safeIndex = (sql: string) => {

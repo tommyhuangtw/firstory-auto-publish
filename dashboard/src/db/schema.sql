@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   status TEXT NOT NULL DEFAULT 'generating',
   -- Status flow: generating → pending_review → approved → publishing → published | rejected
 
+  generation_input TEXT,              -- JSON {manualVideoUrls, customInstructions, episodeLength} — 供「複製設定重新生成」
+
   -- Content
   script_en TEXT,
   script_zh TEXT,
