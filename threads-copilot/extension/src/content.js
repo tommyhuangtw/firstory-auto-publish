@@ -18,8 +18,11 @@
 
   const STORE_KEY = 'tc_candidates';
   const FILTER_KEY = 'tc_filters';
+  const SIZE_KEY = 'tc_size';
   const MAX_AGE_MS = 24 * 3600 * 1000;   // drop candidates older than 24h (reply value decays)
   const MAX_ITEMS = 60;                   // cap stored + displayed
+
+  let panelSize = null;                   // { w, h } — user-dragged panel size, persisted
 
   const processed = new WeakSet();   // units already handled
   const seen = new Set();            // shortcodes already scored (dedupe across virtualization + reloads)
@@ -40,7 +43,7 @@
   function loadStored() {
     return new Promise((resolve) => {
       try {
-        chrome.storage.local.get({ [STORE_KEY]: [], [FILTER_KEY]: null }, (v) => {
+        chrome.storage.local.get({ [STORE_KEY]: [], [FILTER_KEY]: null, [SIZE_KEY]: null }, (v) => {
           const now = Date.now();
           for (const c of v[STORE_KEY] || []) {
             if (!c.post || now - (c.collectedAt || 0) >= MAX_AGE_MS) continue;
@@ -50,6 +53,7 @@
             seen.add(sc); // don't re-score what we already have
           }
           if (v[FILTER_KEY]) filters = Object.assign(filters, v[FILTER_KEY]);
+          if (v[SIZE_KEY]) panelSize = v[SIZE_KEY];
           resolve();
         });
       } catch { resolve(); }
@@ -163,6 +167,32 @@
     panel.querySelector('.tc-f-cat').addEventListener('change', (e) => { filters.category = e.target.value; saveFilters(); renderPanel(); });
     panel.querySelector('.tc-f-eng').addEventListener('change', (e) => { filters.minEng = parseInt(e.target.value, 10) || 0; saveFilters(); renderPanel(); });
     panel.querySelector('.tc-f-age').addEventListener('change', (e) => { filters.maxAgeH = parseInt(e.target.value, 10) || 0; saveFilters(); renderPanel(); });
+
+    // Apply saved size, then wire a drag-to-resize handle (bottom-left corner).
+    if (panelSize && panelSize.w) { panel.style.width = panelSize.w + 'px'; panel.style.height = panelSize.h + 'px'; }
+    const handle = document.createElement('div');
+    handle.className = 'tc-resize';
+    handle.title = '拖曳調整大小';
+    panel.appendChild(handle);
+    let rz = null;
+    const onMove = (e) => {
+      if (!rz) return;
+      const w = Math.min(Math.max(rz.w + (rz.x - e.clientX), 260), window.innerWidth * 0.9);
+      const h = Math.min(Math.max(rz.h + (e.clientY - rz.y), 200), window.innerHeight * 0.92);
+      panel.style.width = w + 'px';
+      panel.style.height = h + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (rz) { panelSize = { w: panel.offsetWidth, h: panel.offsetHeight }; try { chrome.storage.local.set({ [SIZE_KEY]: panelSize }); } catch { /* ignore */ } rz = null; }
+    };
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      rz = { x: e.clientX, y: e.clientY, w: panel.offsetWidth, h: panel.offsetHeight };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
   }
 
   function passFilter(entry) {
@@ -203,8 +233,22 @@
           '<span class="tc-item-meta">' + score.reason + ' · 👥' + (score.eng || 0) + ' · 🔥' + (score.heat || 0) + ' · ' + ageLabel(entry.collectedAt) + '</span>' +
         '</div>' +
         '<div class="tc-item-text"></div>';
-      row.querySelector('.tc-item-text').textContent = (post.text || '').slice(0, 90);
+      const full = post.text || '';
+      const textEl = row.querySelector('.tc-item-text');
+      textEl.textContent = full.slice(0, 500);   // full text lives in the DOM; clamped by CSS, expands on hover
+      row.title = full;                           // native tooltip fallback
       row.addEventListener('click', () => { entry.visited = true; row.classList.add('tc-visited'); persist(); });
+
+      const rm = document.createElement('button');
+      rm.className = 'tc-item-remove';
+      rm.textContent = '×';
+      rm.title = '從清單移除';
+      rm.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        candidates.delete(TCExtract.shortcodeOf(post.permalink));
+        persist(); renderPanel();
+      });
+      row.appendChild(rm);
       listEl.appendChild(row);
     }
   }
