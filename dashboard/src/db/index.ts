@@ -616,6 +616,7 @@ Apple Podcast / Spotify / KKBOX
   seedSetting('trend_niche_per_scan', '6');   // niche rotation: # of niche keywords searched per scan (anti-detection)
   seedSetting('trend_warmup_until', '');      // ISO date; while future → feed-only browsing (fresh-account warm-up)
   seedSetting('trend_jitter_minutes', '40');  // schedule jitter window in minutes (anti-detection)
+  seedSetting('trend_scrape_enabled', '1');   // kill switch: '0'/'false'/'off' fully pauses the crawler (e.g. switching burner accounts)
   seedSetting('trend_min_interest', '0.3');  // hard filter: only show posts with interest_score ≥ this
 
   // Web Push: which events actually buzz your iPhone (治「太雜」— published 預設關掉當 FYI)

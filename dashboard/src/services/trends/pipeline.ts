@@ -25,6 +25,17 @@ function getSetting(key: string, fallback: string): string {
 
 export async function runTrendScan(opts: { maxPosts?: number; trigger?: string } = {}): Promise<TrendScanResult> {
   const db = getDb();
+
+  // Kill switch: settings.trend_scrape_enabled = '0'/'false'/'off' fully pauses the Threads
+  // crawler (e.g. while switching burner accounts). This is the single choke point for EVERY
+  // trigger — scheduled, catch-up, startup and the manual /trends button — so no browser is
+  // ever launched while paused. Absent/anything else = enabled (default behaviour preserved).
+  const enabled = getSetting('trend_scrape_enabled', '1').trim().toLowerCase();
+  if (enabled === '0' || enabled === 'false' || enabled === 'off') {
+    log.info({ trigger: opts.trigger ?? null }, 'Trend crawler disabled (settings.trend_scrape_enabled) — skipping scan, no browser launched');
+    return { postsRecorded: 0, draftsCreated: 0, skipped: 0, scraped: 0, belowFloor: 0, stale: 0, deduped: 0 };
+  }
+
   const recencyDays = parseInt(getSetting('trend_recency_days', '2'), 10);
   const minEngagement = parseInt(getSetting('trend_min_engagement', '80'), 10);
   // Reply-zone (niche) gate is independent of the main floor: likes >= 30 + recent.

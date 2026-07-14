@@ -375,10 +375,25 @@ function registerTrendScanJobs(): void {
 
 let trendScanInFlight = false;
 
+/** Kill switch shared by every trend-scan trigger. settings.trend_scrape_enabled = '0'/'false'/'off'
+ *  fully pauses the Threads crawler (e.g. while switching burner accounts). Default = enabled. */
+function isTrendScrapeDisabled(): boolean {
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_scrape_enabled') as
+      { value: string } | undefined;
+    const v = (row?.value ?? '1').trim().toLowerCase();
+    return v === '0' || v === 'false' || v === 'off';
+  } catch { return false; }
+}
+
 /** Core trend scan + Telegram notify (no jitter). Used by both cron and catch-up.
  *  Guarded so cron + catch-up can never run two scans at once (also avoids the
  *  single Threads browser profile being launched twice → lock conflict). */
 async function doTrendScan(trigger: string): Promise<void> {
+  if (isTrendScrapeDisabled()) {
+    log.info({ trigger }, 'Trend crawler disabled (settings.trend_scrape_enabled) — skipping scheduled/catch-up scan + notify');
+    return;
+  }
   if (trendScanInFlight) {
     log.info('Trend scan already running — skipping this trigger');
     return;

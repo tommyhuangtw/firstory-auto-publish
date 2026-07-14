@@ -39,6 +39,9 @@ export default function TrendsPage() {
   const [minLikes, setMinLikes] = useState(0);
   const [postedDays, setPostedDays] = useState(2);
   const [undo, setUndo] = useState<HotPost | null>(null);
+  // Crawler master switch (settings.trend_scrape_enabled). null = still loading.
+  const [crawlerOn, setCrawlerOn] = useState<boolean | null>(null);
+  const [togglingCrawler, setTogglingCrawler] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +128,34 @@ export default function TrendsPage() {
     alert(data.error ? `失敗：${data.error}` : (data.sent ? '已推播熱點到 Telegram' : '目前沒有近期熱點可推'));
   };
 
+  // Load the crawler master switch once on mount (default = enabled if unset).
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((s) => {
+        const v = String(s?.trend_scrape_enabled ?? '1').trim().toLowerCase();
+        setCrawlerOn(!(v === '0' || v === 'false' || v === 'off'));
+      })
+      .catch(() => setCrawlerOn(null));
+  }, []);
+
+  const toggleCrawler = async () => {
+    if (crawlerOn === null) return;
+    const next = !crawlerOn;
+    if (next && !confirm(
+      '要啟用社群爬蟲嗎？\n\n剛換帳號 / 全新 profile 的話，建議先設 warm-up（純瀏覽 feed 幾天）再開，避免新帳號被 Meta 盯上。\n\n確定現在啟用？',
+    )) return;
+    setTogglingCrawler(true);
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'trend_scrape_enabled', value: next ? '1' : '0' }),
+    });
+    setTogglingCrawler(false);
+    if (res.ok) setCrawlerOn(next);
+    else alert('切換失敗，請重試');
+  };
+
   const openSession = async () => {
     setBusy('session');
     const res = await fetch('/api/trends/open-session', { method: 'POST' });
@@ -156,7 +187,17 @@ export default function TrendsPage() {
     <div className="p-4 md:p-8 max-w-3xl mx-auto pb-20">
       <PageHeader title="社群熱點" actions={
         <div className="flex gap-2 flex-wrap">
-          <button onClick={scan} disabled={busy === 'scan'}
+          <button onClick={toggleCrawler} disabled={crawlerOn === null || togglingCrawler}
+            title="社群爬蟲總開關：停用時所有排程 / 補跑 / 手動掃描都不會啟動瀏覽器"
+            className={`px-3 py-2 md:py-1.5 text-sm rounded-lg font-medium disabled:opacity-50 ${
+              crawlerOn === false
+                ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+                : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+            }`}>
+            {crawlerOn === null ? '爬蟲：載入中…' : togglingCrawler ? '切換中…' : (crawlerOn ? '🟢 爬蟲：啟用中' : '🔴 爬蟲：停用中')}
+          </button>
+          <button onClick={scan} disabled={busy === 'scan' || crawlerOn === false}
+            title={crawlerOn === false ? '爬蟲已停用 — 先按左邊開關啟用' : undefined}
             className="px-3 py-2 md:py-1.5 text-sm rounded-lg bg-brand/15 text-brand hover:bg-brand/25 disabled:opacity-50">
             {busy === 'scan' ? '掃描中…' : '立即掃描'}
           </button>
