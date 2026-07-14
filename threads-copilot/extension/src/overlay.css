@@ -87,18 +87,39 @@
   background: rgba(255, 255, 255, 0.25);
   font-size: 12px;
 }
-.tc-toggle {
+.tc-panel-actions { display: flex; gap: 6px; }
+.tc-toggle, .tc-clear {
   cursor: pointer;
   border: none;
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
   width: 24px; height: 24px;
   border-radius: 7px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
+}
+.tc-toggle:hover, .tc-clear:hover { background: rgba(255, 255, 255, 0.32); }
+
+.tc-filters {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.tc-panel.tc-collapsed .tc-filters { display: none; }
+.tc-filters select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 4px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: #fff;
+  color: #111;
 }
 
 .tc-list { overflow-y: auto; padding: 6px; }
+.tc-empty { padding: 18px 12px; text-align: center; color: #888; font-size: 12px; }
 .tc-item {
   display: block;
   padding: 9px 11px;
@@ -141,6 +162,9 @@
   .tc-btn:hover { background: rgba(255, 255, 255, 0.16); }
 
   .tc-panel { background: #1c1c1e; color: #eee; border-color: rgba(255, 255, 255, 0.12); }
+  .tc-filters { border-bottom-color: rgba(255, 255, 255, 0.1); }
+  .tc-filters select { background: #2c2c2e; color: #eee; border-color: rgba(255, 255, 255, 0.18); }
+  .tc-empty { color: #999; }
   .tc-item { background: rgba(34, 197, 94, 0.1); border-color: rgba(255, 255, 255, 0.08); }
   .tc-item:hover { background: rgba(34, 197, 94, 0.2); }
   .tc-item-author { color: #4ade80; }
