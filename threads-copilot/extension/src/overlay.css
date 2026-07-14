@@ -1,51 +1,149 @@
-/* Threads 海巡 Copilot — badge overlay. Kept visually light so it reads as an
-   annotation on top of the real feed, not a replacement for it. */
+/* Threads 海巡 Copilot — inline badge + right-side candidate panel. */
+
+/* ---------------- inline badge on the flagged post ---------------- */
+
+.tc-hit {
+  box-shadow: inset 4px 0 0 #16a34a;
+  border-radius: 8px;
+}
 
 .tc-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  margin: 6px 0 4px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 8px 0 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
   font-family: -apple-system, "PingFang TC", "Heiti TC", sans-serif;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(22, 163, 74, 0.14);
+  border: 1px solid rgba(22, 163, 74, 0.35);
 }
-.tc-bar.tc-reply { background: rgba(22, 163, 74, 0.12); }
-.tc-bar.tc-watch { background: rgba(217, 119, 6, 0.10); }
-.tc-bar.tc-ack .tc-tag { text-decoration: line-through; opacity: 0.6; }
-
-.tc-tag { font-weight: 600; }
-.tc-reply .tc-tag { color: #15803d; }
-.tc-watch .tc-tag { color: #b45309; }
-.tc-heat { opacity: 0.7; }
-
+.tc-tag {
+  font-weight: 800;
+  color: #15803d;
+  letter-spacing: 0.02em;
+}
+.tc-chip {
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+}
 .tc-btn {
   cursor: pointer;
   border: 1px solid rgba(0, 0, 0, 0.15);
-  background: transparent;
-  border-radius: 6px;
-  padding: 1px 7px;
-  font-size: 12px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 2px 9px;
+  font-size: 13px;
+  line-height: 1.5;
   color: inherit;
   text-decoration: none;
-  line-height: 1.6;
 }
 .tc-btn:hover { background: rgba(0, 0, 0, 0.06); }
 
-/* Left accent on the matched post so it stands out while scrolling. */
-.tc-hit-reply { box-shadow: inset 3px 0 0 rgba(22, 163, 74, 0.55); }
-.tc-hit-watch { box-shadow: inset 3px 0 0 rgba(217, 119, 6, 0.45); }
+/* ---------------- right-side candidate panel ---------------- */
+
+.tc-panel {
+  position: fixed;
+  top: 76px;
+  right: 16px;
+  z-index: 2147483000;
+  width: 300px;
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #111;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  font-family: -apple-system, "PingFang TC", "Heiti TC", sans-serif;
+  overflow: hidden;
+}
+.tc-panel.tc-hidden { display: none; }
+.tc-panel.tc-collapsed { max-height: none; }
+.tc-panel.tc-collapsed .tc-list { display: none; }
+
+.tc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  background: #16a34a;
+  color: #fff;
+}
+.tc-panel-title { font-weight: 800; font-size: 14px; }
+.tc-count {
+  display: inline-block;
+  min-width: 20px;
+  text-align: center;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 12px;
+}
+.tc-toggle {
+  cursor: pointer;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  width: 24px; height: 24px;
+  border-radius: 7px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tc-list { overflow-y: auto; padding: 6px; }
+.tc-item {
+  display: block;
+  padding: 9px 11px;
+  margin: 4px 2px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(22, 163, 74, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+}
+.tc-item:hover { background: rgba(22, 163, 74, 0.14); }
+.tc-item.tc-visited { opacity: 0.45; }
+.tc-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+.tc-item-author { font-weight: 700; color: #15803d; }
+.tc-item-meta { color: #666; white-space: nowrap; }
+.tc-item-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #222;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------------- dark mode ---------------- */
 
 @media (prefers-color-scheme: dark) {
-  .tc-bar { background: rgba(255, 255, 255, 0.06); }
-  .tc-bar.tc-reply { background: rgba(34, 197, 94, 0.16); }
-  .tc-bar.tc-watch { background: rgba(245, 158, 11, 0.14); }
-  .tc-reply .tc-tag { color: #4ade80; }
-  .tc-watch .tc-tag { color: #fbbf24; }
-  .tc-btn { border-color: rgba(255, 255, 255, 0.2); }
-  .tc-btn:hover { background: rgba(255, 255, 255, 0.1); }
+  .tc-bar { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.4); }
+  .tc-tag { color: #4ade80; }
+  .tc-chip { background: rgba(255, 255, 255, 0.1); }
+  .tc-btn { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: #eee; }
+  .tc-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+  .tc-panel { background: #1c1c1e; color: #eee; border-color: rgba(255, 255, 255, 0.12); }
+  .tc-item { background: rgba(34, 197, 94, 0.1); border-color: rgba(255, 255, 255, 0.08); }
+  .tc-item:hover { background: rgba(34, 197, 94, 0.2); }
+  .tc-item-author { color: #4ade80; }
+  .tc-item-meta { color: #999; }
+  .tc-item-text { color: #ddd; }
 }

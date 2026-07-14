@@ -1,6 +1,5 @@
 {
-  "minEngagement": 30,
-  "recencyHours": 48,
+  "minEngagement": 100,
   "extraKeywords": [],
   "mutedAuthors": [],
   "likedAuthors": []

@@ -22,30 +22,32 @@ t('extraKeywords personalize', () => {
   assert.strictEqual(nicheReason('聊聊獨立開發的甘苦', ['獨立開發']), '自訂');
 });
 
-// --- verdict ---
-t('on-topic + traction + recent → reply', () => {
+// --- verdict (hard interaction gate, default floor 100) ---
+t('on-topic + interactions >= floor → reply', () => {
   const r = scorePost({ text: '用 Claude 寫程式的心得', likeCount: 120, replyCount: 30, timestamp: hoursAgo(3) }, {}, NOW);
   assert.strictEqual(r.verdict, 'reply');
   assert.strictEqual(r.reason, 'AI');
   assert.ok(r.heat > 0);
 });
-t('on-topic but quiet → watch', () => {
-  const r = scorePost({ text: '用 Claude 寫程式的心得', likeCount: 2, replyCount: 0, timestamp: hoursAgo(3) }, {}, NOW);
-  assert.strictEqual(r.verdict, 'watch');
+t('on-topic but below floor → skip', () => {
+  const r = scorePost({ text: '用 Claude 寫程式的心得', likeCount: 40, replyCount: 5, timestamp: hoursAgo(3) }, {}, NOW);
+  assert.strictEqual(r.verdict, 'skip');
+  assert.strictEqual(r.reason, 'below_floor');
 });
-t('on-topic but stale → watch', () => {
-  const r = scorePost({ text: '用 Claude 寫程式的心得', likeCount: 500, replyCount: 80, timestamp: hoursAgo(200) }, {}, NOW);
-  assert.strictEqual(r.verdict, 'watch');
+t('floor is configurable', () => {
+  const post = { text: '用 Claude 寫程式的心得', likeCount: 60, replyCount: 30, timestamp: hoursAgo(3) }; // eng 90
+  assert.strictEqual(scorePost(post, { minEngagement: 100 }, NOW).verdict, 'skip');
+  assert.strictEqual(scorePost(post, { minEngagement: 80 }, NOW).verdict, 'reply');
 });
-t('off-topic → skip', () => {
+t('off-topic → skip regardless of interactions', () => {
   const r = scorePost({ text: '午餐吃拉麵', likeCount: 999, replyCount: 999, timestamp: hoursAgo(1) }, {}, NOW);
   assert.strictEqual(r.verdict, 'skip');
 });
-t('muted author → skip even if on-topic', () => {
+t('muted author → skip even if on-topic & viral', () => {
   const r = scorePost({ text: 'AI agent 好神', author: 'spammer', likeCount: 500, replyCount: 90, timestamp: hoursAgo(1) }, { mutedAuthors: ['spammer'] }, NOW);
   assert.strictEqual(r.verdict, 'skip');
 });
-t('liked author → reply even when quiet', () => {
+t('liked author → reply even below floor', () => {
   const r = scorePost({ text: 'AI agent 小聊', author: 'fav', likeCount: 1, replyCount: 0, timestamp: hoursAgo(1) }, { likedAuthors: ['fav'] }, NOW);
   assert.strictEqual(r.verdict, 'reply');
 });

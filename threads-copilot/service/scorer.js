@@ -68,13 +68,14 @@ function velocityToHeat(v) {
   return Math.round(Math.min(100, Math.max(0, (Math.log10(v + 1) / Math.log10(501)) * 100)));
 }
 
-const DEFAULTS = { minEngagement: 30, recencyHours: 48, extraKeywords: [], mutedAuthors: [], likedAuthors: [] };
+const DEFAULTS = { minEngagement: 100, extraKeywords: [], mutedAuthors: [], likedAuthors: [] };
 
 /**
- * Score one post → { verdict: 'reply'|'watch'|'skip', reason, heat, eng }.
- *  - skip : muted author, or off-topic (not in your interest profile)
- *  - reply: on-topic AND (enough traction & recent  OR  from an author you 👍'd)
- *  - watch: on-topic but quiet / stale — worth a glance, not a strong prompt
+ * Score one post → { verdict: 'reply'|'skip', reason, heat, eng }.
+ * Only posts worth replying to are surfaced; everything else is 'skip' and shown nowhere.
+ *  - skip : muted author, off-topic, OR interaction count below minEngagement (hard gate)
+ *  - reply: on-topic AND interactions >= minEngagement  (OR from an author you 👍'd)
+ * `heat` (engagement velocity, 0-100) is used only to RANK the surfaced posts.
  */
 function scorePost(post, pref, now) {
   const p = Object.assign({}, DEFAULTS, pref || {});
@@ -84,15 +85,12 @@ function scorePost(post, pref, now) {
   const reason = nicheReason(text, p.extraKeywords);
   if (!reason) return { verdict: 'skip', reason: null };
   const eng = (post.likeCount || 0) + (post.replyCount || 0);
-  const heat = velocityToHeat(engagementVelocity(post, now));
-  let recent = true;
-  if (post.timestamp) {
-    const ageMs = now - new Date(post.timestamp).getTime();
-    if (Number.isFinite(ageMs)) recent = ageMs <= p.recencyHours * 3600000;
-  }
   const liked = !!author && p.likedAuthors.includes(author);
-  const verdict = (eng >= p.minEngagement && recent) || liked ? 'reply' : 'watch';
-  return { verdict, reason, heat, eng };
+  // Hard interaction gate — cut the noise. Below the floor shows nowhere, unless it's
+  // an author you explicitly 👍'd.
+  if (eng < p.minEngagement && !liked) return { verdict: 'skip', reason: 'below_floor', eng };
+  const heat = velocityToHeat(engagementVelocity(post, now));
+  return { verdict: 'reply', reason, heat, eng };
 }
 
 function scorePosts(posts, pref, now) {

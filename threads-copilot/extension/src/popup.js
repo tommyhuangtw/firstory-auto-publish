@@ -34,17 +34,19 @@ async function loadPreference() {
     const r = await fetch(base() + '/preference');
     const p = await r.json();
     $('extra').value = (p.extraKeywords || []).join(', ');
+    $('minEng').value = p.minEngagement == null ? 100 : p.minEngagement;
   } catch { /* service down — leave blank */ }
 }
 
 $('savePref').addEventListener('click', async () => {
   const kws = $('extra').value.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean);
+  const minEngagement = Math.max(0, parseInt($('minEng').value, 10) || 0);
   const el = $('prefStatus');
   try {
     await fetch(base() + '/preference', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ extraKeywords: kws }),
+      body: JSON.stringify({ extraKeywords: kws, minEngagement }),
     });
     el.textContent = '已儲存 ✓'; el.className = 'hint ok';
   } catch {
