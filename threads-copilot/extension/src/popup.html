@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { width: 280px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang TC", sans-serif; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
+    label { font-weight: 600; }
+    input[type="text"] { width: 150px; }
+    textarea { width: 100%; box-sizing: border-box; height: 54px; resize: vertical; margin-top: 4px; }
+    .hint { color: #888; font-size: 11px; margin: 2px 0 8px; }
+    #status { font-size: 12px; }
+    button { cursor: pointer; }
+    .ok { color: #15803d; } .bad { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>Threads 海巡 Copilot</h1>
+
+  <div class="row">
+    <label for="enabled">啟用</label>
+    <input type="checkbox" id="enabled" />
+  </div>
+
+  <div class="row">
+    <label for="serviceUrl">服務網址</label>
+    <input type="text" id="serviceUrl" placeholder="http://127.0.0.1:8770" />
+  </div>
+
+  <div class="row">
+    <button id="ping">測試連線</button>
+    <span id="status">—</span>
+  </div>
+
+  <hr />
+
+  <label for="extra">自訂興趣關鍵字</label>
+  <div class="hint">逗號分隔,補在內建 AI/接案/職涯/留學/海外之外</div>
+  <textarea id="extra" placeholder="例:獨立開發, 電子報, 訂閱制"></textarea>
+  <div class="row">
+    <span class="hint" id="prefStatus"></span>
+    <button id="savePref">儲存偏好</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

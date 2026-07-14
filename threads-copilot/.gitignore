@@ -1,0 +1,7 @@
+# User's live preference profile (seeded from preference.default.json at runtime)
+service/preference.json
+node_modules/
+
+# Repo root ignores *.json; these config files must stay tracked.
+!extension/manifest.json
+!service/preference.default.json

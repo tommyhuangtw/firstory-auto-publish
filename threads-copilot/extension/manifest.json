@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Threads 海巡 Copilot",
+  "version": "0.1.0",
+  "description": "瀏覽 Threads 時,用你的興趣偏好即時 highlight 值得回覆的貼文。純本地、只讀不動作。",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:8770/*", "http://localhost:8770/*"],
+  "background": { "service_worker": "src/background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.threads.com/*",
+        "https://www.threads.net/*",
+        "https://threads.com/*",
+        "https://threads.net/*"
+      ],
+      "js": ["src/extract.js", "src/content.js"],
+      "css": ["src/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "src/popup.html", "default_title": "Threads 海巡 Copilot" }
+}

@@ -1,0 +1,51 @@
+/* Threads 海巡 Copilot — badge overlay. Kept visually light so it reads as an
+   annotation on top of the real feed, not a replacement for it. */
+
+.tc-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: -apple-system, "PingFang TC", "Heiti TC", sans-serif;
+  background: rgba(0, 0, 0, 0.04);
+}
+.tc-bar.tc-reply { background: rgba(22, 163, 74, 0.12); }
+.tc-bar.tc-watch { background: rgba(217, 119, 6, 0.10); }
+.tc-bar.tc-ack .tc-tag { text-decoration: line-through; opacity: 0.6; }
+
+.tc-tag { font-weight: 600; }
+.tc-reply .tc-tag { color: #15803d; }
+.tc-watch .tc-tag { color: #b45309; }
+.tc-heat { opacity: 0.7; }
+
+.tc-btn {
+  cursor: pointer;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: transparent;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 12px;
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.6;
+}
+.tc-btn:hover { background: rgba(0, 0, 0, 0.06); }
+
+/* Left accent on the matched post so it stands out while scrolling. */
+.tc-hit-reply { box-shadow: inset 3px 0 0 rgba(22, 163, 74, 0.55); }
+.tc-hit-watch { box-shadow: inset 3px 0 0 rgba(217, 119, 6, 0.45); }
+
+@media (prefers-color-scheme: dark) {
+  .tc-bar { background: rgba(255, 255, 255, 0.06); }
+  .tc-bar.tc-reply { background: rgba(34, 197, 94, 0.16); }
+  .tc-bar.tc-watch { background: rgba(245, 158, 11, 0.14); }
+  .tc-reply .tc-tag { color: #4ade80; }
+  .tc-watch .tc-tag { color: #fbbf24; }
+  .tc-btn { border-color: rgba(255, 255, 255, 0.2); }
+  .tc-btn:hover { background: rgba(255, 255, 255, 0.1); }
+}

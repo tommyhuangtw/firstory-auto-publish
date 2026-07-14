@@ -1,0 +1,11 @@
+{
+  "name": "threads-copilot-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Light standalone scoring service for the Threads 海巡 Copilot browser extension.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/scorer.test.js && node test/extract.test.js"
+  }
+}
