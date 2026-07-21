@@ -58,7 +58,9 @@ export async function runTrendScan(opts: { maxPosts?: number; trigger?: string }
   let feed: RawThreadPost[];
   let topics: string[];
   try {
-    ({ posts: feed, topics } = await runScrape({ maxPosts: opts.maxPosts ?? 40 }));
+    // Feed pass is kept shallow — it's mostly cover traffic / account warmth now that the
+    // hot-topic zone is off; the deliverable comes from the niche keyword pass.
+    ({ posts: feed, topics } = await runScrape({ maxPosts: opts.maxPosts ?? 20 }));
   } catch (err) {
     const msg = (err as Error).message;
     log.error({ err: msg }, 'Threads scrape failed');

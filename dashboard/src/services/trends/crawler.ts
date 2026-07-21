@@ -43,6 +43,38 @@ async function humanPause(page: import('playwright').Page, min = 1500, max = 400
 function chance(p: number): boolean {
   return Math.random() < p;
 }
+/**
+ * Human-like scroll. A real user never emits one 3000px wheel event: a trackpad/wheel
+ * produces a burst of small deltas with uneven gaps, pauses to read, and sometimes flicks
+ * back up. One giant `mouse.wheel(0, 3000)` is a trivially detectable scripted pattern, so
+ * we approximate the real thing: jittered micro-ticks, a mid-scroll reading dwell, and an
+ * occasional scroll-back. `distance` is the rough total travel.
+ */
+async function humanScroll(page: import('playwright').Page, distance: number): Promise<void> {
+  // Drift the cursor first — wheel events with a never-moving pointer look synthetic.
+  if (chance(0.6)) {
+    await page.mouse.move(rand(300, 1000), rand(200, 800), { steps: rand(3, 8) }).catch(() => {});
+  }
+  let travelled = 0;
+  while (travelled < distance) {
+    // Bursts of 2-5 ticks (one flick), then a short beat — like real wheel/trackpad input.
+    const ticks = rand(2, 5);
+    for (let i = 0; i < ticks && travelled < distance; i++) {
+      const delta = Math.min(rand(90, 260), distance - travelled);
+      await page.mouse.wheel(0, delta);
+      travelled += delta;
+      await page.waitForTimeout(rand(40, 150));
+    }
+    // Between flicks: usually a beat, occasionally a proper "stopped to read" pause.
+    await page.waitForTimeout(chance(0.2) ? rand(1800, 5000) : rand(250, 900));
+    // Sometimes scroll back up a little — re-reading something that went past.
+    if (chance(0.15)) {
+      await page.mouse.wheel(0, -rand(120, 400));
+      await page.waitForTimeout(rand(600, 2000));
+    }
+  }
+}
+
 /** Fisher-Yates shuffle (returns a new array). Randomising topic order per scan makes
  *  the search sequence non-deterministic — a fixed order is a scraper tell. */
 function shuffle<T>(arr: T[]): T[] {
@@ -189,7 +221,7 @@ export async function scrapeTrendingTopics(page: import('playwright').Page): Pro
   await page.goto(`${THREADS_BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await humanPause(page, 3000, 5000);
   for (let i = 0; i < 2; i++) {
-    await page.mouse.wheel(0, rand(1500, 2600));
+    await humanScroll(page, rand(1500, 2600));
     await humanPause(page, 1200, 2400);
   }
   (await collectChips()).forEach((t) => topics.add(t));
@@ -280,6 +312,18 @@ function isWarmup(): { active: boolean; until?: string } {
   } catch { return { active: false }; }
 }
 
+/** Probability (0..1) that a run does feed-browsing ONLY and skips every search.
+ *  `trend_browse_only_chance` setting; default 0.25 = roughly 1 run in 4. */
+function getBrowseOnlyChance(): number {
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_browse_only_chance') as
+      { value: string } | undefined;
+    const n = row ? parseFloat(row.value) : NaN;
+    if (Number.isFinite(n) && n >= 0 && n <= 1) return n;
+  } catch { /* not set */ }
+  return 0.25;
+}
+
 /** Extract whatever posts are currently rendered in the DOM (For You feed or search). */
 async function extractPostsOnPage(page: import('playwright').Page, max: number): Promise<RawThreadPost[]> {
   const now = Date.now();
@@ -344,7 +388,7 @@ export async function scrapeForYouFeed(page: import('playwright').Page, maxPosts
     for (const p of await extractPostsOnPage(page, 40)) {
       seen.set(p.permalink || p.text.slice(0, 40), p);
     }
-    await page.mouse.wheel(0, rand(2200, 3800));
+    await humanScroll(page, rand(2200, 3800));
     await humanPause(page, 1500, 3200);
   }
   const out = Array.from(seen.values());
@@ -366,7 +410,7 @@ export async function scrapeTopicPosts(
   await humanPause(page, 2500, 5000);
   // Default 1-2 scrolls (anti-detection); callers can ask for a deeper crawl.
   for (let i = 0, n = scrolls ?? rand(1, 2); i < n; i++) {
-    await page.mouse.wheel(0, rand(1200, 2600));
+    await humanScroll(page, rand(1200, 2600));
     await humanPause(page, 1200, 2800);
   }
   const out = await extractPostsOnPage(page, max);
@@ -415,7 +459,7 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
       // "Distraction": drift back to the feed and scroll a bit, like a real user.
       await page.goto(`${THREADS_BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => {});
       await humanPause(page, 2000, 4000);
-      await page.mouse.wheel(0, rand(800, 2000));
+      await humanScroll(page, rand(800, 2000));
       await humanPause(page, 8000, 20000);
     } else {
       await humanPause(page, 4000, 11000);
@@ -431,12 +475,18 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
 
     // Warm-up mode (fresh account): browse the feed ONLY, skip every keyword search, so a
     // brand-new account accrues normal-looking history before it ever runs a search burst.
+    // Also fires randomly on any run (`trend_browse_only_chance`) — some days a real person
+    // just scrolls and never searches, so "every session ends in a search burst" isn't a tell.
     const warmup = isWarmup();
-    if (warmup.active) {
-      log.info({ until: warmup.until }, 'Warm-up mode — For You feed only, skipping all keyword searches');
+    const browseOnly = !warmup.active && chance(getBrowseOnlyChance());
+    if (warmup.active || browseOnly) {
+      log.info(
+        { until: warmup.until, reason: warmup.active ? 'warmup' : 'random_browse_only' },
+        'For You feed only — skipping all keyword searches this run',
+      );
       const out = Array.from(byKey.values());
       if (out.length === 0) throw new Error('Threads scrape produced no posts (not logged in or selectors stale)');
-      log.info({ posts: out.length }, 'Scrape complete (warm-up)');
+      log.info({ posts: out.length }, 'Scrape complete (browse only)');
       return { posts: out, topics: topicsSearched };
     }
 
@@ -464,8 +514,8 @@ export async function runScrape(opts: { maxPosts?: number } = {}): Promise<{ pos
       if (chance(0.1)) { log.info({ keyword: niche[i] }, 'Randomly skipped a niche keyword'); continue; }
       topicsSearched.push(niche[i]);
       try {
-        // Deeper crawl for the reply zone — more posts + more scrolls per keyword.
-        for (const p of await scrapeTopicPosts(page, niche[i], 30, 'recent', 4)) add(p, niche[i], true);
+        // Slightly deeper than a seed topic, but kept light on purpose (anti-detection).
+        for (const p of await scrapeTopicPosts(page, niche[i], 20, 'recent', 3)) add(p, niche[i], true);
       } catch (err) {
         log.warn({ keyword: niche[i], err: (err as Error).message }, 'Failed scraping a niche keyword — continuing');
       }

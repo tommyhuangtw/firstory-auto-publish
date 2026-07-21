@@ -123,9 +123,9 @@ export function initializeSchedulerJobs(): void {
   scheduler.register('數據補跑檢查（午）', '0 13 * * *', catchUpMissedSyncs);
   scheduler.register('數據補跑檢查（晚）', '0 21 * * *', catchUpMissedSyncs);
 
-  // Social trend scan — scrape Threads hot posts, then Telegram-notify. 2x/day
-  // (settings.trend_scrape_times). Plus a slot-based catch-up every 30 min that
-  // guarantees a morning + evening scan even if the Mac slept through the cron times.
+  // Social trend scan — scrape Threads reply targets, then Telegram-notify. Frequency =
+  // settings.trend_scrape_times (currently 1x/day + wide jitter). Plus a slot-based catch-up
+  // every 30 min that backfills a slot the Mac slept through — at most ONE attempt per slot.
   registerTrendScanJobs();
   scheduler.register('社群熱點補跑檢查', '*/30 * * * *', trendCatchUp);
 
@@ -355,7 +355,7 @@ async function runSoundonSync(): Promise<void> {
 
 function registerTrendScanJobs(): void {
   const scheduler = getScheduler();
-  // Low volume by design (avoid looking like a scraper): twice a day.
+  // Low volume by design (avoid looking like a scraper): see settings.trend_scrape_times.
   let times = ['10:00', '21:00'];
   try {
     const db = getDb();
@@ -414,6 +414,18 @@ async function doTrendScan(trigger: string): Promise<void> {
   }
 }
 
+/** Jitter window (minutes) applied to the scheduled scan. Shared with the catch-up so it
+ *  doesn't fire while a jittered run is still waiting. */
+function getTrendJitterMinutes(): number {
+  try {
+    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_jitter_minutes') as
+      { value: string } | undefined;
+    const n = row ? parseInt(row.value, 10) : NaN;
+    if (Number.isFinite(n) && n >= 0 && n <= 120) return n;
+  } catch { /* DB not ready */ }
+  return 25;
+}
+
 function getTrendHours(): number[] {
   let times = ['10:00', '21:00'];
   try {
@@ -428,9 +440,15 @@ function getTrendHours(): number[] {
 }
 
 /**
- * Slot-based catch-up — guarantees a morning AND an evening scan each day even when
- * the Mac sleeps through the exact cron times. Runs frequently (every 30 min); only
- * actually scans when a slot is overdue (≥1h past its time) and hasn't run yet today.
+ * Slot-based catch-up — guarantees a scan per configured slot even when the Mac sleeps
+ * through the exact cron time. Runs every 30 min; only scans when a slot is overdue and
+ * has had NO attempt yet today.
+ *
+ * "Attempt" = a row in `trend_scan_runs` (written even when the scrape FAILS), not a
+ * scraped post. Keying off posts meant a failed/blocked run left the slot looking empty,
+ * so the catch-up relaunched the browser every 30 min for the rest of the day — hammering
+ * Meta with a broken session, which is exactly how a burner account gets flagged.
+ * Overdue threshold also clears the jitter window, so it can't double-run with the cron.
  */
 async function trendCatchUp(): Promise<void> {
   const db = getDb();
@@ -438,24 +456,27 @@ async function trendCatchUp(): Promise<void> {
   const morningH = hours[0] ?? 10;
   const eveningH = hours[hours.length - 1] ?? 21;
   const split = Math.min(16, Math.max(morningH + 1, Math.floor((morningH + eveningH) / 2)));
-  const nowH = new Date().getHours(); // local (system TZ)
+  const now = new Date();
+  const nowH = now.getHours(); // local (system TZ)
+  // Wait out the jitter window (+1h grace) before considering a slot missed.
+  const graceH = Math.ceil((getTrendJitterMinutes() + 60) / 60);
 
   const slotHasScan = (from: number, to: number) =>
     db.prepare(
-      `SELECT 1 FROM trend_posts
-       WHERE date(scraped_at, 'localtime') = date('now', 'localtime')
-         AND CAST(strftime('%H', scraped_at, 'localtime') AS INTEGER) >= ?
-         AND CAST(strftime('%H', scraped_at, 'localtime') AS INTEGER) < ? LIMIT 1`,
+      `SELECT 1 FROM trend_scan_runs
+       WHERE date(started_at, 'localtime') = date('now', 'localtime')
+         AND CAST(strftime('%H', started_at, 'localtime') AS INTEGER) >= ?
+         AND CAST(strftime('%H', started_at, 'localtime') AS INTEGER) < ? LIMIT 1`,
     ).get(from, to);
 
-  // Morning slot overdue? (give the cron ~1h before backfilling; don't backfill morning at night)
-  if (nowH >= morningH + 1 && nowH < eveningH + 1 && !slotHasScan(0, split)) {
+  // Morning slot overdue? (don't backfill the morning slot at night)
+  if (morningH !== eveningH && nowH >= morningH + graceH && nowH < eveningH + graceH && !slotHasScan(0, split)) {
     log.info({ nowH }, 'Catch-up: morning trend scan missing, running now');
     await doTrendScan('catchup');
     return;
   }
   // Evening slot overdue?
-  if (nowH >= eveningH + 1 && !slotHasScan(split, 24)) {
+  if (nowH >= eveningH + graceH && !slotHasScan(morningH === eveningH ? 0 : split, 24)) {
     log.info({ nowH }, 'Catch-up: evening trend scan missing, running now');
     await doTrendScan('catchup');
   }
@@ -466,13 +487,7 @@ async function trendCatchUp(): Promise<void> {
  *  (default 25). If the Mac idle-sleeps during a long jitter, the 30-min slot catch-up
  *  backfills that slot, so a wide jitter is safe. */
 async function runTrendScan(): Promise<void> {
-  let maxMin = 25;
-  try {
-    const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('trend_jitter_minutes') as
-      { value: string } | undefined;
-    const n = row ? parseInt(row.value, 10) : NaN;
-    if (Number.isFinite(n) && n >= 0 && n <= 120) maxMin = n;
-  } catch { /* DB not ready — use default */ }
+  const maxMin = getTrendJitterMinutes();
   const jitterMs = Math.floor(Math.random() * maxMin * 60_000);
   log.info({ jitterSec: Math.round(jitterMs / 1000), maxMin }, 'Social trend scan scheduled — waiting jitter');
   await new Promise((r) => setTimeout(r, jitterMs));
